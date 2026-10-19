@@ -6,6 +6,20 @@ using System.IO;
 using System.Runtime.InteropServices;
 using RcTwin;
 
+sealed class Slope : IGroundProvider
+{
+    public double nx;
+    public int calls;
+    public bool missing;
+    public bool Sample(int wheel, double x, double y, ref RcTwinNative.GroundSample g)
+    {
+        calls++;
+        if (missing) return false;
+        g.nx = nx;
+        return true;
+    }
+}
+
 static class Program
 {
     static int failures, checks;
@@ -79,6 +93,28 @@ static class Program
             Check(car.State.Equals(snap), "reset to snapshot");
             car.ResetToRest();
             Check(car.State.x == 0.0 && car.State.soc == 1.0, "reset to rest");
+        }
+
+        // Ground query from C#: called 4 n times, a grade reaches the Core, and a
+        // provider with no ground fails the step with its reason, keeping state.
+        using (var flat = new TwinVehicle(RcTwinNative.Tier.L2DoubleTrack, p))
+        using (var hill = new TwinVehicle(RcTwinNative.Tier.L2DoubleTrack, p))
+        {
+            var slope = new Slope { nx = 0.05 };
+            hill.SetGround(slope);
+            flat.Step(0.0, 3.0, 0.001, 500);
+            hill.Step(0.0, 3.0, 0.001, 500);
+            Check(slope.calls == 2000, $"ground calls {slope.calls}");
+            Check(hill.State.vx > flat.State.vx + 0.1, "downhill is faster");
+            var before = hill.State;
+            slope.missing = true;
+            bool groundThrew = false;
+            try { hill.Step(0.0, 3.0, 0.001, 1); }
+            catch (GroundQueryException e) { groundThrew = e.Message.Contains("no ground"); }
+            Check(groundThrew, "missing ground raises with its reason");
+            Check(hill.State.Equals(before), "failed step keeps state");
+            hill.SetGround(null);
+            hill.Step(0.0, 3.0, 0.001, 1);  // level again, no throw
         }
 
         bool threw = false;

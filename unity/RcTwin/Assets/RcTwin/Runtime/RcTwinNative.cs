@@ -1,4 +1,4 @@
-// P/Invoke bindings for native/include/rc_twin.h (ABI version 1).
+// P/Invoke bindings for native/include/rc_twin.h (ABI version 2).
 //
 // Deliberately free of UnityEngine so native/tests/csharp can compile and run
 // it against rc_twin.dll outside the editor. Field order here must match the
@@ -15,9 +15,9 @@ namespace RcTwin
     public static class RcTwinNative
     {
         public const string Lib = "rc_twin";
-        public const uint AbiVersion = 1;
+        public const uint AbiVersion = 2;
 
-        public const int Ok = 0, ENull = -1, EInvalid = -2, EInternal = -3;
+        public const int Ok = 0, ENull = -1, EInvalid = -2, EInternal = -3, EGround = -4;
 
         public enum Tier { L0Kinematic = 0, L1Bicycle = 1, L2DoubleTrack = 2, L3Extended = 3 }
         public enum Integrator { Rk4 = 0, SemiImplicitEuler = 1 }
@@ -72,6 +72,24 @@ namespace RcTwin
             public double dragCoeff, rollResist, vEps;
         }
 
+        /// <summary>Ground under one wheel, world frame, ISO 8855 (ADR 0005).</summary>
+        [StructLayout(LayoutKind.Sequential)]
+        public struct GroundSample
+        {
+            public double height;      // [m]
+            public double nx, ny, nz;  // outward normal, any length, nz > 0
+            public double muScale;     // multiplies peak tyre friction, >= 0
+
+            public static GroundSample Level(double height = 0.0) =>
+                new GroundSample { height = height, nz = 1.0, muScale = 1.0 };
+        }
+
+        [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
+        public delegate int GroundFn(IntPtr user, int wheel, double x, double y, ref GroundSample sample);
+
+        [DllImport(Lib, CallingConvention = CallingConvention.Cdecl)]
+        public static extern int rc_twin_set_ground_query(IntPtr v, GroundFn fn, IntPtr user);
+
         [DllImport(Lib, CallingConvention = CallingConvention.Cdecl)]
         public static extern uint rc_twin_abi_version();
 
@@ -121,6 +139,16 @@ namespace RcTwin
         }
     }
 
+    /// <summary>
+    /// Answers the Core's ground query for one wheel (0 FL, 1 FR, 2 RL, 3 RR) at
+    /// world ISO (x, y). <paramref name="sample"/> arrives as level ground at
+    /// height 0. Return false if there is no ground there; the step then fails.
+    /// </summary>
+    public interface IGroundProvider
+    {
+        bool Sample(int wheel, double x, double y, ref RcTwinNative.GroundSample sample);
+    }
+
     /// <summary>One simulated vehicle. Owns the native handle.</summary>
     public sealed class TwinVehicle : IDisposable
     {
@@ -152,8 +180,71 @@ namespace RcTwin
             }
         }
 
-        public void Step(double steerCmd, double accelCmd, double dt, uint n = 1) =>
-            RcTwinNative.Check(RcTwinNative.rc_twin_step(Live, steerCmd, accelCmd, dt, n), "step");
+        public void Step(double steerCmd, double accelCmd, double dt, uint n = 1)
+        {
+            int status = RcTwinNative.rc_twin_step(Live, steerCmd, accelCmd, dt, n);
+            if (status == RcTwinNative.EGround)
+            {
+                string why = _groundBox?.error ?? "the samples were invalid or this tier cannot represent this ground";
+                if (_groundBox != null) _groundBox.error = null;
+                throw new GroundQueryException(why);
+            }
+            RcTwinNative.Check(status, "step");
+        }
+
+        // ------------------------------------------------------------ ground
+        // The provider travels to native code as a GCHandle; the callback is one
+        // static method, so it is AOT-safe (IL2CPP) and never collected. The box
+        // holds no reference back to this vehicle, so an undisposed vehicle can
+        // still be finalised.
+        private GCHandle _groundHandle;
+        private GroundBox _groundBox;
+        private static readonly RcTwinNative.GroundFn GroundThunk = OnGround;
+
+        /// <summary>Feed the Core this provider's ground; null restores level ground.</summary>
+        public void SetGround(IGroundProvider provider)
+        {
+            if (provider != null)
+            {
+                var box = new GroundBox { provider = provider };
+                var handle = GCHandle.Alloc(box);
+                RcTwinNative.Check(RcTwinNative.rc_twin_set_ground_query(Live, GroundThunk, GCHandle.ToIntPtr(handle)),
+                                   "set_ground_query");
+                if (_groundHandle.IsAllocated) _groundHandle.Free();
+                _groundHandle = handle;
+                _groundBox = box;
+            }
+            else
+            {
+                RcTwinNative.Check(RcTwinNative.rc_twin_set_ground_query(Live, null, IntPtr.Zero), "set_ground_query");
+                if (_groundHandle.IsAllocated) _groundHandle.Free();
+                _groundBox = null;
+            }
+        }
+
+        private sealed class GroundBox
+        {
+            public IGroundProvider provider;
+            public string error;  // why the last query failed, for the exception
+        }
+
+        [MonoPInvokeCallback(typeof(RcTwinNative.GroundFn))]
+        private static int OnGround(IntPtr user, int wheel, double x, double y, ref RcTwinNative.GroundSample sample)
+        {
+            GroundBox box = null;
+            try
+            {
+                box = (GroundBox)GCHandle.FromIntPtr(user).Target;
+                if (box.provider.Sample(wheel, x, y, ref sample)) return 0;
+                box.error = $"no ground under wheel {wheel} at ({x:F2}, {y:F2})";
+                return 1;
+            }
+            catch (Exception e)  // never let an exception unwind into native code
+            {
+                if (box != null) box.error = "ground provider threw: " + e.Message;
+                return 1;
+            }
+        }
 
         public void ResetToRest() =>
             RcTwinNative.Check(RcTwinNative.rc_twin_reset_to_rest(Live, IntPtr.Zero), "reset");
@@ -166,12 +257,30 @@ namespace RcTwin
         public void Dispose()
         {
             if (_handle != IntPtr.Zero) { RcTwinNative.rc_twin_destroy(_handle); _handle = IntPtr.Zero; }
+            if (_groundHandle.IsAllocated) _groundHandle.Free();
             GC.SuppressFinalize(this);
         }
 
         ~TwinVehicle()
         {
             if (_handle != IntPtr.Zero) RcTwinNative.rc_twin_destroy(_handle);
+            if (_groundHandle.IsAllocated) _groundHandle.Free();
         }
+    }
+
+    /// <summary>The ground query reported no ground, bad ground, or ground the tier cannot represent.</summary>
+    public sealed class GroundQueryException : InvalidOperationException
+    {
+        public GroundQueryException(string message) : base(message) { }
+    }
+
+    /// <summary>
+    /// IL2CPP recognises this attribute by name; defined here so this file needs
+    /// no UnityEngine reference.
+    /// </summary>
+    [AttributeUsage(AttributeTargets.Method)]
+    internal sealed class MonoPInvokeCallbackAttribute : Attribute
+    {
+        public MonoPInvokeCallbackAttribute(Type type) { }
     }
 }

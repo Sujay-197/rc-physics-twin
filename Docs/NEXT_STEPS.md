@@ -19,11 +19,11 @@
 
 ## Phase 2: Vehicle
 
-- [ ] Ground-query callback in the C ABI (`rc_twin_set_ground_query`), consumed by the Core per contact patch.
-
-- [ ] Ackermann steering geometry.
-- [ ] Per-wheel spin state (lock-up and wheelspin representable).
-- [ ] Per-patch ground query (height, normal, friction scale).
+- [x] Per-patch ground query (height, normal, friction scale). ADR 0005: the host samples the ground under each wheel per step and the Core takes the samples as arguments (`VehicleModel::step_on`), so `step` stays pure. L2 feels grade, banking and per-wheel grip; L0/L1 refuse anything but level ground. Level ground is bit-identical to before (216 SlipX core tests, 6 conformance hashes unchanged).
+- [x] Ground-query callback in the C ABI (`rc_twin_set_ground_query`, ABI v2), and `RaycastGround` + `GroundSurface` in Unity. The FlatGround scene has a hill, a banked strip and an ice patch; Play Mode tests drive all three.
+- [ ] Ackermann steering geometry. SlipX documents parallel steer as deliberate: it has no identifiable Ackermann parameter (its ADR-0009). Needs a parameter we can measure on the real car (steering linkage geometry) before it is worth adding.
+- [ ] Per-wheel spin state (lock-up and wheelspin representable). SlipX ADR-0027 closes the longitudinal loop without wheel inertia on purpose; adding it is a new state per wheel and a stiff fast mode at 1 kHz, so it needs its own ADR.
+- [ ] Per-wheel height differences (twist, kerbs) and speed breakers need suspension: Phase 3 / L3.
 
 ## Phase 3: Road
 

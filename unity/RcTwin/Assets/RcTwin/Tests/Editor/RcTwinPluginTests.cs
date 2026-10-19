@@ -48,6 +48,31 @@ namespace RcTwin.Tests
             Assert.That(fwd.x, Is.EqualTo(-1f).Within(1e-5f));
         }
 
+        private sealed class Slope : IGroundProvider
+        {
+            public int calls;
+            public bool Sample(int wheel, double x, double y, ref RcTwinNative.GroundSample g)
+            {
+                calls++;
+                g.nx = 0.05;  // road falls away ahead (ISO +x)
+                return true;
+            }
+        }
+
+        [Test]
+        public void GroundQueryReachesTheCore()
+        {
+            var p = RcTwinNative.DefaultParams();
+            using var flat = new TwinVehicle(RcTwinNative.Tier.L2DoubleTrack, p);
+            using var hill = new TwinVehicle(RcTwinNative.Tier.L2DoubleTrack, p);
+            var slope = new Slope();
+            hill.SetGround(slope);
+            flat.Step(0.0, 2.0, 0.001, 500);
+            hill.Step(0.0, 2.0, 0.001, 500);
+            Assert.AreEqual(2000, slope.calls);
+            Assert.Greater(hill.State.vx, flat.State.vx + 0.1);
+        }
+
         [Test]
         public void InvalidParamsAreRejectedWithReason()
         {
