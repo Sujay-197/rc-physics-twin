@@ -111,8 +111,6 @@ class RcTwinEnv:
                  damping: float = 0.0, travel: float = 0.015):
         if isinstance(road, (str, pathlib.Path)):
             road = json.loads(pathlib.Path(road).read_text(encoding="utf-8"))
-        dr.check_road(road)
-        self.road = road
         self.target_speed = float(target_speed)
         self.history = int(history)
         self.ranges = dict(RANGES_TRAIN if ranges is None else ranges)
@@ -122,19 +120,33 @@ class RcTwinEnv:
         self._car_opts = dict(wheel_inertia=wheel_inertia, ackermann=ackermann,
                               wheel_rate=wheel_rate, damping=damping, travel=travel)
         self.observation_size = FRAME_SIZE + self.history * (FRAME_SIZE + ACTION_SIZE)
-        self._road = dr.build_road(self.lib, road)
-        self._length = self.lib.rc_twin_road_length(self._road)
-        self._half_width = 0.5 * float(road["width"])
+        self._road = None
+        self._set_road(road)
         self._car = None
         self._rng = random.Random()
         self._ground = ctypes.cast(self.lib.rc_twin_road_ground, ctypes.c_void_p)
 
+    def _set_road(self, road: dict) -> None:
+        """Drive this road from now on (rebuilt in the native layer)."""
+        dr.check_road(road)
+        new = dr.build_road(self.lib, road)
+        if self._road:
+            self.lib.rc_twin_road_destroy(self._road)
+        self.road = road
+        self._road = new
+        self._length = self.lib.rc_twin_road_length(new)
+        self._half_width = 0.5 * float(road["width"])
+
     # ------------------------------------------------------------- episode
 
     def reset(self, seed: int | None = None, options: dict | None = None):
+        """options: "road" (a road dict) drives a new road from this episode
+        on; "perturb" and "start_speed" as described in the module notes."""
         if seed is not None:
             self._rng.seed(seed)
         options = options or {}
+        if "road" in options:
+            self._set_road(options["road"])
         self.sample = {k: self._rng.uniform(lo, hi) for k, (lo, hi) in sorted(self.ranges.items())}
         self._perturb = options.get("perturb")
         self._perturbed = False

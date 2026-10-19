@@ -29,13 +29,15 @@
 
 - [x] Suspension (spring/damper per corner). ADR 0008: opt-in at L2 from measured wheel rates and damping (L3 stays SlipX's); body heave, pitch and roll; per-wheel ground heights act; bump stop. The Unity twin runs DEMO springs (3 Hz, 0.3 damping, 15 mm travel) and has a speed breaker. Replace the demo values with bench measurements.
 - [x] Road-feature schema: elevation, banking, speed breakers, surface. `roads/road.schema.json` (0.1.0), two sample roads, and the road ground model in `native/src/rc_twin_road.cpp`.
-- [ ] Add elevation and features to `RoadGraph` and the Unity build tool. `RoadGraph` lives in the fleet sim repo (`campus_fleet_man_unity`), not on this machine: export its edges in the road schema, or have its build tool read the schema.
+- [x] The campus in the twin. `RoadGraph`, stops, road tiles and buildings exported from `campus_fleet_man_unity` (b745220) and converted at 1/10 (`campus/`, `tools/campus_import.py`): 37 edges as road files (`roads/campus/`), the network in `campus/campus_network.json`, and **RcTwin > Build Campus Scene** in Unity (asphalt the car drives on, kerbs, buildings, stops; starts at S3).
+- [ ] Elevation and features in the fleet sim's `RoadGraph` itself (the campus is flat today; the polylines carry z, so grades come through the importer once the fleet sim has them).
+- [ ] Campus scene: where two roads meet at a sharp angle (the Y junction by the north road), the sidewalks overlap the asphalt a little. Drawn only; the asphalt collider is right.
 - [ ] Validate against gymkhana (planar) plus coast-down and skidpad tests.
 
 ## Phase 4: Fleet coupling
 
 - [x] Edge profiler and cache format. `tools/edge_profiler.py` sweeps speed x payload x charge per edge under the reference driver and writes `profiles/edge_profile.schema.json` caches with road, car and controller digests; reruns reuse what still matches. Tests in ctest (`tools.edge_profiler`).
-- [ ] Hook cache into fleet sim edge costs (fleet items C, D).
+- [ ] Hook cache into fleet sim edge costs (fleet items C, D). The campus edges are now road files: `python tools/edge_profiler.py roads/campus/*.json` makes their cache; the fleet sim still has to read it (scale times and energies back up from 1/10, or run its buses as 1/10 cars).
 - [ ] Energy-aware dispatch; charging constraints.
 - [ ] Demand forecasting and request reassignment (fleet items A, B), re-evaluated with physical costs.
 
@@ -43,6 +45,7 @@
 
 - [x] Gymnasium env around the Core. `sim_py/rc_twin_env.py`: road following at a target speed, standard library only, optional `gymnasium.Env` wrapper; tests in ctest (`sim_py.env`).
 - [x] Domain randomization and history-conditioned observations (friction, payload, servo lag, motor torque, tyre stiffness, battery resistance; seeded). A trained history-conditioned policy is still to do: needs gymnasium, numpy and SB3 installed.
+- [x] Train where the fleet runs. `sim_py/campus.py`: `CampusEnv` drives stop-to-stop trips on the campus network, drawn by demand weight and routed by shortest path as the fleet sim does; tests in ctest (`sim_py.campus`).
 - [ ] Held-out-parameter and perturbation evaluation. The tools are in place (`RANGES_HELD_OUT`, mid-episode `perturb`, `evaluate`, a pure-pursuit baseline); evaluating a trained policy waits on training.
 
 ## Phase 6: Empirical (optional)
@@ -52,7 +55,7 @@
 
 ## Known issues
 
-- [ ] **Vertical faces in the scene (ramp sides, plateau edges) are not obstacles.** The ground query is height-only (ADR 0005): `RaycastGround` reports whatever is under each wheel, so driving into a ramp's side snaps that wheel up onto the top, and driving off an edge drops it. The Core has no wall or obstacle contact. Needs: a step-height limit in the ground query (a rise above some height is an obstacle, not ground) and an obstacle contact model in the Core. Reported 2026-10-19 while driving the twin; deferred.
+- [ ] **Vertical faces in the scene (ramp sides, plateau edges) are not obstacles.** The ground query is height-only (ADR 0005): `RaycastGround` reports whatever is under each wheel, so driving into a ramp's side snaps that wheel up onto the top, and driving off an edge drops it. The Core has no wall or obstacle contact. Needs: a step-height limit in the ground query (a rise above some height is an obstacle, not ground) and an obstacle contact model in the Core. Reported 2026-10-19 while driving the twin; deferred. The same holds for the campus scene's kerbs and buildings, drawn without colliders for this reason: in the RL environment leaving the asphalt ends the episode instead.
 
 ## Housekeeping
 

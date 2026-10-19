@@ -25,3 +25,17 @@ obs, reward, terminated, truncated, info = env.step((0.1, 0.5))   # steer, throt
 - **`make_gymnasium_env(...)`** wraps it as a `gymnasium.Env` with `Box` spaces, if `gymnasium` and `numpy` are installed. Training with SB3 (PPO/SAC) needs those plus `stable-baselines3`; none are installed or required here.
 
 Tests: `python -I sim_py/test_rc_twin_env.py` (also in ctest as `sim_py.env`).
+
+## `campus.py`: the campus fleet sim's roads
+
+`CampusEnv` is `RcTwinEnv` on the campus fleet sim's road network at 1/10 (`campus/README.md`): each reset draws a stop-to-stop trip by the stops' demand weights and drives its shortest route, so the policy trains on the roads the fleet runs.
+
+```python
+spec = importlib.util.spec_from_file_location("campus", "sim_py/campus.py")
+campus = importlib.util.module_from_spec(spec); spec.loader.exec_module(campus)
+env = campus.CampusEnv(seed=0, ranges=campus.envmod.RANGES_TRAIN)
+obs, info = env.reset(seed=0)                        # info["trip"], e.g. ("S3", "AB4")
+obs, info = env.reset(options={"trip": ("AB1", "S6")})
+```
+
+`RcTwinEnv.reset(options={"road": road_dict})` swaps the road for any env, which is how `CampusEnv` changes route per episode. `max_time` defaults to 120 s here (the longest trip is 69 m). Tests: `python -I sim_py/test_campus.py` (ctest `sim_py.campus`).

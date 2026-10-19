@@ -30,6 +30,12 @@ namespace RcTwin
 
         public bool showHud = true;
 
+        [Header("Start pose (ISO world; R resets here)")]
+        public double homeX;
+        public double homeY;
+        [Tooltip("Heading [rad], counter-clockwise from ISO +x seen from above.")]
+        public double homeYaw;
+
         [Tooltip("Feed the Core the ground from a RaycastGround on this object, if present.")]
         public bool useGroundQuery = true;
 
@@ -108,6 +114,11 @@ namespace RcTwin
                       "Parameters are PROVISIONAL (SlipX defaults), not a measured car.");
         }
 
+        private void Start()
+        {
+            if (homeX != 0.0 || homeY != 0.0 || homeYaw != 0.0) ResetTo(homeX, homeY, homeYaw);
+        }
+
         private void OnDestroy()
         {
             _car?.Dispose();
@@ -168,7 +179,7 @@ namespace RcTwin
             _steerIn = left - right;   // + is left, as in the Core
             _throttleIn = up - down;
 
-            if (kb.rKey.wasPressedThisFrame) ResetTo(0.0, 0.0, 0.0);
+            if (kb.rKey.wasPressedThisFrame) ResetTo(homeX, homeY, homeYaw);
         }
 
         private void FixedUpdate()

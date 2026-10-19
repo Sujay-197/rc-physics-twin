@@ -72,25 +72,28 @@ Drive a road file headlessly (no Unity), with a JSON report of time, energy and 
 python tools/drive_road.py roads/samples/hill_breaker_bend.json --speed 2
 ```
 
+Train on the campus: `sim_py/campus.py` runs the RL environment on stop-to-stop trips over the fleet sim's own road network (`campus/README.md`).
+
 Profile road edges for the fleet sim (time, energy, breaker penalty per speed, payload and charge; reruns reuse what still matches):
 
 ```bash
 python tools/edge_profiler.py roads/samples/*.json --out profiles/cache.json --speeds 1 2 3 --payloads 0 1 --soc 0.8 0.4 --breaker-speed 1
 ```
 
-Open `unity/RcTwin` in Unity Hub with **6000.5.3f1**, run **RcTwin > Build Flat Ground Scene**, and press Play. W/S throttle and brake, A/D steer, R reset. The C# bindings can also be checked without Unity: `native/tests/csharp` (`dotnet run -- build/bin`).
+Open `unity/RcTwin` in Unity Hub with **6000.5.3f1**, run **RcTwin > Build Flat Ground Scene**, and press Play. W/S throttle and brake, A/D steer, R reset. **RcTwin > Build Campus Scene** builds the campus fleet sim's roads at 1/10 instead, the car at the S3 stop. The C# bindings can also be checked without Unity: `native/tests/csharp` (`dotnet run -- build/bin`).
 
 ## Layout
 
 ```
 core/            SlipX vendored at ebdbf3f (C++17); our changes listed in THIRD_PARTY.md
 native/          rc_twin: C ABI over the Core (rc_twin.dll), with C, C++ and C# tests
-unity/RcTwin/    Unity 6 project: P/Invoke bindings, keyboard car, scene builder (hill, bank, ice, speed breaker)
-tools/           toolchain bootstrap; drive_road.py, the headless harness; edge_profiler.py
+unity/RcTwin/    Unity 6 project: P/Invoke bindings, keyboard car, scene builders (test ground; the campus)
+tools/           toolchain bootstrap; drive_road.py, the headless harness; edge_profiler.py; campus_import.py
 profiles/        edge profile cache schema (the fleet sim's input)
-sim_py/          RL environment (rc_twin_env.py); later gymkhana cross-validation, SB3 training
+sim_py/          RL environment (rc_twin_env.py) and its campus trips (campus.py); later gymkhana, SB3 training
+campus/          the campus fleet sim's road network at 1/10 (export, converted network)
 cars/            versioned car directories (YAML), every set labeled measured|identified|provisional
-roads/           road-feature schema and sample data (grade, speed breakers, friction)
+roads/           road-feature schema, sample roads, the campus edges (roads/campus/)
 Docs/            specs, ADRs, roadmap, references
 third_party/     vendored/forked upstream code with licenses preserved
 ```

@@ -1,0 +1,23 @@
+{
+ "schema_version": "0.1.0",
+ "id": "campus-edge-07",
+ "description": "Campus fleet sim edge 7 (node 10 to node 11), 1/10 scale, from Sujay-197/campus_fleet_man_unity@b745220.",
+ "width": 1.409060192,
+ "centreline": [
+  {
+   "x": -5.06905479,
+   "y": -17.75,
+   "z": -2.7421130000000003e-08
+  },
+  {
+   "x": -6.420000000000001,
+   "y": -17.75,
+   "z": -2.7421130000000003e-08
+  },
+  {
+   "x": -7.829055,
+   "y": -17.75,
+   "z": -2.7421130000000003e-08
+  }
+ ]
+}

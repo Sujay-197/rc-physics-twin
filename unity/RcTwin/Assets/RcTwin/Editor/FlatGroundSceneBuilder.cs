@@ -60,6 +60,19 @@ namespace RcTwin.EditorTools
             ice.GetComponent<Renderer>().sharedMaterial = ColourMaterial("Ice", new Color(0.7f, 0.85f, 1f));
             ice.AddComponent<GroundSurface>().muScale = 0.25f;
 
+            var car = BuildCar(p);
+            AttachChaseCamera(car.transform);
+
+            Directory.CreateDirectory(Path.GetDirectoryName(ScenePath));
+            EditorSceneManager.SaveScene(scene, ScenePath);
+            RegisterScene(ScenePath);
+            Debug.Log($"Built {ScenePath}. Press Play; W/S throttle, A/D steer, R reset.");
+        }
+
+        // The reference car, proportions from the Core's provisional defaults,
+        // at the origin facing +z. Shared by every scene builder.
+        internal static TwinCar BuildCar(RcTwinNative.Params p)
+        {
             // Car root sits at the CoG; children are placed from the params.
             var car = new GameObject("TwinCar");
             car.AddComponent<RaycastGround>();
@@ -106,19 +119,25 @@ namespace RcTwin.EditorTools
                 twin.wheels[i] = pivot.transform;
             }
             car.transform.position = new Vector3(0f, h, 0f);
+            return twin;
+        }
 
+        internal static void AttachChaseCamera(Transform target)
+        {
             var cam = Camera.main;
-            if (cam != null)
-            {
-                cam.nearClipPlane = 0.02f;
-                cam.transform.position = new Vector3(0f, 0.8f, -1.8f);
-                cam.gameObject.AddComponent<ChaseCamera>().target = car.transform;
-            }
+            if (cam == null) return;
+            cam.nearClipPlane = 0.02f;
+            cam.transform.position = new Vector3(target.position.x, 0.8f, target.position.z - 1.8f);
+            cam.gameObject.AddComponent<ChaseCamera>().target = target;
+        }
 
-            Directory.CreateDirectory(Path.GetDirectoryName(ScenePath));
-            EditorSceneManager.SaveScene(scene, ScenePath);
-            EditorBuildSettings.scenes = new[] { new EditorBuildSettingsScene(ScenePath, true) };
-            Debug.Log($"Built {ScenePath}. Press Play; W/S throttle, A/D steer, R reset.");
+        // Adds the scene to the build list if missing, keeping the others.
+        internal static void RegisterScene(string path)
+        {
+            var list = new System.Collections.Generic.List<EditorBuildSettingsScene>(EditorBuildSettings.scenes);
+            if (list.Exists(s => s.path == path)) return;
+            list.Add(new EditorBuildSettingsScene(path, true));
+            EditorBuildSettings.scenes = list.ToArray();
         }
 
         // A ramp: width across local x, rising from height 0 at local z = 0 to
@@ -200,7 +219,7 @@ namespace RcTwin.EditorTools
             go.AddComponent<MeshCollider>().sharedMesh = mesh;
         }
 
-        private static Material ColourMaterial(string name, Color c)
+        internal static Material ColourMaterial(string name, Color c)
         {
             string path = $"{GenDir}/{name}.mat";
             var m = AssetDatabase.LoadAssetAtPath<Material>(path);
@@ -248,7 +267,7 @@ namespace RcTwin.EditorTools
             return m;
         }
 
-        private static Shader LitShader() =>
+        internal static Shader LitShader() =>
             Shader.Find("Universal Render Pipeline/Lit") ?? Shader.Find("Standard");
     }
 }
