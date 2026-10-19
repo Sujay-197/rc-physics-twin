@@ -72,9 +72,9 @@
 //   to represent it with, and inventing one would be the guess ADR-0009
 //   refuses; ADR 0007 adds one that is measured statically on the car.
 //
-//   No suspension. Load transfer is quasi-static, so it arrives in the same
-//   instant as the acceleration causing it (ADR-0022). Roll and pitch stay
-//   zero and are L3's.
+//   No suspension, unless params.has_suspension() (rc-physics-twin ADR 0008,
+//   below). Load transfer is quasi-static, so it arrives in the same instant
+//   as the acceleration causing it (ADR-0022). Roll and pitch stay zero.
 //
 // ============================================================================
 // The algebraic loops, and how each is closed
@@ -141,6 +141,28 @@
 // speed, so there the update is explicit. The ESC torque reaches the wheels
 // through the differential as torque; motor braking can stop a wheel but not
 // reverse it, which is lock-up. With wheel_inertia == 0 none of this runs.
+//
+// ============================================================================
+// Suspension (rc-physics-twin ADR 0008)
+// ============================================================================
+//
+// With both wheel rates positive the body heaves, pitches and rolls on a
+// spring and damper at each corner, absolute to the world: pos.z is the
+// height of the point h_cog below the CoG, pitch is nose up, roll is right
+// side down, their rates in vel_body.z, rates.y and rates.x. A corner sits at
+// Z + x pitch + y roll; its spring carries k (s0 + ground - z) - c dz/dt,
+// never negative, with a bump stop ten times stiffer past suspension_travel.
+// Those spring forces (times the road normal's z on a grade) are the tyre
+// loads, held for the chassis step in place of the two load passes; then the
+// six body states advance by RK4 with the tyre forces held, moments about the
+// point below the CoG:
+//
+//   m Z''      = sum F - m g
+//   I_yy p''   = sum x F + m h a_x + m g h p
+//   I_xx r''   = sum y F + m h a_y + m g h r
+//
+// a_x, a_y being the CoG's kinematic accelerations. Small angles; pitch and
+// roll centres at the ground; the damper sees the body's velocity only.
 //
 // Still planar: x, y and yaw are the horizontal projection, and the speed is
 // integrated into them as if horizontal, which overstates horizontal travel
@@ -239,6 +261,14 @@ struct StepConstants {
   // damping); anywhere else the torque is the step's constant budget.
   double esc_a = 0.0;                                          //    [N m]
   double esc_b = 0.0;                                          // [N m s]
+
+  // Suspension (ADR 0008): on, per-wheel ground heights, static sags, and
+  // the loads and budgets the springs give at the step's start.
+  bool susp = false;
+  std::array<double, kWheelCount> ground_h{};                  //      [m]
+  std::array<double, kWheelCount> sag{};                       //      [m]
+  WheelLoads susp_loads;
+  std::array<TyreBudget, kWheelCount> susp_budget{};
 
   bool graded = false;          // the road plane is tilted
   Vec3 normal{0.0, 0.0, 1.0};   // mean unit road normal, world frame    [-]
@@ -350,6 +380,9 @@ class DoubleTrackL2 final : public VehicleModel {
  private:
   void run(VehicleState& s, const DriveInput& u, const GroundContact* ground,
            double dt, StepDiagnostics* out) const {
+    // The body's state at the step's start (ADR 0008), before s is written.
+    const std::array<double, 6> body0 = {s.vel_body.z, s.rates.y, s.rates.x,
+                                         s.pos.z,      s.pitch,   s.roll};
     const double delta_cmd = clamp(u.steer_cmd, -params_.steer_max,
                                    params_.steer_max);
     const bool steer_sat = (delta_cmd != u.steer_cmd);
@@ -540,6 +573,30 @@ class DoubleTrackL2 final : public VehicleModel {
     // The budget the first load pass will use, every pass, every derivative.
     budget_at(c, c.statics, &c.static_budget);
 
+    c.susp = params_.has_suspension();
+    if (c.susp) {
+      for (unsigned i = 0; i < kWheelCount; ++i) {
+        const bool front = (i == kFrontLeft || i == kFrontRight);
+        c.ground_h[i] = (ground != nullptr) ? ground->wheel[i].height : 0.0;
+        // The sag that holds the car level at rest on level ground.
+        c.sag[i] = level.fz[i] /
+                   (front ? params_.wheel_rate_front : params_.wheel_rate_rear);
+      }
+      std::array<double, kWheelCount> spring{};
+      spring_forces(c, body0, &spring);
+      WheelLoads& L = c.susp_loads;
+      for (unsigned i = 0; i < kWheelCount; ++i) {
+        L.fz[i] = spring[i] * c.normal.z;
+        if (spring[i] == 0.0) L.wheel_lifted = true;
+      }
+      L.fz_front = L.fz[kFrontLeft] + L.fz[kFrontRight];
+      L.fz_rear = L.fz[kRearLeft] + L.fz[kRearRight];
+      L.transfer_long = c.statics.fz_front - L.fz_front;
+      L.transfer_lat = 0.5 * ((L.fz[kFrontRight] - L.fz[kFrontLeft]) +
+                              (L.fz[kRearRight] - L.fz[kRearLeft]));
+      budget_at(c, L, &c.susp_budget);
+    }
+
     StateVec<kN> y{};
     y[kVx] = s.vel_body.x;
     y[kVy] = s.vel_body.y;
@@ -585,7 +642,7 @@ class DoubleTrackL2 final : public VehicleModel {
     // Algebraic, like the per-wheel Fz: a reported consequence of this step's
     // load, not a degree of freedom (ADR-0031).
     s.pack_v = v_pack;
-    if (ground != nullptr) s.pos.z = mean_height(*ground);
+    if (ground != nullptr && !c.susp) s.pos.z = mean_height(*ground);
 
     // Reported at the end of the step, so the numbers describe the state the
     // caller now holds. Same convention as L0 and L1.
@@ -606,6 +663,22 @@ class DoubleTrackL2 final : public VehicleModel {
       }
     }
     for (unsigned i = 0; i < kWheelCount; ++i) s.Fz[i] = f.fz[i];
+
+    if (c.susp) {
+      // The body, with the tyre forces held from the end-of-step evaluation:
+      // the CoG's kinematic accelerations include gravity along the road.
+      double gx = 0.0;
+      double gy = 0.0;
+      if (c.graded) grade_accel(c, y[kYaw], &gx, &gy);
+      std::array<double, 6> b = body0;
+      integrate_body(c, f.ax + gx, f.ay + gy, dt, &b);
+      s.vel_body.z = b[0];
+      s.rates.y = b[1];
+      s.rates.x = b[2];
+      s.pos.z = b[3];
+      s.pitch = b[4];
+      s.roll = b[5];
+    }
 
     if (out != nullptr) {
       reset_diagnostics(*out, Tier::L2_DoubleTrack);
@@ -650,6 +723,67 @@ class DoubleTrackL2 final : public VehicleModel {
       out->speed_saturated = speed_sat;
       out->esc_saturated = esc_sat;
     }
+  }
+
+  // ----------------------------------------------------- body (ADR 0008)
+
+  // The spring and damper force at each corner for body state
+  // b = {Z', pitch', roll', Z, pitch, roll}. Never negative: a wheel whose
+  // spring would pull has left the ground.
+  void spring_forces(const StepConstants& c, const std::array<double, 6>& b,
+                     std::array<double, kWheelCount>* out) const {
+    for (unsigned i = 0; i < kWheelCount; ++i) {
+      const bool front = (i == kFrontLeft || i == kFrontRight);
+      const double k = front ? params_.wheel_rate_front : params_.wheel_rate_rear;
+      const double d = front ? params_.damping_front : params_.damping_rear;
+      const double z = (b[3] + c.wheel_x[i] * b[4]) + c.wheel_y[i] * b[5];
+      const double zd = (b[0] + c.wheel_x[i] * b[1]) + c.wheel_y[i] * b[2];
+      const double comp = (c.sag[i] + c.ground_h[i]) - z;
+      double force = 0.0;
+      if (comp > 0.0) {
+        force = k * comp - d * zd;
+        const double over = comp - (c.sag[i] + params_.suspension_travel);
+        if (over > 0.0) force += 10.0 * k * over;  // the bump stop
+        if (force < 0.0) force = 0.0;
+      }
+      (*out)[i] = force;
+    }
+  }
+
+  // Advance the body's six states by dt with the CoG's kinematic
+  // accelerations (ax, ay) held. Velocity-like states first, as integrate()
+  // expects. Sums are paired by axle, so a mirrored state mirrors exactly.
+  void integrate_body(const StepConstants& c, double ax, double ay, double dt,
+                      std::array<double, 6>* b) const {
+    const double m = params_.mass;
+    const double h = params_.h_cog;
+    const auto deriv = [&](const StateVec<6>& q) {
+      std::array<double, kWheelCount> f{};
+      spring_forces(c, q, &f);
+      const double sum = (f[kFrontLeft] + f[kFrontRight]) +
+                         (f[kRearLeft] + f[kRearRight]);
+      const double sum_x =
+          (c.wheel_x[kFrontLeft] * f[kFrontLeft] +
+           c.wheel_x[kFrontRight] * f[kFrontRight]) +
+          (c.wheel_x[kRearLeft] * f[kRearLeft] +
+           c.wheel_x[kRearRight] * f[kRearRight]);
+      const double sum_y =
+          (c.wheel_y[kFrontLeft] * f[kFrontLeft] +
+           c.wheel_y[kFrontRight] * f[kFrontRight]) +
+          (c.wheel_y[kRearLeft] * f[kRearLeft] +
+           c.wheel_y[kRearRight] * f[kRearRight]);
+      StateVec<6> d{};
+      d[0] = sum / m - kGravity;
+      d[1] = (sum_x + m * h * ax + m * kGravity * h * q[4]) / params_.iyy;
+      d[2] = (sum_y + m * h * ay + m * kGravity * h * q[5]) / params_.ixx;
+      d[3] = q[0];
+      d[4] = q[1];
+      d[5] = q[2];
+      return d;
+    };
+    StateVec<6> y = *b;
+    integrate<6>(integrator_, y, dt, 3, deriv);
+    *b = y;
   }
 
   // ---------------------------------------------------- steering geometry
@@ -1307,18 +1441,23 @@ class DoubleTrackL2 final : public VehicleModel {
     // What both passes agree about, worked out once.
     const Kinematics kin = kinematics(q, c);
 
-    // Pass one: static loads, to get an acceleration to transfer load with.
-    // The budget at those loads is a per-step constant, so it arrives ready.
-    Forces first;
-    evaluate_forces(c, kin, c.statics, c.static_budget, &first);
+    if (c.susp) {
+      // The springs' loads, held for the step (ADR 0008): one pass.
+      evaluate_forces(c, kin, c.susp_loads, c.susp_budget, f);
+    } else {
+      // Pass one: static loads, to get an acceleration to transfer load with.
+      // The budget at those loads is a per-step constant, so it arrives ready.
+      Forces first;
+      evaluate_forces(c, kin, c.statics, c.static_budget, &first);
 
-    // Pass two: the loads those accelerations imply, and the forces they give.
-    // Two passes, always, whatever the residual (ADR-0027).
-    const WheelLoads loads =
-        quasi_static_loads(params_, first.ax, first.ay, c.g_normal);
-    std::array<TyreBudget, kWheelCount> budget;
-    budget_at(c, loads, &budget);
-    evaluate_forces(c, kin, loads, budget, f);
+      // Pass two: the loads those accelerations imply, and the forces they
+      // give. Two passes, always, whatever the residual (ADR-0027).
+      const WheelLoads loads =
+          quasi_static_loads(params_, first.ax, first.ay, c.g_normal);
+      std::array<TyreBudget, kWheelCount> budget;
+      budget_at(c, loads, &budget);
+      evaluate_forces(c, kin, loads, budget, f);
+    }
 
     StateVec<kN> d{};
     d[kVx] = f->ax + q[kVy] * q[kR];

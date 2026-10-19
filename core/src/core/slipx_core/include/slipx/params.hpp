@@ -262,6 +262,24 @@ struct VehicleParams {
   // steer to a known angle and read both front wheels. No effect below L2,
   // whose single front wheel is the reference wheel already.
   double ackermann = 0.0;      //                                      [-]
+
+  // ----------------------------------------------------------- suspension
+  // A body that heaves, pitches and rolls on springs at L2 (rc-physics-twin
+  // ADR 0008). On when both wheel rates are positive; all zero, the default,
+  // keeps SlipX's quasi-static load transfer (ADR-0022) exactly. Wheel rates
+  // are measured at the wheel on the bench: a known load on one corner (a
+  // bathroom scale) and the wheel's travel (a ruler). Damping comes from a
+  // drop test's decay. Uses ixx and iyy. No effect below L2.
+  double wheel_rate_front = 0.0;   // per wheel, at the wheel           [N/m]
+  double wheel_rate_rear = 0.0;    //                                    [N/m]
+  double damping_front = 0.0;      // per wheel, at the wheel        [N s/m]
+  double damping_rear = 0.0;       //                                [N s/m]
+  double suspension_travel = 0.0;  // compression from static to the
+                                   // bump stop                           [m]
+
+  bool has_suspension() const {
+    return wheel_rate_front > 0.0 && wheel_rate_rear > 0.0;
+  }
 };
 
 // Returns nullptr if the parameter set is usable, or a static message naming

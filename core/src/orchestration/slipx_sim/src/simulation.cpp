@@ -79,6 +79,13 @@ std::string params_digest(const VehicleParams& p) {
   // wheel dynamics is the digest it always was.
   if (p.wheel_inertia != 0.0) h.update(p.wheel_inertia);
   if (p.ackermann != 0.0) h.update(p.ackermann);  // ADR 0007, likewise
+  if (p.has_suspension()) {                        // ADR 0008, likewise
+    h.update(p.wheel_rate_front);
+    h.update(p.wheel_rate_rear);
+    h.update(p.damping_front);
+    h.update(p.damping_rear);
+    h.update(p.suspension_travel);
+  }
   return h.hex();
 }
 

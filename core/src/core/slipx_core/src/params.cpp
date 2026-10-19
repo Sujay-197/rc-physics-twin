@@ -15,6 +15,7 @@
 // under -fno-exceptions.
 
 #include <cmath>
+#include <initializer_list>
 
 #include "slipx/params.hpp"
 
@@ -127,6 +128,18 @@ const char* validate(const VehicleParams& p) {
   }
   if (!(p.ackermann >= -1.0 && p.ackermann <= 1.0)) {
     return "ackermann must be between -1 (anti) and 1 (ideal) [-]";
+  }
+  for (double v : {p.wheel_rate_front, p.wheel_rate_rear, p.damping_front,
+                   p.damping_rear, p.suspension_travel}) {
+    if (!(v >= 0.0) || !std::isfinite(v)) {
+      return "suspension parameters must be finite and not negative";
+    }
+  }
+  if ((p.wheel_rate_front > 0.0) != (p.wheel_rate_rear > 0.0)) {
+    return "suspension needs both wheel rates, front and rear [N/m]";
+  }
+  if (p.has_suspension() && !(p.suspension_travel > 0.0)) {
+    return "suspension needs a positive suspension_travel [m]";
   }
 
   return nullptr;
