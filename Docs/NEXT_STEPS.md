@@ -4,14 +4,15 @@
 
 - [ ] Sign off ADR 0003 (Unity instead of Isaac Sim for the twin).
 - [ ] Choose the target car: generic 1/10 electric Ackermann (provisional) or a specific kit.
-- [ ] Fork `ibrahimsel/slipx` on GitHub and decide: vendor into `core/` or git submodule.
-- [ ] Verify upstream `LICENSE` files (SlipX, Gym-Khana) and fill `THIRD_PARTY.md`.
+- [ ] Fork `ibrahimsel/slipx` on GitHub and decide: vendor into `core/` or git submodule. Fork done ([Sujay-197/slipx](https://github.com/Sujay-197/slipx)); the choice is open, see [`slipx-vendor-vs-submodule.md`](slipx-vendor-vs-submodule.md).
+- [ ] Verify upstream `LICENSE` files (SlipX, Gym-Khana) and fill `THIRD_PARTY.md`. SlipX done 2026-10-19; Gym-Khana still open.
 - [ ] Confirm Unity version and whether it can load a C++ native plugin on the dev machine (Windows).
 - [ ] Open `rc_transit/docs/hardware-bom.md` in the fleet repo; extract any real mass, wheelbase, motor, battery numbers.
 
 ## Phase 1: Foundation
 
-- [ ] Fork SlipX; pin a commit; build `slipx_core` standalone; run `slipx-conformance`.
+- [x] Fork SlipX; pin a commit; build `slipx_core` standalone; run `slipx-conformance`. Pinned `ebdbf3f`; built and run with zig/Clang 21, see [`slipx-windows-build.md`](slipx-windows-build.md).
+- [ ] Repeat that build with MSVC once the Windows SDK is installed, including the Python bindings and the `slipx-conformance` console script.
 - [ ] Wrap Core in a C ABI (`step`, `reset`, `set_params`, `get_state`, ground-query callback).
 - [ ] Unity: load the plugin, drive the reference car on flat ground with keyboard input.
 - [ ] Headless harness implementing the same ground query (for CI and the profiler).
