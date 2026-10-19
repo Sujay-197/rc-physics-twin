@@ -33,6 +33,11 @@ namespace RcTwin
         [Tooltip("Feed the Core the ground from a RaycastGround on this object, if present.")]
         public bool useGroundQuery = true;
 
+        [Tooltip("Per-wheel rotational inertia [kg m^2] (ADR 0006). 0 keeps quasi-static wheels. " +
+                 "The default, 1e-5, is SlipX ADR-0027's order of magnitude for a 1/10-scale wheel: " +
+                 "PROVISIONAL until a spin-down test on the real car measures it.")]
+        public double wheelInertia = 1e-5;
+
         private TwinVehicle _car;
         private RcTwinNative.Params _p;
         private RcTwinNative.State _prev, _curr;
@@ -43,6 +48,13 @@ namespace RcTwin
         private bool _offGround;
 
         public RcTwinNative.State State => _curr;
+
+        /// <summary>Slip ratio of wheel i (0 FL .. 3 RR) along the body axis: 0 rolling, > 0 spinning, -1 locked.</summary>
+        public double Slip(int i)
+        {
+            double v = _curr.vx;
+            return (Omega(_curr, i) * _p.wheelRadius - v) / Math.Max(Math.Abs(v), _p.vEps);
+        }
         public RcTwinNative.Params Params => _p;
         public bool OffGround => _offGround;
 
@@ -54,6 +66,7 @@ namespace RcTwin
         private void Awake()
         {
             _p = RcTwinNative.DefaultParams();
+            _p.wheelInertia = wheelInertia;
             _car = new TwinVehicle(tier, _p);
             _ground = useGroundQuery ? GetComponent<RaycastGround>() : null;
             if (_ground != null) _car.SetGround(_ground);
@@ -69,10 +82,15 @@ namespace RcTwin
             _car = null;
         }
 
-        /// <summary>Place the car at ISO (x, y), heading yaw, at rest or at speed vx.</summary>
+        /// <summary>Place the car at ISO (x, y), heading yaw, at rest or rolling at speed vx.</summary>
         public void ResetTo(double x, double y, double yaw, double vx = 0.0)
         {
-            var s = new RcTwinNative.State { x = x, y = y, yaw = yaw, vx = vx, soc = 1.0, packV = 11.1 };
+            double w = vx / _p.wheelRadius;  // wheels rolling with the car
+            var s = new RcTwinNative.State
+            {
+                x = x, y = y, yaw = yaw, vx = vx, soc = 1.0, packV = 11.1,
+                omegaFL = w, omegaFR = w, omegaRL = w, omegaRR = w,
+            };
             _car.Reset(s);
             _offGround = false;
             _prev = _curr = _car.State;
@@ -177,14 +195,18 @@ namespace RcTwin
             if (_ground != null)
                 mu = ((_ground.Last[0].muScale + _ground.Last[1].muScale) +
                       (_ground.Last[2].muScale + _ground.Last[3].muScale)) / 4.0;
-            GUI.Box(new Rect(10, 10, 280, 185), GUIContent.none);
-            GUI.Label(new Rect(20, 15, 270, 175),
+            string wheels = _p.wheelInertia > 0.0
+                ? $"rear slip  L {Slip(2):+0.00;-0.00}  R {Slip(3):+0.00;-0.00}\n"
+                : "wheels quasi-static (inertia 0)\n";
+            GUI.Box(new Rect(10, 10, 280, 200), GUIContent.none);
+            GUI.Label(new Rect(20, 15, 270, 190),
                 $"SlipX {RcTwinNative.CoreVersion}  {tier}\n" +
                 $"speed  {s.Speed * 3.6:F1} km/h  ({s.vx:F2} m/s)\n" +
                 $"yaw rate  {s.yawRate:F2} rad/s\n" +
                 $"steer  {s.steer * Mathf.Rad2Deg:F1} deg (achieved)\n" +
                 $"SoC  {s.soc * 100.0:F2} %   pack {s.packV:F2} V\n" +
                 $"ground  z {s.z:F2} m   grip x{mu:F2}\n" +
+                wheels +
                 (_offGround ? "OFF THE GROUND: press R\n" : "") +
                 "PROVISIONAL parameters, not validated\n" +
                 "W/S throttle/brake  A/D steer  R reset");

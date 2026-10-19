@@ -60,7 +60,7 @@ static void moving(rc_twin_vehicle* v, double vx, double yaw) {
 }
 
 static void test_abi_v2(void) {
-  CHECK(rc_twin_abi_version() == 2u);
+  CHECK(rc_twin_abi_version() >= 2u);
   CHECK(rc_twin_set_ground_query(NULL, query, NULL) == RC_TWIN_E_NULL);
 }
 

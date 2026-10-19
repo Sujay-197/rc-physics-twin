@@ -26,12 +26,20 @@ namespace RcTwin.Tests
             Assert.IsNotNull(_car.GetComponent<RaycastGround>(), "the car reads the scene's ground");
         }
 
+        // Holds W for the run if throttle is set. The caller releases it with
+        // Lift(): code after the last yield of a nested coroutine is not run
+        // by the test runner, so a release here would never happen.
         private IEnumerator Run(double x, double y, double yaw, double vx, float seconds, bool throttle)
         {
             _car.ResetTo(x, y, yaw, vx);
             if (throttle) Press(_kb.wKey);
             yield return new WaitForSeconds(seconds);
-            if (throttle) Release(_kb.wKey);
+        }
+
+        private void Lift()
+        {
+            if (_kb.wKey.isPressed) Release(_kb.wKey);
+            if (_kb.sKey.isPressed) Release(_kb.sKey);
         }
 
         [UnityTest]
@@ -61,8 +69,11 @@ namespace RcTwin.Tests
         {
             yield return Load();
             yield return Run(2.0, -10.0, 0.0, 0.5, 1.0f, true);    // flat ground
+            Lift();
             double grip = _car.State.vx;
+            yield return null;
             yield return Run(2.0, 5.5, 0.0, 0.5, 1.0f, true);      // the ice patch
+            Lift();
             double ice = _car.State.vx;
             Assert.Less(ice, 0.5 * grip, $"ice {ice:F3} m/s vs grip {grip:F3} m/s");
             Assert.Greater(ice, 0.5, "but some traction remains");
@@ -77,6 +88,28 @@ namespace RcTwin.Tests
             // m g sin(phi) / C_alpha, about 8 mm/s sideways: 9.4 mm in 1 s natively.
             Assert.Greater(_car.State.y, -5.5 + 0.005, "drifted left, toward the low edge");
             Assert.Greater(_car.State.yaw, 0.0, "and turned toward it");
+        }
+
+        [UnityTest]
+        public IEnumerator OnIceTheRearWheelsSpinAndThenLock()
+        {
+            yield return Load();
+            Assert.Greater(_car.Params.wheelInertia, 0.0, "wheel dynamics on (ADR 0006)");
+            yield return Run(2.0, 5.5, 0.0, 0.5, 0.5f, true);      // full throttle on ice
+            Lift();
+            Assert.Greater(_car.Slip(2), 0.5, "rear left spinning");
+            Assert.Greater(_car.Slip(3), 0.5, "rear right spinning");
+            Assert.Less(System.Math.Abs(_car.Slip(0)), 0.05, "front rolling");
+
+            yield return null;                                       // the release lands
+            Assert.IsFalse(_kb.wKey.isPressed);
+            _car.ResetTo(2.0, 5.5, 0.0, 3.0);                       // rolling at 3 m/s
+            Press(_kb.sKey);
+            yield return new WaitForSeconds(0.3f);
+            Lift();
+            Assert.AreEqual(0.0, _car.State.omegaRL, "rear left locked");
+            Assert.AreEqual(0.0, _car.State.omegaRR, "rear right locked");
+            Assert.Greater(_car.State.vx, 1.5, "still sliding");
         }
 
         [UnityTest]

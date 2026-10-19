@@ -20,6 +20,7 @@
  *
  * v2: ground query (rc_twin_ground_sample, rc_twin_set_ground_query,
  *     RC_TWIN_E_GROUND).
+ * v3: rc_twin_params.wheel_inertia (ADR 0006).
  */
 #ifndef RC_TWIN_H
 #define RC_TWIN_H
@@ -40,7 +41,7 @@
 extern "C" {
 #endif
 
-#define RC_TWIN_ABI_VERSION 2u
+#define RC_TWIN_ABI_VERSION 3u
 
 typedef int32_t rc_twin_status;
 enum {
@@ -114,6 +115,11 @@ typedef struct rc_twin_params {
   double steer_max, steer_rate_max, steer_bandwidth, steer_damping;
 
   double drag_coeff, roll_resist, v_eps;
+
+  /* Per wheel, including reflected drivetrain inertia [kg m^2]. 0 (the
+   * default) keeps quasi-static wheels; > 0 makes wheel speeds integrated
+   * state at L2, so wheelspin and lock-up happen (ADR 0006). */
+  double wheel_inertia;
 } rc_twin_params;
 
 typedef struct rc_twin_vehicle rc_twin_vehicle;
