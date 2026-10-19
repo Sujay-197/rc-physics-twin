@@ -35,3 +35,14 @@ if(BUILD_TESTING)
   add_test(NAME rc_twin.equivalence COMMAND test_equivalence)
 
 endif()
+
+# Copy the plugin into the Unity project: cmake --build build --target unity_plugin
+# Close the Unity editor first: it keeps native plugins loaded until it exits.
+set(RC_TWIN_UNITY_PLUGIN_DIR
+    "${PROJECT_SOURCE_DIR}/unity/RcTwin/Assets/Plugins/x86_64" CACHE PATH
+    "Where unity_plugin copies rc_twin.dll")
+add_custom_target(unity_plugin
+  COMMAND ${CMAKE_COMMAND} -E make_directory "${RC_TWIN_UNITY_PLUGIN_DIR}"
+  COMMAND ${CMAKE_COMMAND} -E copy_if_different $<TARGET_FILE:rc_twin> "${RC_TWIN_UNITY_PLUGIN_DIR}"
+  DEPENDS rc_twin
+  COMMENT "Copying rc_twin.dll to ${RC_TWIN_UNITY_PLUGIN_DIR}")

@@ -40,3 +40,7 @@ Thumbs.db
 
 # local native toolchain (tools/bootstrap_toolchain.py)
 .toolchain/
+
+# .NET build outputs (native/tests/csharp)
+bin/
+obj/

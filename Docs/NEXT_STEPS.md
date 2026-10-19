@@ -13,11 +13,13 @@
 
 - [x] Fork SlipX; pin a commit; build `slipx_core` standalone; run `slipx-conformance`. Pinned `ebdbf3f`; built and run with zig/Clang 21, see [`slipx-windows-build.md`](slipx-windows-build.md).
 - [ ] Repeat that build with MSVC once the Windows SDK is installed, including the Python bindings and the `slipx-conformance` console script.
-- [ ] Wrap Core in a C ABI (`step`, `reset`, `set_params`, `get_state`, ground-query callback).
-- [ ] Unity: load the plugin, drive the reference car on flat ground with keyboard input.
+- [x] Wrap Core in a C ABI (`step`, `reset`, `set_params`, `get_state`). `native/`: `rc_twin.dll`, tested bit-identical against the Core. The ground-query callback moves to Phase 2, where the Core change that consumes it lands.
+- [ ] Unity: load the plugin, drive the reference car on flat ground with keyboard input. Project, bindings, scene builder and Edit Mode tests are in `unity/RcTwin`; the bindings pass 62 checks against the DLL outside Unity and all scripts compile against Unity 6000.5.3f1's assemblies. **Not yet run in the editor:** batch mode needs a signed-in Unity Hub licence. Open it, build the scene, press Play and run the Edit Mode tests.
 - [ ] Headless harness implementing the same ground query (for CI and the profiler).
 
 ## Phase 2: Vehicle
+
+- [ ] Ground-query callback in the C ABI (`rc_twin_set_ground_query`), consumed by the Core per contact patch.
 
 - [ ] Ackermann steering geometry.
 - [ ] Per-wheel spin state (lock-up and wheelspin representable).

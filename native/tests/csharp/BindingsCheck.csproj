@@ -1,0 +1,17 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- Runs the Unity P/Invoke bindings against build/bin/rc_twin.dll outside
+       the editor. Build with any .NET 8 SDK (Unity ships one under
+       Editor/Data/DotNetSdk). -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <PlatformTarget>x64</PlatformTarget>
+    <Nullable>disable</Nullable>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="Program.cs" />
+    <Compile Include="../../../unity/RcTwin/Assets/RcTwin/Runtime/RcTwinNative.cs" Link="RcTwinNative.cs" />
+  </ItemGroup>
+</Project>
