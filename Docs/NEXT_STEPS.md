@@ -15,7 +15,7 @@
 - [ ] Repeat that build with MSVC once the Windows SDK is installed, including the Python bindings and the `slipx-conformance` console script.
 - [x] Wrap Core in a C ABI (`step`, `reset`, `set_params`, `get_state`). `native/`: `rc_twin.dll`, tested bit-identical against the Core. The ground-query callback moves to Phase 2, where the Core change that consumes it lands.
 - [x] Unity: load the plugin, drive the reference car on flat ground with keyboard input. `unity/RcTwin`, scene `Assets/Scenes/FlatGround.unity`. Verified in Unity 6000.5.3f1 batch mode on 2026-10-19: 5/5 Edit Mode tests (plugin load, defaults, driving, frame mapping) and 2/2 Play Mode tests (simulated W then A drives forward then turns left on the real transform; R resets to rest).
-- [ ] Headless harness implementing the same ground query (for CI and the profiler).
+- [x] Headless harness implementing the same ground query (for CI and the profiler). `tools/drive_road.py`: a road file becomes the ground through `rc_twin_road_*` (ABI 6); pure-pursuit and speed control; JSON report. Its tests run in ctest (`tools.drive_road`).
 
 ## Phase 2: Vehicle
 
@@ -28,8 +28,8 @@
 ## Phase 3: Road
 
 - [x] Suspension (spring/damper per corner). ADR 0008: opt-in at L2 from measured wheel rates and damping (L3 stays SlipX's); body heave, pitch and roll; per-wheel ground heights act; bump stop. The Unity twin runs DEMO springs (3 Hz, 0.3 damping, 15 mm travel) and has a speed breaker. Replace the demo values with bench measurements.
-- [ ] Road-feature schema: elevation, banking, speed breakers, surface.
-- [ ] Add elevation and features to `RoadGraph` and the Unity build tool.
+- [x] Road-feature schema: elevation, banking, speed breakers, surface. `roads/road.schema.json` (0.1.0), two sample roads, and the road ground model in `native/src/rc_twin_road.cpp`.
+- [ ] Add elevation and features to `RoadGraph` and the Unity build tool. `RoadGraph` lives in the fleet sim repo (`campus_fleet_man_unity`), not on this machine: export its edges in the road schema, or have its build tool read the schema.
 - [ ] Validate against gymkhana (planar) plus coast-down and skidpad tests.
 
 ## Phase 4: Fleet coupling

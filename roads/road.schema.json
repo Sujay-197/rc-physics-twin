@@ -1,0 +1,60 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/Sujay-197/rc-physics-twin/roads/road.schema.json",
+  "title": "rc-physics-twin road edge",
+  "description": "One road edge: a centreline with elevation and banking, a width, surface stretches and speed breakers. World frame ISO 8855 (x, y in the ground plane, z up), SI units, angles in radians. Arc length s is horizontal (measured in the x-y plane) along the centreline from its first point; the first and last segments extend straight beyond the ends. Off the road (|lateral offset| > width / 2) is not modelled: the ground query fails there.",
+  "type": "object",
+  "required": ["schema_version", "id", "width", "centreline"],
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": { "const": "0.1.0" },
+    "id": { "type": "string", "minLength": 1, "description": "Edge id, as the fleet sim's RoadGraph names it." },
+    "description": { "type": "string" },
+    "width": { "type": "number", "exclusiveMinimum": 0, "description": "Drivable width [m], centred on the centreline." },
+    "centreline": {
+      "type": "array",
+      "minItems": 2,
+      "description": "Polyline points in travel order. Consecutive points must not coincide.",
+      "items": {
+        "type": "object",
+        "required": ["x", "y", "z"],
+        "additionalProperties": false,
+        "properties": {
+          "x": { "type": "number", "description": "[m]" },
+          "y": { "type": "number", "description": "[m]" },
+          "z": { "type": "number", "description": "Elevation of the centreline [m]." },
+          "bank": { "type": "number", "minimum": -0.5, "maximum": 0.5, "default": 0, "description": "Banking [rad], positive when the road rises to the LEFT of travel. Linear between points." }
+        }
+      }
+    },
+    "surfaces": {
+      "type": "array",
+      "description": "Stretches of road whose grip differs from the tyre data's reference surface (mu_scale 1). Later entries win where stretches overlap.",
+      "items": {
+        "type": "object",
+        "required": ["from_s", "to_s", "mu_scale"],
+        "additionalProperties": false,
+        "properties": {
+          "name": { "type": "string" },
+          "from_s": { "type": "number", "minimum": 0, "description": "[m]" },
+          "to_s": { "type": "number", "minimum": 0, "description": "[m], greater than from_s." },
+          "mu_scale": { "type": "number", "minimum": 0, "description": "Multiplies the tyre's peak friction (ADR 0005)." }
+        }
+      }
+    },
+    "speed_breakers": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["s", "height", "length", "profile"],
+        "additionalProperties": false,
+        "properties": {
+          "s": { "type": "number", "minimum": 0, "description": "Arc length of the breaker's centre [m]." },
+          "height": { "type": "number", "exclusiveMinimum": 0, "description": "[m]" },
+          "length": { "type": "number", "exclusiveMinimum": 0, "description": "Along the road [m]." },
+          "profile": { "enum": ["round_hump"], "description": "round_hump: height * sin^2(pi u / length), u from the leading edge." }
+        }
+      }
+    }
+  }
+}

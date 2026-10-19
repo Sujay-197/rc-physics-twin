@@ -1,0 +1,21 @@
+{
+  "schema_version": "0.1.0",
+  "id": "sample-hill-breaker-bend",
+  "description": "Level run-in, a speed breaker, a 5 % climb, a banked left bend at the top, a 5 % descent and a damp stretch.",
+  "width": 1.2,
+  "centreline": [
+    {"x": 0.0,  "y": 0.0,  "z": 0.0},
+    {"x": 6.0,  "y": 0.0,  "z": 0.0},
+    {"x": 16.0, "y": 0.0,  "z": 0.5},
+    {"x": 20.0, "y": 1.0,  "z": 0.5, "bank": 0.05},
+    {"x": 22.0, "y": 4.0,  "z": 0.5, "bank": 0.05},
+    {"x": 22.5, "y": 8.0,  "z": 0.5},
+    {"x": 23.0, "y": 18.0, "z": 0.0}
+  ],
+  "surfaces": [
+    {"name": "damp patch", "from_s": 33.0, "to_s": 38.0, "mu_scale": 0.6}
+  ],
+  "speed_breakers": [
+    {"s": 3.0, "height": 0.015, "length": 0.3, "profile": "round_hump"}
+  ]
+}

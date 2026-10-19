@@ -24,6 +24,7 @@
  * v4: rc_twin_params.ackermann (ADR 0007).
  * v5: rc_twin_params suspension fields (ADR 0008); with suspension on, the
  *     state's z, pitch, roll, vz, pitch_rate and roll_rate are the body's.
+ * v6: roads (rc_twin_road_*), ground from road data for headless hosts.
  */
 #ifndef RC_TWIN_H
 #define RC_TWIN_H
@@ -44,7 +45,7 @@
 extern "C" {
 #endif
 
-#define RC_TWIN_ABI_VERSION 5u
+#define RC_TWIN_ABI_VERSION 6u
 
 typedef int32_t rc_twin_status;
 enum {
@@ -200,6 +201,43 @@ RC_TWIN_API rc_twin_status rc_twin_set_ground_query(rc_twin_vehicle* v,
 RC_TWIN_API rc_twin_status rc_twin_step(rc_twin_vehicle* v, double steer_cmd,
                                         double accel_cmd, double dt,
                                         uint32_t n);
+
+/* ------------------------------------------------------------------ roads
+ * Ground from road data (roads/road.schema.json), for hosts without a scene:
+ * the headless harness, CI, the edge profiler. Built from arrays; hosts parse
+ * the file. Pass rc_twin_road_ground with the road as user to
+ * rc_twin_set_ground_query. Off the road's width the query fails, so
+ * rc_twin_step returns RC_TWIN_E_GROUND: leaving the road is not modelled. */
+typedef struct rc_twin_road rc_twin_road;
+
+/* n_points centreline points as x, y, z triples [m]; bank [rad] per point,
+ * positive when the road rises to the left of travel (NULL: level). */
+RC_TWIN_API rc_twin_road* rc_twin_road_create(const double* xyz,
+                                              const double* bank,
+                                              uint32_t n_points, double width,
+                                              const char** reason);
+RC_TWIN_API void rc_twin_road_destroy(rc_twin_road* r);
+/* Horizontal centreline length [m]; NaN for NULL. */
+RC_TWIN_API double rc_twin_road_length(const rc_twin_road* r);
+/* A stretch [from_s, to_s) with this grip; later stretches win. */
+RC_TWIN_API rc_twin_status rc_twin_road_add_surface(rc_twin_road* r,
+                                                    double from_s, double to_s,
+                                                    double mu_scale);
+/* A round hump, height sin^2 over its length, centred at arc length s. */
+RC_TWIN_API rc_twin_status rc_twin_road_add_breaker(rc_twin_road* r, double s,
+                                                    double height,
+                                                    double length);
+/* Nearest centreline point to (x, y): arc length s and signed lateral offset
+ * d (left positive). */
+RC_TWIN_API rc_twin_status rc_twin_road_locate(const rc_twin_road* r, double x,
+                                               double y, double* s, double* d);
+/* The centreline at arc length s: position and heading [rad]. */
+RC_TWIN_API rc_twin_status rc_twin_road_point(const rc_twin_road* r, double s,
+                                              double* x, double* y, double* z,
+                                              double* heading);
+/* An rc_twin_ground_fn; user is the rc_twin_road. */
+RC_TWIN_API int32_t rc_twin_road_ground(void* road, int32_t wheel, double x,
+                                        double y, rc_twin_ground_sample* out);
 
 #ifdef __cplusplus
 }

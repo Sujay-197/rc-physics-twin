@@ -66,6 +66,12 @@ Then copy the plugin into Unity (close the editor first; it keeps native plugins
 .toolchain/venv/Scripts/cmake --build build --target unity_plugin
 ```
 
+Drive a road file headlessly (no Unity), with a JSON report of time, energy and peak accelerations:
+
+```bash
+python tools/drive_road.py roads/samples/hill_breaker_bend.json --speed 2
+```
+
 Open `unity/RcTwin` in Unity Hub with **6000.5.3f1**, run **RcTwin > Build Flat Ground Scene**, and press Play. W/S throttle and brake, A/D steer, R reset. The C# bindings can also be checked without Unity: `native/tests/csharp` (`dotnet run -- build/bin`).
 
 ## Layout
@@ -73,7 +79,8 @@ Open `unity/RcTwin` in Unity Hub with **6000.5.3f1**, run **RcTwin > Build Flat 
 ```
 core/            SlipX vendored at ebdbf3f (C++17); our changes listed in THIRD_PARTY.md
 native/          rc_twin: C ABI over the Core (rc_twin.dll), with C, C++ and C# tests
-unity/RcTwin/    Unity 6 project: P/Invoke bindings, keyboard car, flat-ground scene builder
+unity/RcTwin/    Unity 6 project: P/Invoke bindings, keyboard car, scene builder (hill, bank, ice, speed breaker)
+tools/           toolchain bootstrap; drive_road.py, the headless harness
 sim_py/          Python bindings, gymkhana cross-validation, SB3 training
 cars/            versioned car directories (YAML), every set labeled measured|identified|provisional
 roads/           road-feature schema and sample data (grade, speed breakers, friction)

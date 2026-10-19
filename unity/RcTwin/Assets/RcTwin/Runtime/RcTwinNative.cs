@@ -1,4 +1,4 @@
-// P/Invoke bindings for native/include/rc_twin.h (ABI version 5).
+// P/Invoke bindings for native/include/rc_twin.h (ABI version 6; the roads API is not bound).
 //
 // Deliberately free of UnityEngine so native/tests/csharp can compile and run
 // it against rc_twin.dll outside the editor. Field order here must match the
@@ -15,7 +15,7 @@ namespace RcTwin
     public static class RcTwinNative
     {
         public const string Lib = "rc_twin";
-        public const uint AbiVersion = 5;
+        public const uint AbiVersion = 6;
 
         public const int Ok = 0, ENull = -1, EInvalid = -2, EInternal = -3, EGround = -4;
 

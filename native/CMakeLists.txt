@@ -1,6 +1,6 @@
 # rc_twin: shared library exposing the Core through a C ABI (include/rc_twin.h).
 
-add_library(rc_twin SHARED src/rc_twin.cpp)
+add_library(rc_twin SHARED src/rc_twin.cpp src/rc_twin_road.cpp)
 target_include_directories(rc_twin PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
 target_compile_definitions(rc_twin PRIVATE RC_TWIN_BUILDING)
 target_link_libraries(rc_twin PRIVATE slipx_core)
@@ -32,6 +32,20 @@ if(BUILD_TESTING)
   target_link_libraries(test_ground_capi PRIVATE rc_twin)
   set_target_properties(test_ground_capi PROPERTIES C_STANDARD 99)
   add_test(NAME rc_twin.ground COMMAND test_ground_capi)
+
+  add_executable(test_road tests/test_road.c)
+  target_link_libraries(test_road PRIVATE rc_twin)
+  set_target_properties(test_road PROPERTIES C_STANDARD 99)
+  add_test(NAME rc_twin.road COMMAND test_road)
+
+  # The headless harness (tools/drive_road.py), through the same DLL.
+  find_package(Python3 COMPONENTS Interpreter)
+  if(Python3_Interpreter_FOUND)
+    add_test(NAME tools.drive_road
+             COMMAND ${Python3_EXECUTABLE} -I ${PROJECT_SOURCE_DIR}/tools/test_drive_road.py)
+    set_tests_properties(tools.drive_road PROPERTIES
+      ENVIRONMENT "RC_TWIN_LIB=$<TARGET_FILE:rc_twin>")
+  endif()
 
   # C ABI against the Core called directly, bit for bit.
   add_executable(test_equivalence tests/test_equivalence.cpp)
