@@ -3,14 +3,27 @@
 // Nothing here changes the physics: params and state are copied field by
 // field between the flat C structs and the Core's own types, and step calls
 // VehicleModel::step unchanged. tests/test_equivalence.cpp holds that to
-// bit-identity.
+// bit-identity. The one addition is the wall pass after each step (ADR 0009),
+// which touches nothing when there are no walls.
 #include "rc_twin.h"
 
+#include <algorithm>
 #include <cmath>
 #include <cstring>
 #include <memory>
 #include <new>
+#include <vector>
 
+// The vendored contact header indexes std::array with int; our flags are
+// stricter than SlipX's own, so that one warning is silenced here only.
+#if defined(__clang__)
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wsign-conversion"
+#endif
+#include "slipx/contact.hpp"
+#if defined(__clang__)
+#pragma clang diagnostic pop
+#endif
 #include "slipx/ground.hpp"
 #include "slipx/params.hpp"
 #include "slipx/state.hpp"
@@ -21,6 +34,12 @@ static_assert(sizeof(rc_twin_state) == 28 * sizeof(double),
               "rc_twin_state must be 28 packed doubles");
 static_assert(slipx::kWheelCount == 4, "per-wheel arrays are fixed at 4");
 
+// One wall segment and its bounding box, for the comparison-only reject.
+struct rc_twin_segment {
+  slipx::Vec2 p, q;
+  double xmin, xmax, ymin, ymax;
+};
+
 struct rc_twin_vehicle {
   slipx::Tier tier;
   slipx::Integrator integrator;
@@ -28,6 +47,9 @@ struct rc_twin_vehicle {
   slipx::VehicleState state;
   rc_twin_ground_fn ground_fn = nullptr;  // NULL: level ground at z = 0
   void* ground_user = nullptr;
+  rc_twin_contact contact{};
+  std::vector<rc_twin_segment> walls;
+  rc_twin_wall_report report{};
 };
 
 namespace {
@@ -241,6 +263,76 @@ bool sample_ground(const rc_twin_vehicle& v, const slipx::VehicleState& s,
   return true;
 }
 
+rc_twin_contact contact_from(const rc_twin_params& p) {
+  const slipx::ContactParams k{};
+  rc_twin_contact c{};
+  c.restitution = k.restitution;
+  c.friction = k.friction;
+  c.restitution_min_speed = k.restitution_min_speed;
+  c.half_length = 0.5 * (p.lf + p.lr) + p.wheel_radius;
+  c.half_width = 0.5 * std::max(p.track_front, p.track_rear);
+  c.centre_offset = 0.5 * (p.lf - p.lr);
+  return c;
+}
+
+// The wall pass after one Core step (ADR 0009): each segment in order, the
+// footprint against it with SlipX's segment_contact, resolved with
+// resolve_contact against an immovable wall. The state is written back only
+// if something touched, so a step with walls that are not hit is
+// bit-identical to one without.
+void resolve_walls(const rc_twin_vehicle& v, slipx::VehicleState& s,
+                   rc_twin_wall_report& report) {
+  if (v.walls.empty()) return;
+  const slipx::VehicleParams& p = v.model->params();
+  const rc_twin_contact& k = v.contact;
+  const double c = std::cos(s.yaw);
+  const double sn = std::sin(s.yaw);
+
+  slipx::ContactBody car;
+  car.cog = {s.pos.x, s.pos.y};
+  car.yaw = s.yaw;
+  car.velocity = {c * s.vel_body.x - sn * s.vel_body.y,
+                  sn * s.vel_body.x + c * s.vel_body.y};
+  car.yaw_rate = s.rates.z;
+  car.inv_mass = 1.0 / p.mass;
+  car.inv_izz = 1.0 / p.izz;
+  car.centre_offset = k.centre_offset;
+  car.half_length = k.half_length;
+  car.half_width = k.half_width;
+  const slipx::ContactBody wall{};  // at rest, both reciprocals zero
+  const slipx::ContactParams params{k.restitution, k.friction,
+                                    k.restitution_min_speed};
+  // The footprint's bounding box half extents; the yaw does not change here.
+  const double ex = k.half_length * std::abs(c) + k.half_width * std::abs(sn);
+  const double ey = k.half_length * std::abs(sn) + k.half_width * std::abs(c);
+
+  bool touched = false;
+  for (const rc_twin_segment& w : v.walls) {
+    const double cx = car.cog.x + c * k.centre_offset;
+    const double cy = car.cog.y + sn * k.centre_offset;
+    if (w.xmax < cx - ex || w.xmin > cx + ex || w.ymax < cy - ey ||
+        w.ymin > cy + ey) {
+      continue;
+    }
+    const slipx::ContactGeometry g = slipx::segment_contact(w.p, w.q, car);
+    if (!g.touching) continue;
+    const slipx::ContactImpulse j = slipx::resolve_contact(wall, car, g, params);
+    car.velocity += j.delta_velocity_b;
+    car.yaw_rate += j.delta_yaw_rate_b;
+    car.cog += j.delta_position_b;
+    touched = true;
+    report.contacts += 1;
+    report.impulse += j.jn;
+    report.max_approach = std::max(report.max_approach, j.approach_b);
+  }
+  if (!touched) return;
+  s.pos.x = car.cog.x;
+  s.pos.y = car.cog.y;
+  s.vel_body.x = c * car.velocity.x + sn * car.velocity.y;
+  s.vel_body.y = -sn * car.velocity.x + c * car.velocity.y;
+  s.rates.z = car.yaw_rate;
+}
+
 // Builds a model, or returns nullptr with *why set. Never throws.
 std::unique_ptr<slipx::VehicleModel> build(slipx::Tier tier,
                                            slipx::Integrator integrator,
@@ -298,8 +390,13 @@ RC_TWIN_API rc_twin_vehicle* rc_twin_create(int32_t tier, int32_t integrator,
     set_reason(reason, why != nullptr ? why : "rc_twin: cannot create model");
     return nullptr;
   }
-  auto* v = new (std::nothrow) rc_twin_vehicle{t, i, std::move(model), {}};
-  if (v == nullptr) set_reason(reason, "rc_twin: out of memory");
+  auto* v = new (std::nothrow)
+      rc_twin_vehicle{t, i, std::move(model), {}, nullptr, nullptr, {}, {}, {}};
+  if (v == nullptr) {
+    set_reason(reason, "rc_twin: out of memory");
+    return nullptr;
+  }
+  v->contact = contact_from(*params);
   return v;
 }
 
@@ -356,20 +453,26 @@ RC_TWIN_API rc_twin_status rc_twin_step(rc_twin_vehicle* v, double steer_cmd,
   const slipx::DriveInput input{steer_cmd, accel_cmd};
   // Step a copy so a failure leaves the published state untouched.
   slipx::VehicleState s = v->state;
+  rc_twin_wall_report report{};
   try {
     if (v->ground_fn == nullptr) {
-      for (uint32_t k = 0; k < n; ++k) v->model->step(s, input, dt);
+      for (uint32_t k = 0; k < n; ++k) {
+        v->model->step(s, input, dt);
+        resolve_walls(*v, s, report);
+      }
     } else {
       for (uint32_t k = 0; k < n; ++k) {
         slipx::GroundContact g;
         if (!sample_ground(*v, s, &g)) return RC_TWIN_E_GROUND;
         if (!v->model->step_on(s, input, g, dt)) return RC_TWIN_E_GROUND;
+        resolve_walls(*v, s, report);
       }
     }
   } catch (...) {
     return RC_TWIN_E_INTERNAL;
   }
   v->state = s;
+  v->report = report;
   return RC_TWIN_OK;
 }
 
@@ -379,6 +482,81 @@ RC_TWIN_API rc_twin_status rc_twin_set_ground_query(rc_twin_vehicle* v,
   if (v == nullptr) return RC_TWIN_E_NULL;
   v->ground_fn = fn;
   v->ground_user = (fn != nullptr) ? user : nullptr;
+  return RC_TWIN_OK;
+}
+
+RC_TWIN_API rc_twin_status rc_twin_contact_default(const rc_twin_params* p,
+                                                   rc_twin_contact* out) {
+  if (p == nullptr || out == nullptr) return RC_TWIN_E_NULL;
+  if (p->struct_size != sizeof(rc_twin_params)) return RC_TWIN_E_INVALID;
+  *out = contact_from(*p);
+  return RC_TWIN_OK;
+}
+
+RC_TWIN_API rc_twin_status rc_twin_set_contact(rc_twin_vehicle* v,
+                                               const rc_twin_contact* c) {
+  if (v == nullptr || c == nullptr) return RC_TWIN_E_NULL;
+  const double all[6] = {c->restitution, c->friction, c->restitution_min_speed,
+                         c->half_length, c->half_width, c->centre_offset};
+  for (double x : all) {
+    if (!std::isfinite(x)) return RC_TWIN_E_INVALID;
+  }
+  if (!(c->restitution >= 0.0 && c->restitution <= 1.0) ||
+      !(c->friction >= 0.0) || !(c->restitution_min_speed >= 0.0) ||
+      !(c->half_length > 0.0) || !(c->half_width > 0.0)) {
+    return RC_TWIN_E_INVALID;
+  }
+  v->contact = *c;
+  return RC_TWIN_OK;
+}
+
+RC_TWIN_API rc_twin_status rc_twin_get_contact(const rc_twin_vehicle* v,
+                                               rc_twin_contact* out) {
+  if (v == nullptr || out == nullptr) return RC_TWIN_E_NULL;
+  *out = v->contact;
+  return RC_TWIN_OK;
+}
+
+RC_TWIN_API rc_twin_status rc_twin_add_wall(rc_twin_vehicle* v,
+                                            const double* xy, uint32_t n_points,
+                                            int32_t closed) {
+  if (v == nullptr || xy == nullptr) return RC_TWIN_E_NULL;
+  if (n_points < 2 || (closed != 0 && n_points < 3)) return RC_TWIN_E_INVALID;
+  for (uint32_t i = 0; i < 2 * n_points; ++i) {
+    if (!std::isfinite(xy[i])) return RC_TWIN_E_INVALID;
+  }
+  try {
+    std::vector<rc_twin_segment> add;
+    const uint32_t n_seg = closed != 0 ? n_points : n_points - 1;
+    for (uint32_t i = 0; i < n_seg; ++i) {
+      const uint32_t j = (i + 1) % n_points;
+      const slipx::Vec2 a{xy[2 * i], xy[2 * i + 1]};
+      const slipx::Vec2 b{xy[2 * j], xy[2 * j + 1]};
+      if (a.x == b.x && a.y == b.y) continue;
+      add.push_back({a, b, std::min(a.x, b.x), std::max(a.x, b.x),
+                     std::min(a.y, b.y), std::max(a.y, b.y)});
+    }
+    v->walls.insert(v->walls.end(), add.begin(), add.end());
+  } catch (...) {
+    return RC_TWIN_E_INTERNAL;
+  }
+  return RC_TWIN_OK;
+}
+
+RC_TWIN_API rc_twin_status rc_twin_clear_walls(rc_twin_vehicle* v) {
+  if (v == nullptr) return RC_TWIN_E_NULL;
+  v->walls.clear();
+  return RC_TWIN_OK;
+}
+
+RC_TWIN_API uint32_t rc_twin_wall_count(const rc_twin_vehicle* v) {
+  return v == nullptr ? 0u : static_cast<uint32_t>(v->walls.size());
+}
+
+RC_TWIN_API rc_twin_status rc_twin_get_wall_report(const rc_twin_vehicle* v,
+                                                   rc_twin_wall_report* out) {
+  if (v == nullptr || out == nullptr) return RC_TWIN_E_NULL;
+  *out = v->report;
   return RC_TWIN_OK;
 }
 

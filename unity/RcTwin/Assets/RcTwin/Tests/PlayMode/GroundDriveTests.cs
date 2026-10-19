@@ -135,6 +135,45 @@ namespace RcTwin.Tests
         }
 
         [UnityTest]
+        public IEnumerator TheHillsSideIsAWallNotAStep()
+        {
+            // Beside the 0.6 m plateau (x 14..18, sides at y = +-1.5), driving
+            // square at its right side. Before ADR 0009 the wheels snapped up
+            // onto the top; now the car stays on the floor and bounces off.
+            yield return Load();
+            Assert.Greater(_car.WallSegments, 0u, "the scene's walls reached the Core");
+            _car.ResetTo(16.0, -3.0, System.Math.PI / 2, 1.5);
+            yield return new WaitForSeconds(1.5f);
+            Assert.Greater(_car.WallContacts, 0, "it hit the side");
+            Assert.Less(_car.State.z, 0.01, "still on the floor, not on the plateau");
+            Assert.Less(_car.State.y, -1.5 - 0.1, "and on its own side of the wall");
+            Assert.IsFalse(_car.OffGround);
+        }
+
+        [UnityTest]
+        public IEnumerator TheRampStillClimbsAndTheEdgeStillDrops()
+        {
+            // Up the 10 % ramp onto the plateau and down the far side: the
+            // climbable step keeps ramps as ground (ADR 0009).
+            yield return Load();
+            _car.ResetTo(6.0, 0.0, 0.0, 2.0);
+            Press(_kb.wKey);
+            double top = 0.0;
+            float until = Time.time + 3f;
+            while (Time.time < until && _car.State.x < 26.0)
+            {
+                yield return null;
+                top = System.Math.Max(top, _car.State.z);
+            }
+            Lift();
+            yield return null;
+            Assert.Greater(top, 0.55, "it climbed onto the plateau");
+            Assert.Greater(_car.State.x, 24.0, "and drove off the far ramp");
+            Assert.Less(_car.State.z, 0.05, "back on the floor");
+            Assert.AreEqual(0, _car.WallContacts, "without touching the sides");
+        }
+
+        [UnityTest]
         public IEnumerator NoGroundStopsTheCarInsteadOfGuessing()
         {
             yield return Load();

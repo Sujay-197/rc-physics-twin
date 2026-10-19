@@ -5,8 +5,9 @@
 // Core's provisional defaults), a chase camera, and ground features the Core
 // feels through RaycastGround (ADR 0005): a hill (10 % up, 0.6 m plateau,
 // 10 % down) straight ahead, a 10 % banked strip to the right and an ice
-// patch (grip x0.25) to the left. Unity coordinates: the car starts at the
-// origin facing +z.
+// patch (grip x0.25) to the left. Faces taller than the climbable step are
+// walls (ADR 0009): the hill's sides and the bank's high edge and ends.
+// Unity coordinates: the car starts at the origin facing +z.
 using System.IO;
 using UnityEditor;
 using UnityEditor.SceneManagement;
@@ -59,6 +60,19 @@ namespace RcTwin.EditorTools
             ice.transform.localScale = new Vector3(3f, 0.001f, 20f);
             ice.GetComponent<Renderer>().sharedMaterial = ColourMaterial("Ice", new Color(0.7f, 0.85f, 1f));
             ice.AddComponent<GroundSurface>().muScale = 0.25f;
+
+            // Walls (ADR 0009) wherever a face is taller than the climbable
+            // step (half the wheel radius): the hill's sides from where the
+            // ramps pass the step, and the bank's high edge and its ends.
+            // ISO (x, y) is Unity (z, -x).
+            float step = 0.5f * (float)p.wheelRadius;
+            var walls = new GameObject("Walls (ADR 0009)").AddComponent<TwinWalls>();
+            float hillIn = 8f + 6f * step / 0.6f, hillOut = 24f - 6f * step / 0.6f;
+            walls.Add("Hill, left side", false, new Vector2(hillIn, 1.5f), new Vector2(hillOut, 1.5f));
+            walls.Add("Hill, right side", false, new Vector2(hillIn, -1.5f), new Vector2(hillOut, -1.5f));
+            float bankIn = 4f + 3f * step / 0.3f;
+            walls.Add("Bank, ends and high edge", false,
+                      new Vector2(0f, -bankIn), new Vector2(0f, -7f), new Vector2(20f, -7f), new Vector2(20f, -bankIn));
 
             var car = BuildCar(p);
             AttachChaseCamera(car.transform);

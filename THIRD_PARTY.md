@@ -38,6 +38,7 @@ Checked 2026-10-19 against the upstream repository, not package metadata.
 | `core/src/core/slipx_core/tests/test_wheels.cpp` (new) | 20 tests for the above | Ours (ADR 0006); not sent |
 | `params.hpp`, `params.cpp`, `l2_double_track.cpp`, `slipx_sim/src/simulation.cpp` | `ackermann` fraction (default 0 = parallel steer, unchanged bit for bit); per-wheel front angles at L2; in the manifest digest when set | Ours (ADR 0007); not sent |
 | `core/src/core/slipx_core/tests/test_ackermann.cpp` (new) | 10 tests for the above | Ours (ADR 0007); not sent |
+| (none: `slipx/contact.hpp` used unchanged) | `native/src/rc_twin.cpp` calls SlipX's `segment_contact` and `resolve_contact` (ADR-0055) for walls; the header is not modified | Ours (ADR 0009) |
 
 Upstream lineage note: Gym-Khana says it is based on the UPenn `f1tenth_gym`. Check that lineage's license before copying code that may originate there.
 

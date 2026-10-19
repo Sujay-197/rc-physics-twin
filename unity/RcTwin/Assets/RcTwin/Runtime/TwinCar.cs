@@ -39,6 +39,13 @@ namespace RcTwin
         [Tooltip("Feed the Core the ground from a RaycastGround on this object, if present.")]
         public bool useGroundQuery = true;
 
+        [Header("Walls (ADR 0009)")]
+        [Tooltip("Hand every TwinWalls in the scene to the Core.")]
+        public bool useWalls = true;
+        [Tooltip("Added to the footprint's half width [m]: half the drawn tyre width, since the tyres' " +
+                 "outer halves stick out past the track. Matches the drawn car, not a measurement.")]
+        public double footprintMargin = 0.0175;
+
         [Tooltip("Per-wheel rotational inertia [kg m^2] (ADR 0006). 0 keeps quasi-static wheels. " +
                  "The default, 1e-5, is SlipX ADR-0027's order of magnitude for a 1/10-scale wheel: " +
                  "PROVISIONAL until a spin-down test on the real car measures it.")]
@@ -75,6 +82,14 @@ namespace RcTwin
 
         public RcTwinNative.State State => _curr;
 
+        /// <summary>Wall contacts of the last physics frame (ADR 0009).</summary>
+        public RcTwinNative.WallReport LastWallReport { get; private set; }
+
+        /// <summary>Wall contacts since the last reset.</summary>
+        public long WallContacts { get; private set; }
+
+        public uint WallSegments => _car != null ? _car.WallCount : 0u;
+
         /// <summary>Slip ratio of wheel i (0 FL .. 3 RR) along the body axis: 0 rolling, > 0 spinning, -1 locked.</summary>
         public double Slip(int i)
         {
@@ -107,10 +122,25 @@ namespace RcTwin
             if (body != null) _bodyBase = body.localPosition;
             _car = new TwinVehicle(tier, _p);
             _ground = useGroundQuery ? GetComponent<RaycastGround>() : null;
-            if (_ground != null) _car.SetGround(_ground);
+            if (_ground != null)
+            {
+                if (_ground.climbableStep <= 0f) _ground.climbableStep = 0.5f * (float)_p.wheelRadius;
+                _car.SetGround(_ground);
+            }
+            var contact = _car.Contact;
+            contact.halfWidth += footprintMargin;
+            _car.Contact = contact;
+            if (useWalls)
+            {
+                foreach (var set in FindObjectsByType<TwinWalls>(FindObjectsSortMode.InstanceID))
+                    foreach (var w in set.walls)
+                        if (w.points != null && w.points.Length >= 2)
+                            _car.AddWall(TwinWalls.Flatten(w), w.closed);
+            }
             _prev = _curr = _car.State;
             Debug.Log($"rc_twin ABI {RcTwinNative.rc_twin_abi_version()}, SlipX {RcTwinNative.CoreVersion}, " +
-                      $"tier {tier}, ground {(_ground != null ? "raycast" : "level")}. " +
+                      $"tier {tier}, ground {(_ground != null ? "raycast" : "level")}, " +
+                      $"{_car.WallCount} wall segments. " +
                       "Parameters are PROVISIONAL (SlipX defaults), not a measured car.");
         }
 
@@ -141,6 +171,8 @@ namespace RcTwin
         public void ResetTo(double x, double y, double yaw, double vx = 0.0)
         {
             double w = vx / _p.wheelRadius;  // wheels rolling with the car
+            _ground?.Forget();               // a teleport: cast from above again
+            WallContacts = 0;
             var s = new RcTwinNative.State
             {
                 x = x, y = y, yaw = yaw, vx = vx, soc = 1.0, packV = 11.1,
@@ -201,6 +233,8 @@ namespace RcTwin
                 return;
             }
 
+            LastWallReport = _car.LastWallReport;
+            WallContacts += LastWallReport.contacts;
             _prev = _curr;
             _curr = _car.State;
             _prevUp = _currUp;
@@ -333,8 +367,8 @@ namespace RcTwin
             string susp = _p.wheelRateFront > 0.0
                 ? $"body  pitch {_currBodyN.y * Mathf.Rad2Deg:+0.0;-0.0} deg  roll {_currBodyN.z * Mathf.Rad2Deg:+0.0;-0.0} deg (DEMO springs)\n"
                 : "";
-            GUI.Box(new Rect(10, 10, 330, 215), GUIContent.none);
-            GUI.Label(new Rect(20, 15, 320, 205),
+            GUI.Box(new Rect(10, 10, 330, 232), GUIContent.none);
+            GUI.Label(new Rect(20, 15, 320, 222),
                 $"SlipX {RcTwinNative.CoreVersion}  {tier}\n" +
                 $"speed  {s.Speed * 3.6:F1} km/h  ({s.vx:F2} m/s)\n" +
                 $"yaw rate  {s.yawRate:F2} rad/s\n" +
@@ -342,6 +376,7 @@ namespace RcTwin
                 $"SoC  {s.soc * 100.0:F2} %   pack {s.packV:F2} V\n" +
                 $"ground  z {s.z:F2} m   grip x{mu:F2}\n" +
                 wheels + susp +
+                (_car.WallCount > 0 ? $"walls  {WallContacts} contacts (provisional restitution, friction)\n" : "") +
                 (_offGround ? "OFF THE GROUND: press R\n" : "") +
                 "PROVISIONAL parameters, not validated\n" +
                 "W/S throttle/brake  A/D steer  R reset");

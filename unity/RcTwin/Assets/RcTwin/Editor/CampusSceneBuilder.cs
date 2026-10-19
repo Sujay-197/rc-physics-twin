@@ -6,9 +6,9 @@
 // (sim_py/campus.py) trains on:
 //   - asphalt along every edge's centreline, the measured 1.409 m wide, with
 //     a collider: it is what the Core feels through RaycastGround;
-//   - the sidewalks, 6 cm kerbs either side, and the buildings, drawn only:
-//     with colliders the ground query would lift the car onto them, and kerbs
-//     and walls as obstacles are not modelled yet (NEXT_STEPS, Known issues);
+//   - the sidewalks, 6 cm kerbs either side, and the buildings, drawn
+//     without colliders; the kerb lines and the buildings' footprints are
+//     walls instead (ADR 0009), so the car stays on the asphalt;
 //   - the grass beyond, 1 mm below the asphalt: driveable here, but leaving
 //     the asphalt ends an RL episode;
 //   - each bus stop as a stop line across its node and a post at the kerb;
@@ -100,6 +100,7 @@ namespace RcTwin.EditorTools
             // asphalt (at a junction) it is left out; at the junction's corners
             // the two roads' sidewalks then meet along the kerb lines.
             var walks = new MeshBuilder();
+            var walls = new GameObject("Walls (kerbs and buildings, ADR 0009)").AddComponent<TwinWalls>();
             float inner = 0.5f * width, outer = 0.5f * width + walk, mid = 0.5f * (inner + outer);
             foreach (var e in edges)
             {
@@ -115,6 +116,15 @@ namespace RcTwin.EditorTools
                         if (side < 0) walks.Band(run, -outer, -inner, kerb);
                         else walks.Band(run, inner, outer, kerb);
                         walks.Kerb(run, side * inner, kerb, side);
+                        // The kerb line is a wall: 6 cm is more than the step.
+                        var n = MiterNormals(run);
+                        var line = new Vector2[run.Count];
+                        for (int i = 0; i < run.Count; i++)
+                        {
+                            Vector3 q = run[i] + n[i] * (side * inner);
+                            line[i] = new Vector2(q.z, -q.x);   // ISO (x, y)
+                        }
+                        walls.Add($"Kerb, edge {e.id}, {(side < 0 ? "left" : "right")}", false, line);
                     }
                 }
             }
@@ -137,6 +147,17 @@ namespace RcTwin.EditorTools
                     Quaternion.Euler(0f, TwinCar.YawToUnityDeg(D(b["yaw"])), 0f));
                 box.transform.localScale = new Vector3(2f * F(b["half_width"]), h, 2f * F(b["half_length"]));
                 box.GetComponent<Renderer>().sharedMaterial = buildingMat;
+
+                // Its footprint is a closed wall, in ISO.
+                double bx = D(b["x"]), by = D(b["y"]), yaw = D(b["yaw"]);
+                double hl = D(b["half_length"]), hw = D(b["half_width"]);
+                double c = Math.Cos(yaw), sn = Math.Sin(yaw);
+                var corners = new Vector2[4];
+                double[] sl = { 1, 1, -1, -1 }, sw = { 1, -1, -1, 1 };
+                for (int i = 0; i < 4; i++)
+                    corners[i] = new Vector2((float)(bx + c * hl * sl[i] - sn * hw * sw[i]),
+                                             (float)(by + sn * hl * sl[i] + c * hw * sw[i]));
+                walls.Add($"Building {b["name"]}", true, corners);
             }
 
             // Stops: a stop line across the road at the stop's node and a post

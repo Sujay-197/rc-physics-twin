@@ -38,6 +38,12 @@ if(BUILD_TESTING)
   set_target_properties(test_road PROPERTIES C_STANDARD 99)
   add_test(NAME rc_twin.road COMMAND test_road)
 
+  # Walls (ADR 0009), through the DLL.
+  add_executable(test_walls tests/test_walls.cpp)
+  target_link_libraries(test_walls PRIVATE rc_twin)
+  slipx_apply_determinism_flags(test_walls)
+  add_test(NAME rc_twin.walls COMMAND test_walls)
+
   # The headless harness (tools/drive_road.py), through the same DLL.
   find_package(Python3 COMPONENTS Interpreter)
   if(Python3_Interpreter_FOUND)

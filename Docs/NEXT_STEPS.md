@@ -55,7 +55,9 @@
 
 ## Known issues
 
-- [ ] **Vertical faces in the scene (ramp sides, plateau edges) are not obstacles.** The ground query is height-only (ADR 0005): `RaycastGround` reports whatever is under each wheel, so driving into a ramp's side snaps that wheel up onto the top, and driving off an edge drops it. The Core has no wall or obstacle contact. Needs: a step-height limit in the ground query (a rise above some height is an obstacle, not ground) and an obstacle contact model in the Core. Reported 2026-10-19 while driving the twin; deferred. The same holds for the campus scene's kerbs and buildings, drawn without colliders for this reason: in the RL environment leaving the asphalt ends the episode instead.
+- [x] **Vertical faces in the scene (ramp sides, plateau edges) were not obstacles.** Fixed by ADR 0009: walls are contact segments resolved after every Core step with SlipX's `segment_contact` (ABI v7, `rc_twin_add_wall`), and `RaycastGround` climbs only steps under half a wheel radius. The flat-ground scene walls the hill's sides and the bank; the campus walls its kerb lines and buildings. Reported 2026-10-19, fixed 2026-10-20.
+- [ ] Walls in the headless harness and the RL environment: the road ground still ends a run when the car leaves the road's width. Kerb walls from `campus_network.json` would let the policy learn to recover from a kerb strike instead (charge the contact in the reward via `rc_twin_get_wall_report`).
+- [ ] Walls are planar and infinitely tall (ADR 0009): a car on the plateau is held in by the plateau's own side walls. A wall with a height range, and walls extracted from arbitrary colliders, are follow-ups.
 
 ## Housekeeping
 

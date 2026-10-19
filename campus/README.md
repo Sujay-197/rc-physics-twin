@@ -13,7 +13,7 @@ The campus fleet sim's road network ([`Sujay-197/campus_fleet_man_unity`](https:
 ## The numbers
 
 - 36 nodes, 37 edges, 132.7 m of road (1,327 m in the fleet sim), 10 stops (S3 is the hub with weight 6, AB4 has 4, the rest 1), 4 apartment blocks.
-- **Drivable width 1.409 m**: the asphalt of the road tiles (14.09 m), measured from their meshes. A 0.235 m sidewalk runs along each side, raised 0.6 m in the fleet sim and **6 cm here**: more than the car's 5 cm wheel radius, so they are kerbs, not road. Leaving the asphalt ends an episode.
+- **Drivable width 1.409 m**: the asphalt of the road tiles (14.09 m), measured from their meshes. A 0.235 m sidewalk runs along each side, raised 0.6 m in the fleet sim and **6 cm here**: more than the car's 5 cm wheel radius, so they are kerbs, not road. In Unity the kerb lines and the buildings are walls (ADR 0009) that the car bounces off; in the RL environment leaving the asphalt ends an episode.
 - **Why 1/10:** the campus is modelled at full scale (its city pack is sized for real cars), and the twin is a 1/10 car. A 3.5 m lane becomes 0.35 m against the car's 0.24 m track.
 
 ## Using it

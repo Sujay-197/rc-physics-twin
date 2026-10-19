@@ -29,7 +29,7 @@ import pathlib
 import sys
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
-ABI = 6
+ABI = 7
 OK, E_GROUND = 0, -4
 
 

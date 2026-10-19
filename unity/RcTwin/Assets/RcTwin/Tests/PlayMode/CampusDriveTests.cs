@@ -48,6 +48,26 @@ namespace RcTwin.Tests
         }
 
         [UnityTest]
+        public IEnumerator TheKerbKeepsTheCarOnTheAsphalt()
+        {
+            // Edge 13 runs along y = -2.56 toward -x; its left kerb is at
+            // y = -2.56 + 0.7045. Aim 29 degrees into it at 1.5 m/s and hold
+            // the throttle: the kerb is a wall (ADR 0009), not a step.
+            yield return Load();
+            Assert.Greater(_car.WallSegments, 100u, "kerbs and buildings reached the Core");
+            _car.ResetTo(-2.9, -2.56, System.Math.PI - 0.5, 1.5);
+            Press(_kb.wKey);
+            yield return new WaitForSeconds(1.0f);
+            Release(_kb.wKey);
+            yield return null;
+            Assert.Greater(_car.WallContacts, 0, "it hit the kerb");
+            Assert.Less(_car.State.y, -2.56 + 0.7045, "the CoG stayed on the road side");
+            Assert.AreEqual(Asphalt, GroundUnder(_car.transform.position));
+            Assert.That(_car.State.z, Is.EqualTo(0.0).Within(0.01), "not up on the sidewalk");
+            Assert.IsFalse(_car.OffGround);
+        }
+
+        [UnityTest]
         public IEnumerator TheCarStartsAtTheHubAndDrivesDownTheRoad()
         {
             yield return Load();

@@ -25,6 +25,8 @@
  * v5: rc_twin_params suspension fields (ADR 0008); with suspension on, the
  *     state's z, pitch, roll, vz, pitch_rate and roll_rate are the body's.
  * v6: roads (rc_twin_road_*), ground from road data for headless hosts.
+ * v7: walls (rc_twin_add_wall, rc_twin_contact, rc_twin_wall_report;
+ *     ADR 0009).
  */
 #ifndef RC_TWIN_H
 #define RC_TWIN_H
@@ -45,7 +47,7 @@
 extern "C" {
 #endif
 
-#define RC_TWIN_ABI_VERSION 6u
+#define RC_TWIN_ABI_VERSION 7u
 
 typedef int32_t rc_twin_status;
 enum {
@@ -201,6 +203,58 @@ RC_TWIN_API rc_twin_status rc_twin_set_ground_query(rc_twin_vehicle* v,
 RC_TWIN_API rc_twin_status rc_twin_step(rc_twin_vehicle* v, double steer_cmd,
                                         double accel_cmd, double dt,
                                         uint32_t n);
+
+/* ------------------------------------------------------------------ walls
+ * Immovable plan-view segments the car's footprint cannot cross (ADR 0009,
+ * SlipX ADR-0055). After every Core step the footprint is checked against
+ * each wall segment in the order added; a touch applies one impulse with
+ * restitution and Coulomb friction to the body velocity and yaw rate, and
+ * moves the CoG out of the penetration toward the side its centre is on.
+ * Walls survive rc_twin_reset and rc_twin_set_params. With no walls, steps
+ * are bit-identical to a vehicle that never had any. */
+
+/* Contact constants and the footprint. The constants are SlipX's
+ * ContactParams, provisional by nature; the footprint is the car's plan
+ * outline, half_length forward and back and half_width to each side of a
+ * centre centre_offset ahead of the CoG [m]. */
+typedef struct rc_twin_contact {
+  double restitution;           /* 0 dead stop .. 1 elastic          [-]   */
+  double friction;              /* tangential / normal impulse cap   [-]   */
+  double restitution_min_speed; /* no bounce below this closing speed [m/s] */
+  double half_length, half_width, centre_offset; /*                  [m]   */
+} rc_twin_contact;
+
+/* What the last rc_twin_step call's wall contacts did, over all its steps. */
+typedef struct rc_twin_wall_report {
+  uint32_t contacts;    /* segment contacts resolved                       */
+  uint32_t reserved;
+  double impulse;       /* total normal impulse                     [N s] */
+  double max_approach;  /* highest closing speed at a contact       [m/s] */
+} rc_twin_wall_report;
+
+/* SlipX's constants and the footprint from the params' geometry: the
+ * wheelbase plus a wheel radius at each end, the wider track across,
+ * centred between the axles. */
+RC_TWIN_API rc_twin_status rc_twin_contact_default(const rc_twin_params* p,
+                                                   rc_twin_contact* out);
+/* Every vehicle starts with rc_twin_contact_default of its params; a later
+ * rc_twin_set_params keeps whatever contact is set. Values must be finite,
+ * restitution in [0, 1], friction and the speed >= 0, half extents > 0. */
+RC_TWIN_API rc_twin_status rc_twin_set_contact(rc_twin_vehicle* v,
+                                               const rc_twin_contact* c);
+RC_TWIN_API rc_twin_status rc_twin_get_contact(const rc_twin_vehicle* v,
+                                               rc_twin_contact* out);
+/* A wall along n_points (x, y) pairs [m], n_points >= 2; closed != 0 also
+ * joins the last point to the first (n_points >= 3). Zero-length segments
+ * are dropped. All or nothing: on failure no segment is added. */
+RC_TWIN_API rc_twin_status rc_twin_add_wall(rc_twin_vehicle* v,
+                                            const double* xy, uint32_t n_points,
+                                            int32_t closed);
+RC_TWIN_API rc_twin_status rc_twin_clear_walls(rc_twin_vehicle* v);
+/* Number of wall segments; 0 for NULL. */
+RC_TWIN_API uint32_t rc_twin_wall_count(const rc_twin_vehicle* v);
+RC_TWIN_API rc_twin_status rc_twin_get_wall_report(const rc_twin_vehicle* v,
+                                                   rc_twin_wall_report* out);
 
 /* ------------------------------------------------------------------ roads
  * Ground from road data (roads/road.schema.json), for hosts without a scene:

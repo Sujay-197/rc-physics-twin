@@ -135,6 +135,47 @@ static class Program
         catch (ArgumentException e) { threw = e.Message.Contains("mass"); }
         Check(threw, "invalid params raise with the Core's reason");
 
+        // Walls (ADR 0009): struct layouts, defaults, and a head-on rebound.
+        Check(Marshal.SizeOf<RcTwinNative.Contact>() == 6 * 8, "Contact size");
+        Check(Marshal.SizeOf<RcTwinNative.WallReport>() == 24, "WallReport size");
+        using (var car = new TwinVehicle(RcTwinNative.Tier.L2DoubleTrack, RcTwinNative.DefaultParams()))
+        {
+            var dp = RcTwinNative.DefaultParams();
+            Check(RcTwinNative.rc_twin_contact_default(ref dp, out var cd) == RcTwinNative.Ok, "contact_default");
+            var c = car.Contact;
+            Check(c.Equals(cd), "a new car has the default contact");
+            Check(c.restitution == 0.3 && c.friction == 0.5 && c.restitutionMinSpeed == 0.1, "SlipX constants");
+            Check(c.halfLength == 0.5 * (dp.lf + dp.lr) + dp.wheelRadius && c.halfWidth == 0.5 * dp.trackFront,
+                  "footprint from geometry");
+            c.halfWidth += 0.0175;
+            car.Contact = c;
+            Check(car.Contact.halfWidth == c.halfWidth, "contact round trip (last but one field)");
+            Check(car.Contact.centreOffset == c.centreOffset, "contact round trip (last field)");
+            double front = c.centreOffset + c.halfLength, wall = front + 0.05;
+            car.AddWall(new[] { wall, -1.0, wall, 1.0 }, false);
+            car.AddWall(new[] { 5.0, 5.0, 6.0, 5.0, 6.0, 6.0 }, true);
+            Check(car.WallCount == 4, $"wall count {car.WallCount}");
+            var s0 = new RcTwinNative.State { vx = 1.0, soc = 1.0, packV = dp.packVFull,
+                                              omegaFL = 20, omegaFR = 20, omegaRL = 20, omegaRR = 20 };
+            car.Reset(s0);
+            bool hit = false;
+            for (int k = 0; k < 300 && !hit; k++)
+            {
+                car.Step(0.0, 0.0, 0.001);
+                var r = car.LastWallReport;
+                if (r.contacts == 0) continue;
+                hit = true;
+                Check(r.contacts == 1 && r.maxApproach > 0.9 && r.impulse > 0.0, "report fields");
+                Check(Math.Abs(car.State.vx + 0.3 * r.maxApproach) < 1e-9, $"rebound vx {car.State.vx}");
+            }
+            Check(hit, "the wall was hit");
+            car.ClearWalls();
+            Check(car.WallCount == 0, "clear walls");
+            bool badWall = false;
+            try { car.AddWall(new[] { 0.0, 0.0, 1.0 }, false); } catch (ArgumentException) { badWall = true; }
+            Check(badWall, "odd coordinate count refused");
+        }
+
         Console.WriteLine($"{checks} checks, {failures} failed");
         return failures == 0 ? 0 : 1;
     }
