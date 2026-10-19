@@ -2,7 +2,7 @@
 
 High-fidelity, physics-first digital twin of a 1/10-scale electric Ackermann RC car, built to plug into a fleet-management simulation.
 
-> **Status:** Phase 1 (foundation). SlipX is vendored in `core/`, the `rc_twin` C ABI builds and passes its tests, and a Unity project drives the car on flat ground (not yet run in the editor). See [`Docs/NEXT_STEPS.md`](Docs/NEXT_STEPS.md).
+> **Status:** Phase 1 (foundation). SlipX is vendored in `core/`, the `rc_twin` C ABI builds and passes its tests, and the Unity project drives the car on flat ground (Edit and Play Mode tests pass in the editor). See [`Docs/NEXT_STEPS.md`](Docs/NEXT_STEPS.md).
 
 ## Why
 

@@ -44,3 +44,8 @@ Thumbs.db
 # .NET build outputs (native/tests/csharp)
 bin/
 obj/
+
+# Unity: plugin is a build output (cmake --target unity_plugin); IDE solution
+unity/**/Assets/Plugins/
+unity/**/Assets/Plugins.meta
+unity/**/*.slnx
