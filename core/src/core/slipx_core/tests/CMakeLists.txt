@@ -19,3 +19,5 @@ slipx_add_test(test_invariants slipx::core)
 slipx_add_test(test_contact slipx::core)
 slipx_add_test(test_cross_tier slipx::core)
 slipx_add_test(test_no_alloc slipx::core)
+# rc-physics-twin: ground samples (ADR 0005 there). Modified 2026-10-19.
+slipx_add_test(test_ground slipx::core)

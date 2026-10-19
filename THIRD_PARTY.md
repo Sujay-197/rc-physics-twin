@@ -21,12 +21,17 @@ Checked 2026-10-19 against the upstream repository, not package metadata.
 
 ## SlipX: what we changed in `core/`
 
-`core/` is upstream `ebdbf3f` plus the changes below. Apache-2.0 section 4(b) requires modified files to carry a prominent notice; each file listed here carries a one-line "Modified ... by the rc-physics-twin project" comment under its licence header.
+`core/` is upstream `ebdbf3f` plus the changes below. Apache-2.0 section 4(b) requires modified files to carry a prominent notice; each file listed here carries a one-line "Modified" (or "Added") "... by the rc-physics-twin project" comment under its licence header.
 
 | File | Change | Upstream status |
 |---|---|---|
 | `core/src/orchestration/slipx_race/tests/test_wrong_way.cpp` | Brace-initialise the NaN threshold test so Clang 21 compiles it | Sent as ibrahimsel/slipx#1 |
 | `core/tools/check_conformance.py` | Look for `slipx_conformance.exe` on Windows | Sent as ibrahimsel/slipx#2 |
+| `core/src/core/slipx_core/include/slipx/ground.hpp` (new) | Per-wheel ground samples (height, normal, `mu_scale`) | Ours (ADR 0005); not sent |
+| `core/src/core/slipx_core/include/slipx/vehicle_model.hpp`, `src/vehicle_model.cpp` | `VehicleModel::step_on`; tiers without a ground model accept level ground only | Ours (ADR 0005); not sent |
+| `core/src/core/slipx_core/include/slipx/load_transfer.hpp` | Optional `g_normal` argument (default is the old arithmetic) | Ours (ADR 0005); not sent |
+| `core/src/core/slipx_core/src/l2_double_track.cpp` | Grade, banking and per-wheel grip at L2; level ground unchanged bit for bit | Ours (ADR 0005); not sent |
+| `core/src/core/slipx_core/tests/test_ground.cpp` (new), `tests/CMakeLists.txt` | 18 tests for the above | Ours (ADR 0005); not sent |
 
 Upstream lineage note: Gym-Khana says it is based on the UPenn `f1tenth_gym`. Check that lineage's license before copying code that may originate there.
 

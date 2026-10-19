@@ -1,5 +1,6 @@
 // Copyright 2026 The SlipX Authors
 // SPDX-License-Identifier: Apache-2.0
+// Modified 2026-10-19 by the rc-physics-twin project: see THIRD_PARTY.md.
 //
 // Quasi-static load transfer (CORE-05).
 //
@@ -102,8 +103,13 @@ struct WheelLoads {
 // small l_f and a large l_r, and the front axle carries most of the weight;
 // getting this the wrong way round is the classic sign error in this formula
 // and it is asserted in test_analytical.cpp rather than trusted.
-inline WheelLoads static_loads(const VehicleParams& p) {
-  const double weight = p.mass * kGravity;
+//
+// g_normal is the part of gravity pressing the car into the road: kGravity on
+// level ground, kGravity times the normal's z component on a grade
+// (rc-physics-twin ADR 0005). The default is the level case, bit for bit.
+inline WheelLoads static_loads(const VehicleParams& p,
+                               double g_normal = kGravity) {
+  const double weight = p.mass * g_normal;
   const double inv_wheelbase = 1.0 / p.wheelbase();
 
   WheelLoads out;
@@ -144,9 +150,14 @@ inline WheelLoads static_loads(const VehicleParams& p) {
 // distribution: a roll stiffness distribution is not identifiable in a car
 // park, and this one follows from a moment balance and introduces no
 // parameter at all.
+//
+// g_normal as for static_loads. ax and ay stay the specific forces from the
+// tyres: on a grade the gravity component along the road acts at the CoG and
+// is balanced by tyre force at the ground, so it transfers load through the
+// tyre force it calls for, which is already in ax.
 inline WheelLoads quasi_static_loads(const VehicleParams& p, double ax,
-                                     double ay) {
-  const double weight = p.mass * kGravity;
+                                     double ay, double g_normal = kGravity) {
+  const double weight = p.mass * g_normal;
   const double inv_wheelbase = 1.0 / p.wheelbase();
 
   // ---------------------------------------------------------- longitudinal

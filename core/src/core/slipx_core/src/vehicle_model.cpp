@@ -1,5 +1,6 @@
 // Copyright 2026 The SlipX Authors
 // SPDX-License-Identifier: Apache-2.0
+// Modified 2026-10-19 by the rc-physics-twin project: see THIRD_PARTY.md.
 //
 // Tier factory and the shared diagnostics reset.
 
@@ -14,6 +15,18 @@
 #include "models_internal.hpp"
 
 namespace slipx {
+
+// Tiers without a ground model accept level ground only (ADR 0005 of
+// rc-physics-twin). Anything else is refused, not ignored.
+bool VehicleModel::step_on(VehicleState& state, const DriveInput& input,
+                           const GroundContact& ground, double dt,
+                           StepDiagnostics* out) const {
+  if (validate(ground) != nullptr || !is_level(ground)) return false;
+  step(state, input, dt, out);
+  state.pos.z = mean_height(ground);
+  return true;
+}
+
 namespace internal {
 
 void reset_diagnostics(StepDiagnostics& d, Tier tier) {

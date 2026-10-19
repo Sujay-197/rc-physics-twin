@@ -1,5 +1,6 @@
 // Copyright 2026 The SlipX Authors
 // SPDX-License-Identifier: Apache-2.0
+// Modified 2026-10-19 by the rc-physics-twin project: see THIRD_PARTY.md.
 //
 // The one interface every fidelity tier is exposed through (CORE-02).
 //
@@ -20,6 +21,7 @@
 
 #include <memory>
 
+#include "slipx/ground.hpp"
 #include "slipx/integrator.hpp"
 #include "slipx/params.hpp"
 #include "slipx/state.hpp"
@@ -67,6 +69,16 @@ class VehicleModel {
   // with and would not use it if it did (CORE-04).
   virtual void step(VehicleState& state, const DriveInput& input, double dt,
                     StepDiagnostics* out = nullptr) const = 0;
+
+  // step on the ground the host sampled under each wheel (ground.hpp,
+  // rc-physics-twin ADR 0005). Returns false, leaving state untouched, if the
+  // samples are invalid or describe ground this tier cannot represent; it
+  // never falls back to ignoring them. Level ground is accepted by every tier
+  // and gives exactly what step gives, with pos.z set to the mean contact
+  // height. Like step, it is const and reads nothing outside its arguments.
+  virtual bool step_on(VehicleState& state, const DriveInput& input,
+                       const GroundContact& ground, double dt,
+                       StepDiagnostics* out = nullptr) const;
 
   virtual Tier tier() const = 0;
 

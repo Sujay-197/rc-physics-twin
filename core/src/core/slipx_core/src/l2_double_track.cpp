@@ -1,5 +1,6 @@
 // Copyright 2026 The SlipX Authors
 // SPDX-License-Identifier: Apache-2.0
+// Modified 2026-10-19 by the rc-physics-twin project: see THIRD_PARTY.md.
 //
 // L2: double-track with load transfer, MF-lite tyres, relaxation, and the
 // drivetrain: differential, ESC, battery and steering servo (ADR-0031).
@@ -98,6 +99,34 @@
 //
 // Validity: forward motion, as at L1, with params.v_eps flooring the speed in
 // every slip denominator. Below roughly v_eps, use L0.
+//
+// ============================================================================
+// Ground (rc-physics-twin ADR 0005)
+// ============================================================================
+//
+// step_on takes one ground sample per wheel, held for the step. This tier
+// uses them as follows, and uses nothing else about them:
+//
+//   mu_scale multiplies that tyre's friction budget, both ellipse axes. With
+//   MF-lite's B fixed at construction, that scales the tyre's cornering
+//   stiffness in proportion too. Real tyres lose less stiffness than peak
+//   friction on a slippery surface, so this overstates the stiffness loss;
+//   it is the simplest reading that keeps one surface parameter.
+//
+//   The four normals are averaged into one road plane. Gravity's component
+//   along the plane is added to the body-frame accelerations (forward and
+//   left axes projected onto the plane), and the component into the plane,
+//   g n_z, replaces g in the loads and the rolling resistance. Gravity along
+//   the road transfers load through the tyre force that resists it, which is
+//   already in the load pass (load_transfer.hpp).
+//
+//   pos.z is set to the mean contact height. Per-wheel height differences and
+//   normals beyond their mean need a suspension, which is L3's.
+//
+// Still planar: x, y and yaw are the horizontal projection, and the speed is
+// integrated into them as if horizontal, which overstates horizontal travel
+// by 1 / cos(grade): 0.5 % at a 10 % grade. Level, unscaled ground runs
+// exactly the upstream arithmetic, so the published hashes do not move.
 
 #include <array>
 #include <cmath>
@@ -178,7 +207,28 @@ struct StepConstants {
   // hundred and eighty times a step.
   WheelLoads statics;
   std::array<TyreBudget, kWheelCount> static_budget{};
+
+  // The ground (see the note at the top). The defaults are level, unscaled
+  // ground, under which every use below is an exact identity.
+  bool graded = false;          // the road plane is tilted
+  Vec3 normal{0.0, 0.0, 1.0};   // mean unit road normal, world frame    [-]
+  double g_normal = kGravity;   // gravity into the road            [m/s^2]
+  std::array<double, kWheelCount> mu{1.0, 1.0, 1.0, 1.0};          //  [-]
 };
+
+// Gravity's component along the road plane, on the body's forward and left
+// axes projected onto it. Downhill ahead tilts the normal forward, so the
+// forward component is positive; a left side higher than the right tilts it
+// right, so the left component is negative and the car is pushed right.
+inline void grade_accel(const StepConstants& c, double yaw, double* ax,
+                        double* ay) {
+  const double cy = std::cos(yaw);
+  const double sy = std::sin(yaw);
+  const double fn = c.normal.x * cy + c.normal.y * sy;    // forward . n
+  const double ln = -c.normal.x * sy + c.normal.y * cy;   // left . n
+  *ax = kGravity * fn * c.normal.z / std::sqrt(1.0 - fn * fn);
+  *ay = kGravity * ln * c.normal.z / std::sqrt(1.0 - ln * ln);
+}
 
 // Everything the diagnostics block wants and the integrator does not.
 struct Forces {
@@ -242,6 +292,19 @@ class DoubleTrackL2 final : public VehicleModel {
 
   void step(VehicleState& s, const DriveInput& u, double dt,
             StepDiagnostics* out) const override {
+    run(s, u, nullptr, dt, out);
+  }
+
+  bool step_on(VehicleState& s, const DriveInput& u, const GroundContact& g,
+               double dt, StepDiagnostics* out) const override {
+    if (validate(g) != nullptr) return false;
+    run(s, u, &g, dt, out);
+    return true;
+  }
+
+ private:
+  void run(VehicleState& s, const DriveInput& u, const GroundContact* ground,
+           double dt, StepDiagnostics* out) const {
     const double delta_cmd = clamp(u.steer_cmd, -params_.steer_max,
                                    params_.steer_max);
     const bool steer_sat = (delta_cmd != u.steer_cmd);
@@ -257,6 +320,28 @@ class DoubleTrackL2 final : public VehicleModel {
 
     StepConstants c;
     c.delta_cmd = delta_cmd;
+    if (ground != nullptr) {
+      // One road plane from the four normals, each normalised first so a
+      // sample's length carries no weight. Axle pairs first: mirror symmetry.
+      Vec3 n[kWheelCount];
+      for (unsigned i = 0; i < kWheelCount; ++i) {
+        const Vec3& w = ground->wheel[i].normal;
+        const double len = std::sqrt(w.x * w.x + w.y * w.y + w.z * w.z);
+        n[i] = Vec3{w.x / len, w.y / len, w.z / len};
+        c.mu[i] = ground->wheel[i].mu_scale;
+      }
+      Vec3 sum{(n[kFrontLeft].x + n[kFrontRight].x) +
+                   (n[kRearLeft].x + n[kRearRight].x),
+               (n[kFrontLeft].y + n[kFrontRight].y) +
+                   (n[kRearLeft].y + n[kRearRight].y),
+               (n[kFrontLeft].z + n[kFrontRight].z) +
+                   (n[kRearLeft].z + n[kRearRight].z)};
+      const double len =
+          std::sqrt(sum.x * sum.x + sum.y * sum.y + sum.z * sum.z);
+      c.normal = Vec3{sum.x / len, sum.y / len, sum.z / len};
+      c.graded = (c.normal.x != 0.0 || c.normal.y != 0.0);
+      c.g_normal = kGravity * c.normal.z;
+    }
     for (unsigned i = 0; i < kWheelCount; ++i) {
       wheel_offset(i, &c.wheel_x[i], &c.wheel_y[i]);
     }
@@ -353,9 +438,13 @@ class DoubleTrackL2 final : public VehicleModel {
     // The tyres are built once per step rather than once per derivative
     // evaluation: B is a function of the parameters and the static load only,
     // so it does not change within a step (CORE-03).
-    c.statics = static_loads(params_);
-    c.fz_nom_front = c.statics.fz[kFrontLeft];
-    c.fz_nom_rear = c.statics.fz[kRearLeft];
+    // The tyre's nominal load is a property of this car on level ground and
+    // stays there on a grade; the first load pass uses the loads the grade
+    // actually leaves on the road. Level ground: the same numbers.
+    const WheelLoads level = static_loads(params_);
+    c.statics = static_loads(params_, c.g_normal);
+    c.fz_nom_front = level.fz[kFrontLeft];
+    c.fz_nom_rear = level.fz[kRearLeft];
 
     // VehicleParams carries cornering stiffness per AXLE, because that is what
     // a single-track tier needs; MF-lite is per tyre, so each axle value is
@@ -420,6 +509,7 @@ class DoubleTrackL2 final : public VehicleModel {
     // Algebraic, like the per-wheel Fz: a reported consequence of this step's
     // load, not a degree of freedom (ADR-0031).
     s.pack_v = v_pack;
+    if (ground != nullptr) s.pos.z = mean_height(*ground);
 
     // Reported at the end of the step, so the numbers describe the state the
     // caller now holds. Same convention as L0 and L1.
@@ -458,6 +548,15 @@ class DoubleTrackL2 final : public VehicleModel {
 
       out->ax = d[kVx] - y[kVy] * y[kR];
       out->ay = d[kVy] + y[kVx] * y[kR];
+      if (c.graded) {
+        // Specific force: what an accelerometer reads, which excludes the
+        // gravity the derivative carries on a grade.
+        double gx = 0.0;
+        double gy = 0.0;
+        grade_accel(c, y[kYaw], &gx, &gy);
+        out->ax -= gx;
+        out->ay -= gy;
+      }
       out->load_transfer_long = f.transfer_long;
       out->load_transfer_lat = f.transfer_lat;
 
@@ -471,7 +570,6 @@ class DoubleTrackL2 final : public VehicleModel {
     }
   }
 
- private:
   // Wheel position in the body frame. x forward, y to the LEFT, so the left
   // wheels carry a positive y (conventions.hpp).
   void wheel_offset(unsigned i, double* x, double* y) const {
@@ -636,7 +734,7 @@ class DoubleTrackL2 final : public VehicleModel {
     // discontinuity at zero speed makes RK4's four evaluations disagree about
     // which side of it they are on.
     const double f_drag = params_.drag_coeff * vx * std::fabs(vx);
-    const double f_roll = params_.roll_resist * params_.mass * kGravity *
+    const double f_roll = params_.roll_resist * params_.mass * c.g_normal *
                           std::tanh(vx / params_.v_eps);
     kin.resistance = f_drag + f_roll;
 
@@ -658,8 +756,8 @@ class DoubleTrackL2 final : public VehicleModel {
       // law is shared and the tyre-only half is a per-step constant. See the
       // split in tyre.hpp, which exists for this call site.
       const double load = load_factor(tyre, fz);
-      (*out)[i].fx_max = peak.x * load;
-      (*out)[i].fy_max = peak.y * load;
+      (*out)[i].fx_max = peak.x * load * c.mu[i];
+      (*out)[i].fy_max = peak.y * load * c.mu[i];
 
       // Slip stiffness at this load, entering the same way it does for
       // cornering stiffness: the stiffness scales as the peak force does.
@@ -793,7 +891,8 @@ class DoubleTrackL2 final : public VehicleModel {
 
     // Pass two: the loads those accelerations imply, and the forces they give.
     // Two passes, always, whatever the residual (ADR-0027).
-    const WheelLoads loads = quasi_static_loads(params_, first.ax, first.ay);
+    const WheelLoads loads =
+        quasi_static_loads(params_, first.ax, first.ay, c.g_normal);
     std::array<TyreBudget, kWheelCount> budget;
     budget_at(c, loads, &budget);
     evaluate_forces(c, kin, loads, budget, f);
@@ -802,6 +901,13 @@ class DoubleTrackL2 final : public VehicleModel {
     d[kVx] = f->ax + q[kVy] * q[kR];
     d[kVy] = f->ay - q[kVx] * q[kR];
     d[kR] = f->mz / params_.izz;
+    if (c.graded) {
+      double gx = 0.0;
+      double gy = 0.0;
+      grade_accel(c, q[kYaw], &gx, &gy);
+      d[kVx] += gx;
+      d[kVy] += gy;
+    }
 
     for (unsigned i = 0; i < kWheelCount; ++i) {
       const bool front = (i == kFrontLeft || i == kFrontRight);
