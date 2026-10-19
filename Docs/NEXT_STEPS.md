@@ -34,7 +34,7 @@
 
 ## Phase 4: Fleet coupling
 
-- [ ] Edge profiler and cache format.
+- [x] Edge profiler and cache format. `tools/edge_profiler.py` sweeps speed x payload x charge per edge under the reference driver and writes `profiles/edge_profile.schema.json` caches with road, car and controller digests; reruns reuse what still matches. Tests in ctest (`tools.edge_profiler`).
 - [ ] Hook cache into fleet sim edge costs (fleet items C, D).
 - [ ] Energy-aware dispatch; charging constraints.
 - [ ] Demand forecasting and request reassignment (fleet items A, B), re-evaluated with physical costs.

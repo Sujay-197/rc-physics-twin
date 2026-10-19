@@ -72,6 +72,12 @@ Drive a road file headlessly (no Unity), with a JSON report of time, energy and 
 python tools/drive_road.py roads/samples/hill_breaker_bend.json --speed 2
 ```
 
+Profile road edges for the fleet sim (time, energy, breaker penalty per speed, payload and charge; reruns reuse what still matches):
+
+```bash
+python tools/edge_profiler.py roads/samples/*.json --out profiles/cache.json --speeds 1 2 3 --payloads 0 1 --soc 0.8 0.4 --breaker-speed 1
+```
+
 Open `unity/RcTwin` in Unity Hub with **6000.5.3f1**, run **RcTwin > Build Flat Ground Scene**, and press Play. W/S throttle and brake, A/D steer, R reset. The C# bindings can also be checked without Unity: `native/tests/csharp` (`dotnet run -- build/bin`).
 
 ## Layout
@@ -80,7 +86,8 @@ Open `unity/RcTwin` in Unity Hub with **6000.5.3f1**, run **RcTwin > Build Flat 
 core/            SlipX vendored at ebdbf3f (C++17); our changes listed in THIRD_PARTY.md
 native/          rc_twin: C ABI over the Core (rc_twin.dll), with C, C++ and C# tests
 unity/RcTwin/    Unity 6 project: P/Invoke bindings, keyboard car, scene builder (hill, bank, ice, speed breaker)
-tools/           toolchain bootstrap; drive_road.py, the headless harness
+tools/           toolchain bootstrap; drive_road.py, the headless harness; edge_profiler.py
+profiles/        edge profile cache schema (the fleet sim's input)
 sim_py/          Python bindings, gymkhana cross-validation, SB3 training
 cars/            versioned car directories (YAML), every set labeled measured|identified|provisional
 roads/           road-feature schema and sample data (grade, speed breakers, friction)

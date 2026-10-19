@@ -148,7 +148,19 @@ def build_road(lib: ctypes.CDLL, road: dict) -> ctypes.c_void_p:
     return r
 
 
-def drive(lib: ctypes.CDLL, road: dict, args: argparse.Namespace) -> tuple[int, dict]:
+# The reference driver (ADR 0004 asks for it to be recorded with every cache).
+CONTROLLER = {
+    "steering": "pure pursuit on the centreline from the rear axle, lookahead max(0.4 m, 0.5 s x speed)",
+    "speed": "proportional, accel = 3.0 (1/s) x (target - speed), within the car's limits",
+    "speed_breakers": "if breaker_speed is set: slow to it before each breaker at comfort_decel, "
+                      "hold it until the whole car is over, then resume",
+    "rate_hz": 100,
+    "core_step_s": 0.001,
+}
+
+
+def car_params(lib: ctypes.CDLL, args: argparse.Namespace) -> Params:
+    """SlipX's provisional defaults plus the options and the payload."""
     p = Params()
     lib.rc_twin_params_default(ctypes.byref(p))
     p.wheel_inertia = args.wheel_inertia
@@ -156,6 +168,31 @@ def drive(lib: ctypes.CDLL, road: dict, args: argparse.Namespace) -> tuple[int, 
     p.wheel_rate_front = p.wheel_rate_rear = args.wheel_rate
     p.damping_front = p.damping_rear = args.damping
     p.suspension_travel = args.travel
+    # A payload is a point mass at the CoG: it adds mass and, about the CoG,
+    # no inertia.
+    p.mass += getattr(args, "payload", 0.0)
+    return p
+
+
+def target_speed(road: dict, p: Params, s: float, args: argparse.Namespace) -> float:
+    """The reference driver's target with the car's CoG at arc length s."""
+    v = args.speed
+    vb = getattr(args, "breaker_speed", None)
+    if vb is None or vb >= v:
+        return v
+    a = getattr(args, "comfort_decel", 2.0)
+    front = s + p.lf
+    rear = s - p.lr
+    for b in road.get("speed_breakers", []):
+        start = b["s"] - 0.5 * b["length"] - (v * v - vb * vb) / (2.0 * a) - 0.3
+        end = b["s"] + 0.5 * b["length"]
+        if front >= start and rear <= end:
+            return vb
+    return v
+
+
+def drive(lib: ctypes.CDLL, road: dict, args: argparse.Namespace) -> tuple[int, dict]:
+    p = car_params(lib, args)
     why = ctypes.c_char_p()
     car = lib.rc_twin_create(2, 0, ctypes.byref(p), ctypes.byref(why))
     if not car:
@@ -168,7 +205,8 @@ def drive(lib: ctypes.CDLL, road: dict, args: argparse.Namespace) -> tuple[int, 
         lib.rc_twin_road_point(r, s0, ctypes.byref(x), ctypes.byref(y), ctypes.byref(z), ctypes.byref(h))
         v0 = args.speed if args.start_speed is None else args.start_speed
         w0 = v0 / p.wheel_radius
-        st = State(x=x.value, y=y.value, z=z.value, yaw=h.value, vx=v0, soc=1.0, pack_v=11.1,
+        st = State(x=x.value, y=y.value, z=z.value, yaw=h.value, vx=v0,
+                   soc=getattr(args, "soc", 1.0), pack_v=11.1,
                    w_fl=w0, w_fr=w0, w_rl=w0, w_rr=w0)
         lib.rc_twin_reset(car, ctypes.byref(st))
         ground = ctypes.cast(lib.rc_twin_road_ground, ctypes.c_void_p)
@@ -200,7 +238,8 @@ def drive(lib: ctypes.CDLL, road: dict, args: argparse.Namespace) -> tuple[int, 
             ld = math.hypot(x.value - rx, y.value - ry)
             steer = math.atan2(2.0 * wb * math.sin(alpha), ld)
             steer = max(-p.steer_max, min(p.steer_max, steer))
-            accel = max(-p.decel_max, min(p.accel_max, 3.0 * (args.speed - prev.vx)))
+            v_target = target_speed(road, p, s_cur.value, args)
+            accel = max(-p.decel_max, min(p.accel_max, 3.0 * (v_target - prev.vx)))
             rc = lib.rc_twin_step(car, steer, accel, dt, sub)
             if rc == E_GROUND:
                 status = "left_road"
@@ -237,6 +276,9 @@ def drive(lib: ctypes.CDLL, road: dict, args: argparse.Namespace) -> tuple[int, 
                 "wheel_inertia": args.wheel_inertia,
                 "ackermann": args.ackermann,
                 "suspension": args.wheel_rate > 0,
+                "payload_kg": getattr(args, "payload", 0.0),
+                "soc_start": getattr(args, "soc", 1.0),
+                "breaker_speed_mps": getattr(args, "breaker_speed", None),
                 "parameters": "PROVISIONAL (SlipX defaults); not a measured car",
             },
         }
@@ -249,18 +291,28 @@ def drive(lib: ctypes.CDLL, road: dict, args: argparse.Namespace) -> tuple[int, 
         lib.rc_twin_road_destroy(r)
 
 
-def main(argv: list[str] | None = None) -> int:
-    ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
-    ap.add_argument("road", type=pathlib.Path, help="road JSON (roads/road.schema.json)")
-    ap.add_argument("--speed", type=float, default=2.0, help="target speed [m/s]")
-    ap.add_argument("--start-speed", type=float, default=None, help="[m/s], default the target")
+def add_car_options(ap: argparse.ArgumentParser) -> None:
+    """Car and driver options, shared with tools/edge_profiler.py."""
     ap.add_argument("--timeout", type=float, default=120.0, help="[s] of simulated time")
     ap.add_argument("--wheel-inertia", type=float, default=0.0, help="[kg m^2] (ADR 0006)")
     ap.add_argument("--ackermann", type=float, default=0.0, help="fraction of ideal (ADR 0007)")
     ap.add_argument("--wheel-rate", type=float, default=0.0, help="[N/m] per wheel, both axles (ADR 0008)")
     ap.add_argument("--damping", type=float, default=0.0, help="[N s/m] per wheel")
     ap.add_argument("--travel", type=float, default=0.015, help="[m] to the bump stop")
+    ap.add_argument("--breaker-speed", type=float, default=None,
+                    help="[m/s] the driver slows to for speed breakers (default: does not slow)")
+    ap.add_argument("--comfort-decel", type=float, default=2.0, help="[m/s^2] the driver slows at")
     ap.add_argument("--lib", type=pathlib.Path, default=ROOT / "build" / "bin" / "rc_twin.dll")
+
+
+def main(argv: list[str] | None = None) -> int:
+    ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
+    ap.add_argument("road", type=pathlib.Path, help="road JSON (roads/road.schema.json)")
+    ap.add_argument("--speed", type=float, default=2.0, help="target speed [m/s]")
+    ap.add_argument("--start-speed", type=float, default=None, help="[m/s], default the target")
+    ap.add_argument("--payload", type=float, default=0.0, help="[kg] at the CoG")
+    ap.add_argument("--soc", type=float, default=1.0, help="state of charge at the start, 0..1")
+    add_car_options(ap)
     args = ap.parse_args(argv)
     try:
         road = json.loads(args.road.read_text(encoding="utf-8"))
