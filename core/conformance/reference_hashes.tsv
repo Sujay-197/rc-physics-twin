@@ -1,0 +1,105 @@
+# Published reference trajectory hashes for the canonical conformance run
+# (NFR-02, NFR-03). Tab-separated. Checked by tools/check_conformance.py.
+#
+# READ THIS BEFORE ADDING A ROW OR CHANGING ONE.
+#
+# Each row is a published claim: on this architecture, with this compiler
+# major, against this C library and with this build type, the canonical step
+# steer produces exactly this 64-bit hash. Within one such build, a different
+# hash is a determinism bug (NFR-02). Across builds, a different hash is
+# expected and is not a failure: cross-platform bit-identity is explicitly NOT
+# promised (NFR-03), because libm is not correctly rounded and does not agree
+# between platforms.
+#
+# The C library is in the key, and it is in the key because it is libm that
+# the hash tracks. sin, cos, atan and exp move between glibc versions, and one
+# unchanged wheel was measured producing two different hashes on glibc 2.28
+# and glibc 2.39. The version is written in full rather than as a major:
+# glibc's major has been 2 since 1997, and it is the minor releases that move
+# the numbers (ADR-0033).
+#
+# Changing an existing hash invalidates every result anybody has ever compared
+# against it. It is a release event, it belongs in the release notes, and it
+# needs a reason in the commit message: a physics change, an integrator
+# change, a change to the conformance scenario, or a change to the state
+# layout the hash covers. "The test was failing" is not a reason.
+#
+# The L1/rk4 hash is written down twice. The wheel job in .github/workflows/
+# ci.yml pins it as a literal, on purpose: it checks an independently built
+# wheel against a published number, and reading that number out of this file
+# would have the job agree with itself. So a changed L1/rk4 row moves the pin
+# in the same commit. tools/check_conformance.py --pin-only checks it did.
+#
+# The conformance scenario is defined once, in
+# src/orchestration/slipx_sim/include/slipx/sim/manoeuvres.hpp. It uses the
+# VehicleParams struct defaults, which are PROVISIONAL and describe no
+# measured vehicle (NFR-08). These hashes certify that the arithmetic is
+# reproducible. They certify nothing whatsoever about a real car.
+#
+# As an observation and not a promise: every x86_64 row below carries the same
+# hash for the same case, across GCC 11, GCC 13 and Clang 18. That is evidence
+# that the arithmetic does not depend on the compiler here. It is recorded as
+# separate rows anyway, because the moment it is collapsed into one row the
+# file stops being able to express a compiler that disagrees, and NFR-03 exists
+# precisely because one eventually will.
+#
+# History. The L2 rows were added on 2026-08-03 when the double-track tier
+# landed; they are new claims rather than changed ones, so nothing previously
+# published became incomparable by their arrival.
+#
+# The six L2 rows were rerecorded on 2026-08-12 when the drivetrain slice
+# landed (ADR-0031): the L2 state vector grew from 10 to 13 (steer,
+# steer_rate, soc), the ESC and battery bound the drive torque, braking became
+# motor braking through the driven axle, and the servo lags the steer command.
+# L2 results compared against the previous values are not comparable with
+# these. The L0 and L1 rows were re-measured under all three compilers and
+# are byte-identical to before, as they must be: no code either tier executes
+# changed. The three compiler rows were measured separately, not copied.
+#
+# The twelve L1 and L2 rows were rerecorded on 2026-08-12, a second time in
+# the same unreleased cycle, when ADR-0032 raised the reference car's
+# cornering stiffness by 3.5. The old value put the tyre's force peak at
+# 24 degrees of slip angle, which no car reaches, so the reference car could
+# not get to its own tyre peak and the MF-lite falling branch was dead code in
+# every published figure. The six L0 rows did NOT move and were re-measured
+# under all three compilers to confirm it: the kinematic tier has no tyre and
+# no cornering stiffness to change. That asymmetry is the evidence the change
+# was the one intended.
+#
+# Every row below was rerecorded on 2026-08-03 when CORE-07 added the
+# per-wheel lagged slip angle to VehicleState. The hash covers the state layout,
+# so four extra fields per step moved every row including L0's and L1's, neither
+# of which has a tyre transient at all. That is a change to the state layout the
+# hash covers, which ADR-0008 lists as a legitimate reason for a hash to move.
+# Results compared against the numbers published in 0.1.0a1 are not comparable
+# with these. The three compiler rows were measured separately rather than
+# copied from one another.
+#
+# The eighteen rows were re-keyed on 2026-08-13, not re-measured into new
+# values: ADR-0033 put the C library in the key, and every row gained the
+# glibc 2.39 it was in fact recorded under, here and on the pinned
+# ubuntu-24.04 runners alike. No hash changed and nothing published became
+# incomparable. Before this, a run on a different glibc matched a row it was
+# never entitled to match and was reported as a determinism bug; it now gets
+# the honest "no reference row for this build" instead.
+#
+# Columns:
+#   system_processor  compiler_id  compiler_major  libc  build_type  tier  integrator  hash
+x86_64	GNU	11	glibc-2.39	RelWithDebInfo	L0	rk4	cf6aba9e280a24b9
+x86_64	GNU	11	glibc-2.39	RelWithDebInfo	L0	semi_implicit_euler	4cb3269ec5ba7ac3
+x86_64	GNU	11	glibc-2.39	RelWithDebInfo	L1	rk4	0d8f69a1e3b58038
+x86_64	GNU	11	glibc-2.39	RelWithDebInfo	L1	semi_implicit_euler	2649495a464deb0b
+x86_64	GNU	11	glibc-2.39	RelWithDebInfo	L2	rk4	1bbccc8a6af12ae0
+x86_64	GNU	11	glibc-2.39	RelWithDebInfo	L2	semi_implicit_euler	893d57a524b12892
+x86_64	Clang	18	glibc-2.39	RelWithDebInfo	L0	rk4	cf6aba9e280a24b9
+x86_64	Clang	18	glibc-2.39	RelWithDebInfo	L0	semi_implicit_euler	4cb3269ec5ba7ac3
+x86_64	Clang	18	glibc-2.39	RelWithDebInfo	L1	rk4	0d8f69a1e3b58038
+x86_64	Clang	18	glibc-2.39	RelWithDebInfo	L1	semi_implicit_euler	2649495a464deb0b
+x86_64	Clang	18	glibc-2.39	RelWithDebInfo	L2	rk4	1bbccc8a6af12ae0
+x86_64	Clang	18	glibc-2.39	RelWithDebInfo	L2	semi_implicit_euler	893d57a524b12892
+x86_64	GNU	13	glibc-2.39	RelWithDebInfo	L0	rk4	cf6aba9e280a24b9
+x86_64	GNU	13	glibc-2.39	RelWithDebInfo	L0	semi_implicit_euler	4cb3269ec5ba7ac3
+x86_64	GNU	13	glibc-2.39	RelWithDebInfo	L1	rk4	0d8f69a1e3b58038
+x86_64	GNU	13	glibc-2.39	RelWithDebInfo	L1	semi_implicit_euler	2649495a464deb0b
+x86_64	GNU	13	glibc-2.39	RelWithDebInfo	L2	rk4	1bbccc8a6af12ae0
+x86_64	GNU	13	glibc-2.39	RelWithDebInfo	L2	semi_implicit_euler	893d57a524b12892
