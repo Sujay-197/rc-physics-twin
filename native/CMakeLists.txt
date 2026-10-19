@@ -1,0 +1,37 @@
+# rc_twin: shared library exposing the Core through a C ABI (include/rc_twin.h).
+
+add_library(rc_twin SHARED src/rc_twin.cpp)
+target_include_directories(rc_twin PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
+target_compile_definitions(rc_twin PRIVATE RC_TWIN_BUILDING)
+target_link_libraries(rc_twin PRIVATE slipx_core)
+slipx_apply_determinism_flags(rc_twin)
+set_target_properties(rc_twin PROPERTIES
+  PREFIX ""                      # rc_twin.dll, not librc_twin.dll
+  CXX_VISIBILITY_PRESET hidden
+  VISIBILITY_INLINES_HIDDEN ON
+)
+# Everything lands in bin/, so tests find rc_twin.dll next to them.
+set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
+set_target_properties(rc_twin PROPERTIES RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
+if(MINGW OR CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU")
+  target_compile_options(rc_twin PRIVATE -Wall -Wextra -Wpedantic -Wconversion)
+endif()
+
+install(TARGETS rc_twin RUNTIME DESTINATION bin LIBRARY DESTINATION lib
+        ARCHIVE DESTINATION lib)
+install(FILES include/rc_twin.h DESTINATION include)
+
+if(BUILD_TESTING)
+  # Plain C, through the DLL only: proves the header is C and the exports work.
+  add_executable(test_capi tests/test_capi.c)
+  target_link_libraries(test_capi PRIVATE rc_twin)
+  set_target_properties(test_capi PROPERTIES C_STANDARD 99)
+  add_test(NAME rc_twin.capi COMMAND test_capi)
+
+  # C ABI against the Core called directly, bit for bit.
+  add_executable(test_equivalence tests/test_equivalence.cpp)
+  target_link_libraries(test_equivalence PRIVATE rc_twin slipx_core)
+  slipx_apply_determinism_flags(test_equivalence)
+  add_test(NAME rc_twin.equivalence COMMAND test_equivalence)
+
+endif()
