@@ -74,6 +74,23 @@ namespace RcTwin.Tests
         }
 
         [Test]
+        public void TheInnerFrontWheelTurnsFurtherWithAckermann()
+        {
+            var p = RcTwinNative.DefaultParams();
+            Assert.AreEqual(0.25, TwinCar.FrontWheelAngle(p, 0.25, true), "parallel by default");
+            p.ackermann = 1.0;
+            double inner = TwinCar.FrontWheelAngle(p, 0.25, true);   // left turn: left is inner
+            double outer = TwinCar.FrontWheelAngle(p, 0.25, false);
+            Assert.Greater(inner, 0.25);
+            Assert.Less(outer, 0.25);
+            // Both aim at one turn centre on the rear-axle line.
+            double wb = p.lf + p.lr, ht = 0.5 * p.trackFront;
+            Assert.That(wb / Math.Tan(inner) + ht, Is.EqualTo(wb / Math.Tan(outer) - ht).Within(1e-12));
+            using var car = new TwinVehicle(RcTwinNative.Tier.L2DoubleTrack, p);
+            Assert.AreEqual(1.0, car.Params.ackermann, "reaches the Core");
+        }
+
+        [Test]
         public void InvalidParamsAreRejectedWithReason()
         {
             var p = RcTwinNative.DefaultParams();

@@ -72,6 +72,7 @@ static class Program
         Eq(p.steerBandwidth, 45.0, "steerBandwidth"); Eq(p.steerDamping, 0.7, "steerDamping");
         Eq(p.dragCoeff, 0.015, "dragCoeff"); Eq(p.rollResist, 0.015, "rollResist"); Eq(p.vEps, 0.5, "vEps");
         Eq(p.wheelInertia, 0.0, "wheelInertia");
+        Eq(p.ackermann, 0.0, "ackermann");
 
         using (var car = new TwinVehicle(RcTwinNative.Tier.L2DoubleTrack, p))
         {
@@ -84,10 +85,11 @@ static class Program
             s = car.State;
             Check(s.yaw > 0.1 && s.y > 0.0, "left steer turns left");
 
-            var heavier = p; heavier.mass = 5.0; heavier.wheelInertia = 2e-5;
+            var heavier = p; heavier.mass = 5.0; heavier.wheelInertia = 2e-5; heavier.ackermann = 0.8;
             car.Params = heavier;
             Check(car.Params.mass == 5.0, "set/get params");
-            Check(car.Params.wheelInertia == 2e-5, "wheel inertia round trip (last field)");
+            Check(car.Params.wheelInertia == 2e-5, "wheel inertia round trip");
+            Check(car.Params.ackermann == 0.8, "ackermann round trip (last field)");
 
             var snap = car.State;
             car.Step(0.1, 1.0, 0.001, 50);

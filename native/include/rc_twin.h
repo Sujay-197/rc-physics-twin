@@ -21,6 +21,7 @@
  * v2: ground query (rc_twin_ground_sample, rc_twin_set_ground_query,
  *     RC_TWIN_E_GROUND).
  * v3: rc_twin_params.wheel_inertia (ADR 0006).
+ * v4: rc_twin_params.ackermann (ADR 0007).
  */
 #ifndef RC_TWIN_H
 #define RC_TWIN_H
@@ -41,7 +42,7 @@
 extern "C" {
 #endif
 
-#define RC_TWIN_ABI_VERSION 3u
+#define RC_TWIN_ABI_VERSION 4u
 
 typedef int32_t rc_twin_status;
 enum {
@@ -120,6 +121,10 @@ typedef struct rc_twin_params {
    * default) keeps quasi-static wheels; > 0 makes wheel speeds integrated
    * state at L2, so wheelspin and lock-up happen (ADR 0006). */
   double wheel_inertia;
+
+  /* Fraction of ideal Ackermann at L2: 0 parallel steer (the default), 1
+   * ideal, negative anti-Ackermann; in [-1, 1] (ADR 0007). */
+  double ackermann;
 } rc_twin_params;
 
 typedef struct rc_twin_vehicle rc_twin_vehicle;

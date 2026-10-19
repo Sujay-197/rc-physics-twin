@@ -114,6 +114,7 @@ const char* to_core(const rc_twin_params& c, slipx::VehicleParams& p) {
   p.roll_resist = c.roll_resist;
   p.v_eps = c.v_eps;
   p.wheel_inertia = c.wheel_inertia;
+  p.ackermann = c.ackermann;
   return nullptr;
 }
 
@@ -162,6 +163,7 @@ void from_core(const slipx::VehicleParams& p, rc_twin_params& c) {
   c.roll_resist = p.roll_resist;
   c.v_eps = p.v_eps;
   c.wheel_inertia = p.wheel_inertia;
+  c.ackermann = p.ackermann;
 }
 
 void to_core(const rc_twin_state& c, slipx::VehicleState& s) {

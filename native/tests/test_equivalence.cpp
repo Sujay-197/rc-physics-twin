@@ -89,6 +89,8 @@ void test_defaults_match_core() {
   CHECK(p.v_eps == c.v_eps);
   CHECK(p.wheel_inertia == c.wheel_inertia);
   CHECK(c.wheel_inertia == 0.0);
+  CHECK(p.ackermann == c.ackermann);
+  CHECK(c.ackermann == 0.0);
 }
 
 // Every field moved off its default by a distinct factor, so a swap of any
@@ -145,6 +147,7 @@ void nudge(P& p) {
   p.roll_resist *= 1.0 + 33 * k;
   p.v_eps *= 1.0 + 34 * k;
   p.wheel_inertia = 1e-4 * (1.0 + 35 * k);  // default is 0: set, to exercise it
+  p.ackermann = 0.6 + 36 * k;               // likewise
 }
 
 // A drive that exercises steering, drive, coast and regen.

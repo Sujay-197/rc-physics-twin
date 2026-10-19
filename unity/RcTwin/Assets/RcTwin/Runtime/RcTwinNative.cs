@@ -1,4 +1,4 @@
-// P/Invoke bindings for native/include/rc_twin.h (ABI version 3).
+// P/Invoke bindings for native/include/rc_twin.h (ABI version 4).
 //
 // Deliberately free of UnityEngine so native/tests/csharp can compile and run
 // it against rc_twin.dll outside the editor. Field order here must match the
@@ -15,7 +15,7 @@ namespace RcTwin
     public static class RcTwinNative
     {
         public const string Lib = "rc_twin";
-        public const uint AbiVersion = 3;
+        public const uint AbiVersion = 4;
 
         public const int Ok = 0, ENull = -1, EInvalid = -2, EInternal = -3, EGround = -4;
 
@@ -72,6 +72,7 @@ namespace RcTwin
             public double dragCoeff, rollResist, vEps;
 
             public double wheelInertia;  // per wheel [kg m^2]; 0 = quasi-static wheels (ADR 0006)
+            public double ackermann;     // fraction of ideal, [-1, 1]; 0 = parallel steer (ADR 0007)
         }
 
         /// <summary>Ground under one wheel, world frame, ISO 8855 (ADR 0005).</summary>

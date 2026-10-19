@@ -38,6 +38,11 @@ namespace RcTwin
                  "PROVISIONAL until a spin-down test on the real car measures it.")]
         public double wheelInertia = 1e-5;
 
+        [Tooltip("Fraction of ideal Ackermann steering (ADR 0007): 0 parallel, 1 ideal, negative anti. " +
+                 "The default, 1, is the geometric ideal: PROVISIONAL until both front wheel angles " +
+                 "are measured on the real car at a known steer.")]
+        [Range(-1f, 1f)] public double ackermann = 1.0;
+
         private TwinVehicle _car;
         private RcTwinNative.Params _p;
         private RcTwinNative.State _prev, _curr;
@@ -67,6 +72,7 @@ namespace RcTwin
         {
             _p = RcTwinNative.DefaultParams();
             _p.wheelInertia = wheelInertia;
+            _p.ackermann = ackermann;
             _car = new TwinVehicle(tier, _p);
             _ground = useGroundQuery ? GetComponent<RaycastGround>() : null;
             if (_ground != null) _car.SetGround(_ground);
@@ -157,6 +163,20 @@ namespace RcTwin
             i == 0 ? s.omegaFL : i == 1 ? s.omegaFR : i == 2 ? s.omegaRL : s.omegaRR;
 
         // The car's heading laid onto the road plane.
+        /// <summary>
+        /// A front wheel's road wheel angle for reference angle delta, the Core's
+        /// formula (ADR 0007), for drawing. Positive is left.
+        /// </summary>
+        public static double FrontWheelAngle(in RcTwinNative.Params p, double delta, bool left)
+        {
+            if (p.ackermann == 0.0) return delta;
+            double wb = p.lf + p.lr;
+            double ht = 0.5 * p.trackFront;
+            double tn = Math.Tan(delta);
+            double ideal = Math.Atan(wb * tn / (left ? wb - ht * tn : wb + ht * tn));
+            return delta + p.ackermann * (ideal - delta);
+        }
+
         private static Quaternion OnPlane(double yaw, Vector3 up)
         {
             Vector3 fwd = Vector3.ProjectOnPlane(ToUnity(Math.Cos(yaw), Math.Sin(yaw), 0.0), up);
@@ -178,11 +198,12 @@ namespace RcTwin
                 Vector3.Lerp(p0, p1, a),
                 Quaternion.Slerp(OnPlane(_prev.yaw, _prevUp), OnPlane(_curr.yaw, _currUp), a));
 
-            float steerDeg = -(float)(_curr.steer * Mathf.Rad2Deg);
+            float leftDeg = -(float)(FrontWheelAngle(_p, _curr.steer, true) * Mathf.Rad2Deg);
+            float rightDeg = -(float)(FrontWheelAngle(_p, _curr.steer, false) * Mathf.Rad2Deg);
             for (int i = 0; i < 4 && i < wheels.Length; i++)
             {
                 if (wheels[i] == null) continue;
-                float yaw = i < 2 ? steerDeg : 0f;  // parallel steer, as SlipX today
+                float yaw = i == 0 ? leftDeg : i == 1 ? rightDeg : 0f;
                 wheels[i].localRotation = Quaternion.Euler(0f, yaw, 0f) * Quaternion.Euler(_spinDeg[i], 0f, 0f);
             }
         }
