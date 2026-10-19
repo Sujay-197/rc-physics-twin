@@ -6,7 +6,7 @@
 - [x] Choose the target car: generic 1/10 electric Ackermann, `provisional`, until real numbers come from `hardware-bom.md`.
 - [x] Fork `ibrahimsel/slipx` on GitHub and decide: vendor into `core/` or git submodule. Forked ([Sujay-197/slipx](https://github.com/Sujay-197/slipx)); **vendored** into `core/` at `ebdbf3f`.
 - [ ] Verify upstream `LICENSE` files (SlipX, Gym-Khana) and fill `THIRD_PARTY.md`. SlipX done 2026-10-19; Gym-Khana still open.
-- [ ] Confirm Unity version and whether it can load a C++ native plugin on the dev machine (Windows).
+- [x] Confirm Unity version and whether it can load a C++ native plugin on the dev machine (Windows). Unity 6000.5.3f1 loads `rc_twin.dll`; Edit and Play Mode suites run in batch mode.
 - [ ] Open `rc_transit/docs/hardware-bom.md` in the fleet repo; extract any real mass, wheelbase, motor, battery numbers.
 
 ## Phase 1: Foundation
@@ -23,7 +23,7 @@
 - [x] Ground-query callback in the C ABI (`rc_twin_set_ground_query`, ABI v2), and `RaycastGround` + `GroundSurface` in Unity. The FlatGround scene has a hill, a banked strip and an ice patch; Play Mode tests drive all three.
 - [x] Ackermann steering geometry. ADR 0007: `ackermann` fraction of ideal (0 parallel, the default; 1 ideal; negative anti), per-wheel front angles everywhere the steer enters at L2. Measure it on the car: steer to a known angle, read both front wheels.
 - [x] Per-wheel spin state (lock-up and wheelspin representable). ADR 0006: opt-in `wheel_inertia`; chassis holds each wheel's slip over the step, wheels advance by a closed-form implicit solve coupled through the motor curve; motor braking locks rather than reverses. Inertia 0 is SlipX's L2 bit for bit.
-- [ ] Per-wheel height differences (twist, kerbs) and speed breakers need suspension: Phase 3 / L3.
+- [x] Per-wheel height differences (twist) and speed breakers: suspension, ADR 0008. Kerbs are walls, not heights: ADR 0009.
 
 ## Phase 3: Road
 
@@ -45,6 +45,7 @@
 - [x] Gymnasium env around the Core. `sim_py/rc_twin_env.py`: road following at a target speed, standard library only, optional `gymnasium.Env` wrapper; tests in ctest (`sim_py.env`).
 - [x] Domain randomization and history-conditioned observations (friction, payload, servo lag, motor torque, tyre stiffness, battery resistance; seeded). A trained history-conditioned policy is still to do: needs gymnasium, numpy and SB3 installed.
 - [x] Train where the fleet runs. `sim_py/campus.py`: `CampusEnv` drives stop-to-stop trips on the campus network, drawn by demand weight and routed by shortest path as the fleet sim does; tests in ctest (`sim_py.campus`).
+- [x] A trained policy without extra packages. `sim_py/train_cem.py` trains a linear policy on the campus by the cross-entropy method (2 minutes). On 30 unseen trips: 100 % success under training randomisation (return 1361 vs the pure-pursuit baseline's 1371); 83 % and 4 kerb strikes under held-out randomisation, where the baseline holds 100 %. The gap is the expected one for a policy that cannot use the observation history; `policies/campus_cem.json` holds it and its full report.
 - [ ] Held-out-parameter and perturbation evaluation. The tools are in place (`RANGES_HELD_OUT`, mid-episode `perturb`, `evaluate`, a pure-pursuit baseline); evaluating a trained policy waits on training.
 
 ## Phase 6: Empirical (optional)

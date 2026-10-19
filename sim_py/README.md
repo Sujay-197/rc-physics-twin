@@ -41,3 +41,17 @@ obs, info = env.reset(options={"trip": ("AB1", "S6")})
 The campus's kerbs and buildings are walls (ADR 0009): a strike bounces the car and costs `REWARD["wall"]` times the speed it lost; `info["wall_contacts"]` and `info["wall_impulse"]` count them. Any `RcTwinEnv` takes walls the same way (`walls=[{"points": [[x, y], ...], "closed": bool}]`).
 
 `RcTwinEnv.reset(options={"road": road_dict})` swaps the road for any env, which is how `CampusEnv` changes route per episode. `max_time` defaults to 120 s here (the longest trip is 69 m). Tests: `python -I sim_py/test_campus.py` (ctest `sim_py.campus`).
+
+## `train_cem.py`: training on the campus without extra packages
+
+A dependency-free learner, so a policy can be trained on the campus where only `rc_twin.dll` and Python are available: the cross-entropy method over a linear policy, `action = tanh(W . frame + b)` on the current observation frame. Each iteration scores a population of weight vectors on the same few campus trips and randomised cars, and refits a Gaussian to the best.
+
+```bash
+python sim_py/train_cem.py --iterations 40 --out policies/campus_cem.json
+```
+
+```bash
+python sim_py/train_cem.py --evaluate policies/campus_cem.json
+```
+
+The report compares the policy with the pure-pursuit baseline under training and held-out randomisation, on trips the training never drew. It is a baseline learner, not a replacement for PPO or SAC: a linear policy cannot use the observation history, so it cannot adapt to the car the way a history-conditioned network trained with `make_gymnasium_env` and SB3 can. Tests: `python -I sim_py/test_train_cem.py` (ctest `sim_py.train_cem`).
