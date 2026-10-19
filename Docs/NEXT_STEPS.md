@@ -2,9 +2,9 @@
 
 ## Decisions needed before Phase 1
 
-- [ ] Sign off ADR 0003 (Unity instead of Isaac Sim for the twin).
-- [ ] Choose the target car: generic 1/10 electric Ackermann (provisional) or a specific kit.
-- [ ] Fork `ibrahimsel/slipx` on GitHub and decide: vendor into `core/` or git submodule. Fork done ([Sujay-197/slipx](https://github.com/Sujay-197/slipx)); the choice is open, see [`slipx-vendor-vs-submodule.md`](slipx-vendor-vs-submodule.md).
+- [x] Sign off ADR 0003 (Unity instead of Isaac Sim for the twin). Accepted 2026-10-19.
+- [x] Choose the target car: generic 1/10 electric Ackermann, `provisional`, until real numbers come from `hardware-bom.md`.
+- [x] Fork `ibrahimsel/slipx` on GitHub and decide: vendor into `core/` or git submodule. Forked ([Sujay-197/slipx](https://github.com/Sujay-197/slipx)); **vendored** into `core/` at `ebdbf3f`.
 - [ ] Verify upstream `LICENSE` files (SlipX, Gym-Khana) and fill `THIRD_PARTY.md`. SlipX done 2026-10-19; Gym-Khana still open.
 - [ ] Confirm Unity version and whether it can load a C++ native plugin on the dev machine (Windows).
 - [ ] Open `rc_transit/docs/hardware-bom.md` in the fleet repo; extract any real mass, wheelbase, motor, battery numbers.

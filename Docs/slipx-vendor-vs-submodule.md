@@ -1,6 +1,6 @@
 # SlipX in this repo: vendor or submodule?
 
-**Status:** Open. This note informs the decision; it does not make it.  **Date:** 2026-10-19
+**Status:** Decided 2026-10-19: **vendor**. The project owner chose to copy SlipX into `core/` (see ADR 0001, update). The comparison below is kept as the record of the trade-off.  **Date:** 2026-10-19
 
 The README places the Core at `core/` (forked SlipX). There are two ways to put it there. Nothing is in `core/` yet.
 

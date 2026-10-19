@@ -1,6 +1,6 @@
 # ADR 0001: Fork SlipX as the dynamics Core
 
-**Status:** Proposed  **Date:** 2026-10-19
+**Status:** Accepted  **Date:** 2026-10-19
 
 ## Context
 
@@ -34,3 +34,7 @@ Read from its PyPI page (not yet checked against source): its double-track tier 
 - Negative: we own an alpha-stage codebase with no empirical validation; upstream API may break before 1.0.
 - Obligations: Apache-2.0 notices, mark modified files (see `THIRD_PARTY.md`).
 - Mitigation: pin an upstream commit, keep extensions in separable modules, upstream PRs where sensible.
+
+## Update 2026-10-19: vendored, not a submodule
+
+The project owner chose to vendor SlipX into `core/` (a plain copy of upstream `ebdbf3f`) rather than add the fork as a submodule. Changes to the Core are now commits in this repo. Anything worth sending upstream is replayed onto a branch of the fork `Sujay-197/slipx` and opened as a PR there, as was done for ibrahimsel/slipx#1 and #2. Re-vendoring a newer upstream commit means replacing `core/` and re-applying our changes; keep each Core change in its own commit so that stays mechanical.

@@ -1,5 +1,6 @@
 // Copyright 2026 The SlipX Authors
 // SPDX-License-Identifier: Apache-2.0
+// Modified 2026-10-19 by the rc-physics-twin project: see THIRD_PARTY.md.
 //
 // The wrong-way monitor, judged on bare numbers: the race procedures feed
 // it lap-counter progress, but the hysteresis is its own contract and is

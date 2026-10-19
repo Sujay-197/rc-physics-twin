@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 # Copyright 2026 The SlipX Authors
 # SPDX-License-Identifier: Apache-2.0
+# Modified 2026-10-19 by the rc-physics-twin project: see THIRD_PARTY.md.
 
 """NFR-02 and NFR-03: check a build against the published reference hashes.
 
