@@ -18,6 +18,7 @@ static int same_state(const rc_twin_state* a, const rc_twin_state* b) {
 static void test_versions(void) {
   const char* v = rc_twin_core_version();
   CHECK(rc_twin_abi_version() == RC_TWIN_ABI_VERSION);
+  CHECK(RC_TWIN_ABI_VERSION == 2u);
   CHECK(v != NULL && strcmp(v, "0.2.0") == 0);
 }
 

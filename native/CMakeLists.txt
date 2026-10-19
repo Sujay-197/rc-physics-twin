@@ -28,6 +28,11 @@ if(BUILD_TESTING)
   set_target_properties(test_capi PROPERTIES C_STANDARD 99)
   add_test(NAME rc_twin.capi COMMAND test_capi)
 
+  add_executable(test_ground_capi tests/test_ground_capi.c)
+  target_link_libraries(test_ground_capi PRIVATE rc_twin)
+  set_target_properties(test_ground_capi PROPERTIES C_STANDARD 99)
+  add_test(NAME rc_twin.ground COMMAND test_ground_capi)
+
   # C ABI against the Core called directly, bit for bit.
   add_executable(test_equivalence tests/test_equivalence.cpp)
   target_link_libraries(test_equivalence PRIVATE rc_twin slipx_core)

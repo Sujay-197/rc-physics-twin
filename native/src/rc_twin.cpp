@@ -11,6 +11,7 @@
 #include <memory>
 #include <new>
 
+#include "slipx/ground.hpp"
 #include "slipx/params.hpp"
 #include "slipx/state.hpp"
 #include "slipx/vehicle_model.hpp"
@@ -25,6 +26,8 @@ struct rc_twin_vehicle {
   slipx::Integrator integrator;
   std::unique_ptr<slipx::VehicleModel> model;
   slipx::VehicleState state;
+  rc_twin_ground_fn ground_fn = nullptr;  // NULL: level ground at z = 0
+  void* ground_user = nullptr;
 };
 
 namespace {
@@ -201,6 +204,29 @@ void from_core(const slipx::VehicleState& s, rc_twin_state& c) {
   c.pack_v = s.pack_v;
 }
 
+// Asks the host for the ground under each wheel of state s: the wheel centre
+// in the body frame (x forward, y left; FL, FR, RL, RR), rotated by yaw and
+// moved to the CoG. Returns false if the host reports a failure.
+bool sample_ground(const rc_twin_vehicle& v, const slipx::VehicleState& s,
+                   slipx::GroundContact* g) {
+  const slipx::VehicleParams& p = v.model->params();
+  const double bx[4] = {p.lf, p.lf, -p.lr, -p.lr};
+  const double by[4] = {0.5 * p.track_front, -0.5 * p.track_front,
+                        0.5 * p.track_rear, -0.5 * p.track_rear};
+  const double cy = std::cos(s.yaw);
+  const double sy = std::sin(s.yaw);
+  for (int32_t i = 0; i < 4; ++i) {
+    const double x = s.pos.x + cy * bx[i] - sy * by[i];
+    const double y = s.pos.y + sy * bx[i] + cy * by[i];
+    rc_twin_ground_sample out{0.0, 0.0, 0.0, 1.0, 1.0};
+    if (v.ground_fn(v.ground_user, i, x, y, &out) != 0) return false;
+    g->wheel[static_cast<std::size_t>(i)].height = out.height;
+    g->wheel[static_cast<std::size_t>(i)].normal = {out.nx, out.ny, out.nz};
+    g->wheel[static_cast<std::size_t>(i)].mu_scale = out.mu_scale;
+  }
+  return true;
+}
+
 // Builds a model, or returns nullptr with *why set. Never throws.
 std::unique_ptr<slipx::VehicleModel> build(slipx::Tier tier,
                                            slipx::Integrator integrator,
@@ -314,14 +340,31 @@ RC_TWIN_API rc_twin_status rc_twin_step(rc_twin_vehicle* v, double steer_cmd,
     return RC_TWIN_E_INVALID;
   }
   const slipx::DriveInput input{steer_cmd, accel_cmd};
-  // Step a copy so a throw leaves the published state untouched.
+  // Step a copy so a failure leaves the published state untouched.
   slipx::VehicleState s = v->state;
   try {
-    for (uint32_t k = 0; k < n; ++k) v->model->step(s, input, dt);
+    if (v->ground_fn == nullptr) {
+      for (uint32_t k = 0; k < n; ++k) v->model->step(s, input, dt);
+    } else {
+      for (uint32_t k = 0; k < n; ++k) {
+        slipx::GroundContact g;
+        if (!sample_ground(*v, s, &g)) return RC_TWIN_E_GROUND;
+        if (!v->model->step_on(s, input, g, dt)) return RC_TWIN_E_GROUND;
+      }
+    }
   } catch (...) {
     return RC_TWIN_E_INTERNAL;
   }
   v->state = s;
+  return RC_TWIN_OK;
+}
+
+RC_TWIN_API rc_twin_status rc_twin_set_ground_query(rc_twin_vehicle* v,
+                                                    rc_twin_ground_fn fn,
+                                                    void* user) {
+  if (v == nullptr) return RC_TWIN_E_NULL;
+  v->ground_fn = fn;
+  v->ground_user = (fn != nullptr) ? user : nullptr;
   return RC_TWIN_OK;
 }
 

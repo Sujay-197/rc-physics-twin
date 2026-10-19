@@ -1,8 +1,9 @@
 /*
  * rc_twin: C ABI around the SlipX vehicle Core (ADR 0002).
  *
- * Plain C, fixed-layout structs of doubles and int32s, no callbacks yet, so
- * Unity can P/Invoke it and a headless harness can link it unchanged.
+ * Plain C, fixed-layout structs of doubles and int32s, so Unity can P/Invoke
+ * it and a headless harness can link it unchanged. The one callback is the
+ * optional ground query (rc_twin_set_ground_query).
  *
  * Conventions are SlipX's (core/src/core/slipx_core/include/slipx/
  * conventions.hpp): ISO 8855, SI units. World x/y in the ground plane, z up;
@@ -13,7 +14,12 @@
  * none throws or aborts. Strings returned through `reason` are static and
  * never need freeing.
  *
- * Bump RC_TWIN_ABI_VERSION on any change to a struct layout or signature.
+ * Bump RC_TWIN_ABI_VERSION on any change to a struct layout or signature,
+ * and on any added function, so a host built against a newer header fails
+ * loudly on an older DLL.
+ *
+ * v2: ground query (rc_twin_ground_sample, rc_twin_set_ground_query,
+ *     RC_TWIN_E_GROUND).
  */
 #ifndef RC_TWIN_H
 #define RC_TWIN_H
@@ -34,14 +40,17 @@
 extern "C" {
 #endif
 
-#define RC_TWIN_ABI_VERSION 1u
+#define RC_TWIN_ABI_VERSION 2u
 
 typedef int32_t rc_twin_status;
 enum {
   RC_TWIN_OK = 0,
   RC_TWIN_E_NULL = -1,     /* a required pointer was NULL */
   RC_TWIN_E_INVALID = -2,  /* bad argument or physically impossible params */
-  RC_TWIN_E_INTERNAL = -3  /* the Core threw; the vehicle state is unchanged */
+  RC_TWIN_E_INTERNAL = -3, /* the Core threw; the vehicle state is unchanged */
+  RC_TWIN_E_GROUND = -4    /* the ground query failed, returned an invalid
+                              sample, or described ground this tier cannot
+                              represent; the vehicle state is unchanged */
 };
 
 /* Fidelity tier, SlipX slipx::Tier. L3 is not implemented upstream yet. */
@@ -109,6 +118,22 @@ typedef struct rc_twin_params {
 
 typedef struct rc_twin_vehicle rc_twin_vehicle;
 
+/* The ground under one wheel (ADR 0005). World frame, ISO 8855. */
+typedef struct rc_twin_ground_sample {
+  double height;     /* ground z under the wheel                        [m] */
+  double nx, ny, nz; /* outward normal, any length, nz > 0                  */
+  double mu_scale;   /* multiplies the tyre's peak friction, >= 0       [-] */
+} rc_twin_ground_sample;
+
+/* Ground query, called once per wheel (0 FL, 1 FR, 2 RL, 3 RR) before every
+ * Core step, at that wheel's centre projected to the ground (world x, y) at
+ * the start of the step. *out arrives filled with level ground at height 0
+ * and mu_scale 1. Return 0 on success; anything else aborts the call to
+ * rc_twin_step with RC_TWIN_E_GROUND. Called on the thread that called
+ * rc_twin_step, never after rc_twin_step returns. */
+typedef int32_t (*rc_twin_ground_fn)(void* user, int32_t wheel, double x,
+                                     double y, rc_twin_ground_sample* out);
+
 RC_TWIN_API uint32_t rc_twin_abi_version(void);
 /* SlipX version string of the vendored Core, e.g. "0.2.0". */
 RC_TWIN_API const char* rc_twin_core_version(void);
@@ -137,10 +162,19 @@ RC_TWIN_API rc_twin_status rc_twin_reset(rc_twin_vehicle* v,
 RC_TWIN_API rc_twin_status rc_twin_get_state(const rc_twin_vehicle* v,
                                              rc_twin_state* out);
 
+/* Install a ground query; fn == NULL restores level ground at height 0 (the
+ * default). Only L2 represents grade and grip: at L0/L1 a query that returns
+ * anything but level, unscaled ground makes rc_twin_step fail with
+ * RC_TWIN_E_GROUND. */
+RC_TWIN_API rc_twin_status rc_twin_set_ground_query(rc_twin_vehicle* v,
+                                                    rc_twin_ground_fn fn,
+                                                    void* user);
+
 /* Advance n fixed steps of dt seconds with a held command. steer_cmd is the
  * commanded road wheel angle [rad, + left]; accel_cmd the longitudinal
  * acceleration demand [m/s^2, + forward]. dt must be finite and > 0, n >= 1.
- * Exactly equivalent to n calls with n = 1. */
+ * Exactly equivalent to n calls with n = 1. On any failure no step is kept:
+ * the state is as it was before the call. */
 RC_TWIN_API rc_twin_status rc_twin_step(rc_twin_vehicle* v, double steer_cmd,
                                         double accel_cmd, double dt,
                                         uint32_t n);

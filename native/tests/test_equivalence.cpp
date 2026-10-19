@@ -7,6 +7,7 @@
 
 #include "check.h"
 #include "rc_twin.h"
+#include "slipx/ground.hpp"
 #include "slipx/params.hpp"
 #include "slipx/state.hpp"
 #include "slipx/vehicle_model.hpp"
@@ -205,6 +206,64 @@ void test_state_roundtrip_is_exact() {
   rc_twin_destroy(v);
 }
 
+// Ground that varies across the world, so a wrong contact point, wheel order
+// or field mapping changes the samples the Core sees.
+void field_at(double x, double y, rc_twin_ground_sample* out) {
+  out->height = 0.1 * x - 0.05 * y;
+  out->nx = 0.04 + 0.01 * x;
+  out->ny = -0.03 + 0.02 * std::sin(y);
+  out->nz = 1.0;
+  out->mu_scale = 0.6 + 0.3 * std::cos(0.7 * x + y);
+}
+
+int32_t field_query(void*, int32_t, double x, double y, rc_twin_ground_sample* out) {
+  field_at(x, y, out);
+  return 0;
+}
+
+void test_ground_equivalence() {
+  slipx::VehicleParams p{};
+  rc_twin_params c;
+  rc_twin_params_default(&c);
+  auto model = slipx::VehicleModel::create(slipx::Tier::L2_DoubleTrack, p);
+  rc_twin_vehicle* v = rc_twin_create(RC_TWIN_TIER_L2_DOUBLE_TRACK, 0, &c, nullptr);
+  rc_twin_set_ground_query(v, field_query, nullptr);
+
+  slipx::VehicleState s{};
+  s.vel_body.x = 1.0;
+  rc_twin_state cs;
+  rc_twin_get_state(v, &cs);
+  cs.vx = 1.0;
+  rc_twin_reset(v, &cs);
+
+  bool ok = true;
+  for (int i = 0; i < 3000 && ok; ++i) {
+    double steer, accel;
+    command_at(i, steer, accel);
+    // Contact points worked out here, independently of rc_twin.
+    slipx::GroundContact g;
+    const double bx[4] = {p.lf, p.lf, -p.lr, -p.lr};
+    const double by[4] = {p.track_front / 2, -p.track_front / 2,
+                          p.track_rear / 2, -p.track_rear / 2};
+    for (int w = 0; w < 4; ++w) {
+      const double x = s.pos.x + std::cos(s.yaw) * bx[w] - std::sin(s.yaw) * by[w];
+      const double y = s.pos.y + std::sin(s.yaw) * bx[w] + std::cos(s.yaw) * by[w];
+      rc_twin_ground_sample o;
+      field_at(x, y, &o);
+      g.wheel[w].height = o.height;
+      g.wheel[w].normal = {o.nx, o.ny, o.nz};
+      g.wheel[w].mu_scale = o.mu_scale;
+    }
+    ok = model->step_on(s, slipx::DriveInput{steer, accel}, g, 0.001) &&
+         rc_twin_step(v, steer, accel, 0.001, 1) == RC_TWIN_OK;
+    rc_twin_get_state(v, &cs);
+    ok = ok && same(s, cs);
+  }
+  CHECK(ok);
+  CHECK(s.pos.z != 0.0);  // the field was felt
+  rc_twin_destroy(v);
+}
+
 }  // namespace
 
 int main() {
@@ -219,5 +278,6 @@ int main() {
   run_equivalence(RC_TWIN_TIER_L2_DOUBLE_TRACK, 0, true, RC_TWIN_AWD, RC_TWIN_DIFF_LSD);
   run_equivalence(RC_TWIN_TIER_L2_DOUBLE_TRACK, 0, true, RC_TWIN_FWD, RC_TWIN_DIFF_SPOOL);
   run_equivalence(RC_TWIN_TIER_L1_BICYCLE, 1, true, RC_TWIN_RWD, RC_TWIN_DIFF_OPEN);
+  test_ground_equivalence();
   TEST_MAIN_END();
 }
