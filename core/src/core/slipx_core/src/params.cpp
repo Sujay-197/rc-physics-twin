@@ -125,6 +125,9 @@ const char* validate(const VehicleParams& p) {
   if (!(p.wheel_inertia >= 0.0) || !std::isfinite(p.wheel_inertia)) {
     return "wheel_inertia must be finite and not negative [kg m^2]";
   }
+  if (!(p.ackermann >= -1.0 && p.ackermann <= 1.0)) {
+    return "ackermann must be between -1 (anti) and 1 (ideal) [-]";
+  }
 
   return nullptr;
 }

@@ -78,6 +78,7 @@ std::string params_digest(const VehicleParams& p) {
   // rc-physics-twin ADR 0006. Only when set, so every digest of a car without
   // wheel dynamics is the digest it always was.
   if (p.wheel_inertia != 0.0) h.update(p.wheel_inertia);
+  if (p.ackermann != 0.0) h.update(p.ackermann);  // ADR 0007, likewise
   return h.hex();
 }
 

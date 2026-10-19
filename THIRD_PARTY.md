@@ -35,7 +35,9 @@ Checked 2026-10-19 against the upstream repository, not package metadata.
 | `core/src/core/slipx_core/include/slipx/params.hpp`, `src/params.cpp` | `wheel_inertia` (default 0) and its validation | Ours (ADR 0006); not sent |
 | `core/src/core/slipx_core/src/l2_double_track.cpp` | Wheel rotational dynamics when `wheel_inertia > 0`; inertia 0 unchanged bit for bit | Ours (ADR 0006); not sent |
 | `core/src/orchestration/slipx_sim/src/simulation.cpp` | `wheel_inertia` in the manifest's params digest, only when set | Ours (ADR 0006); not sent |
-| `core/src/core/slipx_core/tests/test_wheels.cpp` (new) | 19 tests for the above | Ours (ADR 0006); not sent |
+| `core/src/core/slipx_core/tests/test_wheels.cpp` (new) | 20 tests for the above | Ours (ADR 0006); not sent |
+| `params.hpp`, `params.cpp`, `l2_double_track.cpp`, `slipx_sim/src/simulation.cpp` | `ackermann` fraction (default 0 = parallel steer, unchanged bit for bit); per-wheel front angles at L2; in the manifest digest when set | Ours (ADR 0007); not sent |
+| `core/src/core/slipx_core/tests/test_ackermann.cpp` (new) | 10 tests for the above | Ours (ADR 0007); not sent |
 
 Upstream lineage note: Gym-Khana says it is based on the UPenn `f1tenth_gym`. Check that lineage's license before copying code that may originate there.
 

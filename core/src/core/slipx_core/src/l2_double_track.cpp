@@ -65,11 +65,12 @@
 //   configuration, not something identifiable from driving, so it is absent
 //   rather than guessed.
 //
-//   Parallel steer. Both front wheels take the same road wheel angle. Real
-//   steering geometry turns the inner wheel further (Ackermann), and the
-//   difference matters at large angles and low speed. There is no Ackermann
-//   parameter in the schema to represent it with, and inventing one would be
-//   the guess ADR-0009 refuses.
+//   Parallel steer, unless params.ackermann is set (rc-physics-twin ADR 0007).
+//   Both front wheels take the same road wheel angle. Real steering geometry
+//   turns the inner wheel further (Ackermann), and the difference matters at
+//   large angles and low speed. There is no Ackermann parameter in the schema
+//   to represent it with, and inventing one would be the guess ADR-0009
+//   refuses; ADR 0007 adds one that is measured statically on the car.
 //
 //   No suspension. Load transfer is quasi-static, so it arrives in the same
 //   instant as the acceleration causing it (ADR-0022). Roll and pitch stay
@@ -315,6 +316,12 @@ struct Kinematics {
   std::array<WheelKinematics, kWheelCount> wheel{};
   double cos_delta = 1.0;
   double sin_delta = 0.0;
+  // Per-wheel road wheel angle and its trigonometry (ADR 0007). The rear
+  // entries are zero; with ackermann == 0 the front entries are delta and
+  // the two values above, so the arithmetic is the parallel-steer one.
+  std::array<double, kWheelCount> steer_w{};
+  std::array<double, kWheelCount> cos_w{1.0, 1.0, 1.0, 1.0};
+  std::array<double, kWheelCount> sin_w{};
   double resistance = 0.0;  // drag plus rolling resistance          [N]
 };
 
@@ -389,13 +396,15 @@ class DoubleTrackL2 final : public VehicleModel {
       // chassis step: a rolling wheel keeps its slip while the car speeds up
       // or slows within the step, so the chassis does not see a wheel that
       // lags the road by a whole step's change in speed (ADR 0006).
-      const double cd = std::cos(s.steer);
-      const double sd = std::sin(s.steer);
+      std::array<double, kWheelCount> st{};
+      std::array<double, kWheelCount> cw{};
+      std::array<double, kWheelCount> sw{};
+      front_angles(s.steer, std::cos(s.steer), std::sin(s.steer), &st, &cw, &sw);
       for (unsigned i = 0; i < kWheelCount; ++i) {
         const bool front = (i == kFrontLeft || i == kFrontRight);
         const double vxw = s.vel_body.x - s.rates.z * c.wheel_y[i];
         const double vyw = s.vel_body.y + s.rates.z * c.wheel_x[i];
-        const double v_long = front ? vxw * cd + vyw * sd : vxw;
+        const double v_long = front ? vxw * cw[i] + vyw * sw[i] : vxw;
         c.slip_v[i] = s.omega_w[i] * params_.wheel_radius - v_long;
       }
     }
@@ -641,6 +650,48 @@ class DoubleTrackL2 final : public VehicleModel {
       out->speed_saturated = speed_sat;
       out->esc_saturated = esc_sat;
     }
+  }
+
+  // ---------------------------------------------------- steering geometry
+
+  // Each front wheel's road wheel angle for reference angle delta (ADR 0007):
+  // the ideal Ackermann angle points the wheel at the turn centre of a
+  // virtual centre wheel at delta, on the rear-axle line, and ackermann
+  // blends from parallel (0) toward it. Odd in delta with left and right
+  // swapped exactly, so a right turn mirrors a left one bit for bit. With
+  // ackermann == 0 both front wheels get delta and the given cos and sin.
+  void front_angles(double delta, double cos_delta, double sin_delta,
+                    std::array<double, kWheelCount>* steer,
+                    std::array<double, kWheelCount>* cos_w,
+                    std::array<double, kWheelCount>* sin_w) const {
+    (*steer)[kRearLeft] = 0.0;
+    (*steer)[kRearRight] = 0.0;
+    (*cos_w)[kRearLeft] = 1.0;
+    (*cos_w)[kRearRight] = 1.0;
+    (*sin_w)[kRearLeft] = 0.0;
+    (*sin_w)[kRearRight] = 0.0;
+    if (params_.ackermann == 0.0) {
+      (*steer)[kFrontLeft] = delta;
+      (*steer)[kFrontRight] = delta;
+      (*cos_w)[kFrontLeft] = cos_delta;
+      (*cos_w)[kFrontRight] = cos_delta;
+      (*sin_w)[kFrontLeft] = sin_delta;
+      (*sin_w)[kFrontRight] = sin_delta;
+      return;
+    }
+    const double wb = params_.wheelbase();
+    const double ht = 0.5 * params_.track_front;
+    const double tn = std::tan(delta);
+    const double ideal_l = std::atan(wb * tn / (wb - ht * tn));
+    const double ideal_r = std::atan(wb * tn / (wb + ht * tn));
+    const double dl = delta + params_.ackermann * (ideal_l - delta);
+    const double dr = delta + params_.ackermann * (ideal_r - delta);
+    (*steer)[kFrontLeft] = dl;
+    (*steer)[kFrontRight] = dr;
+    (*cos_w)[kFrontLeft] = std::cos(dl);
+    (*cos_w)[kFrontRight] = std::cos(dr);
+    (*sin_w)[kFrontLeft] = std::sin(dl);
+    (*sin_w)[kFrontRight] = std::sin(dr);
   }
 
   // ----------------------------------------------- wheel update (ADR 0006)
@@ -1039,6 +1090,8 @@ class DoubleTrackL2 final : public VehicleModel {
     const double delta = q[kSteer];
     kin.cos_delta = std::cos(delta);
     kin.sin_delta = std::sin(delta);
+    front_angles(delta, kin.cos_delta, kin.sin_delta, &kin.steer_w, &kin.cos_w,
+                 &kin.sin_w);
 
     for (unsigned i = 0; i < kWheelCount; ++i) {
       const double xw = c.wheel_x[i];
@@ -1057,7 +1110,7 @@ class DoubleTrackL2 final : public VehicleModel {
       // ISO 8855, and the same construction as L1: the slip angle is measured
       // between the wheel's travel and its plane, and the steered wheels have
       // their plane rotated by delta.
-      const double steer_i = front ? delta : 0.0;
+      const double steer_i = kin.steer_w[i];
 
       const MfLite& tyre = front ? c.tyre_front : c.tyre_rear;
 
@@ -1072,7 +1125,7 @@ class DoubleTrackL2 final : public VehicleModel {
       if (c.wheels) {
         // The slip ratio's speed is along the wheel's own heading.
         const double v_long =
-            front ? vxw * kin.cos_delta + vyw * kin.sin_delta : vxw;
+            front ? vxw * kin.cos_w[i] + vyw * kin.sin_w[i] : vxw;
         kin.wheel[i].v_long = v_long;
         kin.wheel[i].v_abs = std::fmax(std::fabs(v_long), params_.v_eps);
       }
@@ -1122,8 +1175,6 @@ class DoubleTrackL2 final : public VehicleModel {
                        const WheelLoads& loads,
                        const std::array<TyreBudget, kWheelCount>& budget,
                        Forces* f) const {
-    const double cos_delta = kin.cos_delta;
-    const double sin_delta = kin.sin_delta;
 
     // Phase one: everything about a wheel that does not depend on how the
     // differential splits the longitudinal demand.
@@ -1207,8 +1258,8 @@ class DoubleTrackL2 final : public VehicleModel {
       const bool front = (i == kFrontLeft || i == kFrontRight);
 
       // Wheel frame to body frame. Only the front wheels are rotated.
-      const double cos_i = front ? cos_delta : 1.0;
-      const double sin_i = front ? sin_delta : 0.0;
+      const double cos_i = front ? kin.cos_w[i] : 1.0;
+      const double sin_i = front ? kin.sin_w[i] : 0.0;
       fx_b[i] = delivered[i].fx * cos_i - delivered[i].fy * sin_i;
       fy_b[i] = delivered[i].fx * sin_i + delivered[i].fy * cos_i;
 

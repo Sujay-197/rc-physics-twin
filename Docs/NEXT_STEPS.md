@@ -21,7 +21,7 @@
 
 - [x] Per-patch ground query (height, normal, friction scale). ADR 0005: the host samples the ground under each wheel per step and the Core takes the samples as arguments (`VehicleModel::step_on`), so `step` stays pure. L2 feels grade, banking and per-wheel grip; L0/L1 refuse anything but level ground. Level ground is bit-identical to before (216 SlipX core tests, 6 conformance hashes unchanged).
 - [x] Ground-query callback in the C ABI (`rc_twin_set_ground_query`, ABI v2), and `RaycastGround` + `GroundSurface` in Unity. The FlatGround scene has a hill, a banked strip and an ice patch; Play Mode tests drive all three.
-- [ ] Ackermann steering geometry. SlipX documents parallel steer as deliberate: it has no identifiable Ackermann parameter (its ADR-0009). Needs a parameter we can measure on the real car (steering linkage geometry) before it is worth adding.
+- [x] Ackermann steering geometry. ADR 0007: `ackermann` fraction of ideal (0 parallel, the default; 1 ideal; negative anti), per-wheel front angles everywhere the steer enters at L2. Measure it on the car: steer to a known angle, read both front wheels.
 - [x] Per-wheel spin state (lock-up and wheelspin representable). ADR 0006: opt-in `wheel_inertia`; chassis holds each wheel's slip over the step, wheels advance by a closed-form implicit solve coupled through the motor curve; motor braking locks rather than reverses. Inertia 0 is SlipX's L2 bit for bit.
 - [ ] Per-wheel height differences (twist, kerbs) and speed breakers need suspension: Phase 3 / L3.
 

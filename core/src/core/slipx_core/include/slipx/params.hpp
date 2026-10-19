@@ -252,6 +252,16 @@ struct VehicleParams {
   // is identifiable from a lifted-wheel spin-down or a step-torque wheelspin
   // run with wheel encoders.
   double wheel_inertia = 0.0;  //                                 [kg m^2]
+
+  // ------------------------------------------------------------ Ackermann
+  // Fraction of ideal Ackermann steering at L2 (rc-physics-twin ADR 0007):
+  // 0 is parallel steer, both front wheels at the reference angle (SlipX's
+  // L2 exactly, the default); 1 points both front wheels at one turn centre
+  // on the rear-axle line; negative is anti-Ackermann. The reference angle
+  // (VehicleState::steer) is the virtual centre wheel's. Measured directly:
+  // steer to a known angle and read both front wheels. No effect below L2,
+  // whose single front wheel is the reference wheel already.
+  double ackermann = 0.0;      //                                      [-]
 };
 
 // Returns nullptr if the parameter set is usable, or a static message naming
