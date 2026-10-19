@@ -38,4 +38,6 @@ obs, info = env.reset(seed=0)                        # info["trip"], e.g. ("S3",
 obs, info = env.reset(options={"trip": ("AB1", "S6")})
 ```
 
+The campus's kerbs and buildings are walls (ADR 0009): a strike bounces the car and costs `REWARD["wall"]` times the speed it lost; `info["wall_contacts"]` and `info["wall_impulse"]` count them. Any `RcTwinEnv` takes walls the same way (`walls=[{"points": [[x, y], ...], "closed": bool}]`).
+
 `RcTwinEnv.reset(options={"road": road_dict})` swaps the road for any env, which is how `CampusEnv` changes route per episode. `max_time` defaults to 120 s here (the longest trip is 69 m). Tests: `python -I sim_py/test_campus.py` (ctest `sim_py.campus`).

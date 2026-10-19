@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import argparse
 import copy
+import ctypes
 import importlib.util
 import json
 import os
@@ -111,6 +112,25 @@ class Harness(unittest.TestCase):
         with self.assertRaisesRegex(dr.RoadError, "bank"):
             dr.check_road(bad)
         self.assertEqual(dr.main([str(SAMPLES / "missing.json")]), 1)
+
+
+class Walls(unittest.TestCase):
+    def test_add_walls_open_and_closed(self):
+        lib = LIB
+        p = dr.Params()
+        lib.rc_twin_params_default(ctypes.byref(p))
+        car = lib.rc_twin_create(2, 0, ctypes.byref(p), None)
+        try:
+            tri = [[0.0, 0.0], [1.0, 0.0], [0.0, 1.0]]
+            dr.add_walls(lib, car, [{"points": tri, "closed": False}])
+            self.assertEqual(lib.rc_twin_wall_count(car), 2)
+            dr.add_walls(lib, car, [{"points": tri, "closed": True}])
+            self.assertEqual(lib.rc_twin_wall_count(car), 5)
+            with self.assertRaises(ValueError):
+                dr.add_walls(lib, car, [{"name": "one point", "points": [[0.0, 0.0]]}])
+            self.assertEqual(dr.wall_report(lib, car).contacts, 0)
+        finally:
+            lib.rc_twin_destroy(car)
 
 
 if __name__ == "__main__":

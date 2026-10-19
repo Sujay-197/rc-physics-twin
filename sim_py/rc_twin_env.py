@@ -30,8 +30,15 @@ Reward per control tick (weights in REWARD):
   - offset   x (lateral offset / half width)^2
   - steering x (change in steer action)^2
   - energy   x battery energy this tick / (m g x target speed x tick)
+  - wall     x wall impulse this tick / (m x target speed)  (speed lost to walls)
 Leaving the road ends the episode with the `off_road` reward; reaching the
 end ends it with `finish`; `max_time` truncates it.
+
+Walls (ADR 0009): RcTwinEnv(..., walls=[{"points": [[x, y], ...], "closed":
+bool}, ...]) gives the car walls it bounces off, such as kerbs, instead of
+leaving the road through them; each strike costs the `wall` term. The
+footprint is widened by `footprint_margin` (half the Unity car's drawn tyre
+width), as in the Unity twin.
 
 Perturbation tests (spec section 8): reset(options={"perturb": {"at_s": 10,
 "friction": 0.5}}) changes the car's parameters mid-episode at that arc
@@ -65,7 +72,9 @@ RANGES_HELD_OUT = {
     "friction": (0.5, 0.8), "payload_kg": (1.0, 2.0), "servo_bandwidth": (0.4, 0.7),
     "torque": (0.6, 0.8), "tyre_stiffness": (0.6, 0.8), "battery_resistance": (2.0, 4.0),
 }
-REWARD = {"offset": 0.5, "steering": 0.1, "energy": 0.2, "off_road": -10.0, "finish": 10.0}
+REWARD = {"offset": 0.5, "steering": 0.1, "energy": 0.2, "wall": 5.0, "off_road": -10.0,
+          "finish": 10.0}
+FOOTPRINT_MARGIN = 0.0175   # half the Unity car's drawn tyre width [m]; not measured
 
 LOOKAHEAD_M = (0.5, 1.0, 2.0)
 FRAME_FIELDS = (
@@ -108,7 +117,8 @@ class RcTwinEnv:
     def __init__(self, road, target_speed: float = 2.0, history: int = 4,
                  ranges: dict | None = None, max_time: float = 60.0, lib_path=None,
                  wheel_inertia: float = 0.0, ackermann: float = 0.0, wheel_rate: float = 0.0,
-                 damping: float = 0.0, travel: float = 0.015):
+                 damping: float = 0.0, travel: float = 0.015, walls=None,
+                 footprint_margin: float = FOOTPRINT_MARGIN):
         if isinstance(road, (str, pathlib.Path)):
             road = json.loads(pathlib.Path(road).read_text(encoding="utf-8"))
         self.target_speed = float(target_speed)
@@ -119,6 +129,8 @@ class RcTwinEnv:
                                ROOT / "build" / "bin" / "rc_twin.dll")
         self._car_opts = dict(wheel_inertia=wheel_inertia, ackermann=ackermann,
                               wheel_rate=wheel_rate, damping=damping, travel=travel)
+        self.walls = list(walls or [])
+        self.footprint_margin = float(footprint_margin)
         self.observation_size = FRAME_SIZE + self.history * (FRAME_SIZE + ACTION_SIZE)
         self._road = None
         self._set_road(road)
@@ -160,6 +172,11 @@ class RcTwinEnv:
         self._car = self.lib.rc_twin_create(2, 0, ctypes.byref(p), ctypes.byref(why))
         if not self._car:
             raise ValueError("rc_twin_create: " + (why.value.decode() if why.value else "?"))
+        contact = dr.Contact()
+        self.lib.rc_twin_get_contact(self._car, ctypes.byref(contact))
+        contact.half_width += self.footprint_margin
+        self.lib.rc_twin_set_contact(self._car, ctypes.byref(contact))
+        dr.add_walls(self.lib, self._car, self.walls)
         x, y, z, h = (ctypes.c_double() for _ in range(4))
         self._s0 = p.lr + 0.05
         self.lib.rc_twin_road_point(self._road, self._s0, ctypes.byref(x), ctypes.byref(y),
@@ -173,6 +190,8 @@ class RcTwinEnv:
         self.state = self._get_state()
         self.t = 0.0
         self.energy_wh = 0.0
+        self.wall_contacts = 0
+        self.wall_impulse = 0.0
         self._last_action = (0.0, 0.0)
         self.s, self.d = self._locate(self.state)
         frame = self._frame(self.state)
@@ -199,6 +218,9 @@ class RcTwinEnv:
         if rc != dr.OK:
             raise RuntimeError(f"rc_twin_step failed with {rc}")
         cur = self._get_state()
+        hit = dr.wall_report(self.lib, self._car)
+        self.wall_contacts += hit.contacts
+        self.wall_impulse += hit.impulse
         self.t += TICK
         de = cur.pack_v * (prev.soc - cur.soc) * p.pack_capacity_ah
         self.energy_wh += de
@@ -210,7 +232,9 @@ class RcTwinEnv:
         offset = (self.d / self._half_width) ** 2
         dsteer = (steer_a - self._last_action[0]) ** 2
         energy = de * 3600.0 / (p.mass * 9.81 * self.target_speed * TICK)
-        reward = progress - r["offset"] * offset - r["steering"] * dsteer - r["energy"] * energy
+        wall = hit.impulse / (p.mass * self.target_speed)
+        reward = (progress - r["offset"] * offset - r["steering"] * dsteer - r["energy"] * energy
+                  - r["wall"] * wall)
 
         self._push(steer_a, thr_a)
         terminated = self.s >= self._length - p.lf
@@ -299,7 +323,8 @@ class RcTwinEnv:
 
     def _info(self, status: str) -> dict:
         return {"status": status, "s": self.s, "offset": self.d, "time": self.t,
-                "energy_wh": self.energy_wh, "randomisation": dict(self.sample)}
+                "energy_wh": self.energy_wh, "wall_contacts": self.wall_contacts,
+                "wall_impulse": self.wall_impulse, "randomisation": dict(self.sample)}
 
 
 # --------------------------------------------------------------- baselines

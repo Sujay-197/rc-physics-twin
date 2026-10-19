@@ -73,6 +73,19 @@ class GroundSample(ctypes.Structure):
     _fields_ = [(n, ctypes.c_double) for n in ("height", "nx", "ny", "nz", "mu_scale")]
 
 
+class Contact(ctypes.Structure):
+    """rc_twin_contact: wall contact constants and the footprint (ADR 0009)."""
+    _fields_ = [(n, ctypes.c_double) for n in
+                ("restitution", "friction", "restitution_min_speed",
+                 "half_length", "half_width", "centre_offset")]
+
+
+class WallReport(ctypes.Structure):
+    """rc_twin_wall_report: the last rc_twin_step call's wall contacts."""
+    _fields_ = [("contacts", ctypes.c_uint32), ("reserved", ctypes.c_uint32),
+                ("impulse", ctypes.c_double), ("max_approach", ctypes.c_double)]
+
+
 class RoadError(ValueError):
     pass
 
@@ -106,9 +119,39 @@ def load_lib(path: pathlib.Path) -> ctypes.CDLL:
     lib.rc_twin_road_ground.argtypes = [vp, i32, d, d, ctypes.POINTER(GroundSample)]
     lib.rc_twin_set_params.restype = i32
     lib.rc_twin_set_params.argtypes = [vp, ctypes.POINTER(Params), cpp]
+    lib.rc_twin_contact_default.restype = i32
+    lib.rc_twin_contact_default.argtypes = [ctypes.POINTER(Params), ctypes.POINTER(Contact)]
+    lib.rc_twin_set_contact.restype = i32
+    lib.rc_twin_set_contact.argtypes = [vp, ctypes.POINTER(Contact)]
+    lib.rc_twin_get_contact.restype = i32
+    lib.rc_twin_get_contact.argtypes = [vp, ctypes.POINTER(Contact)]
+    lib.rc_twin_add_wall.restype = i32
+    lib.rc_twin_add_wall.argtypes = [vp, dp, u32, i32]
+    lib.rc_twin_clear_walls.restype = i32
+    lib.rc_twin_clear_walls.argtypes = [vp]
+    lib.rc_twin_wall_count.restype = u32
+    lib.rc_twin_wall_count.argtypes = [vp]
+    lib.rc_twin_get_wall_report.restype = i32
+    lib.rc_twin_get_wall_report.argtypes = [vp, ctypes.POINTER(WallReport)]
     if lib.rc_twin_abi_version() != ABI:
         raise RuntimeError(f"rc_twin ABI {lib.rc_twin_abi_version()}, this script needs {ABI}")
     return lib
+
+
+def add_walls(lib, car, walls) -> None:
+    """Hand walls to a vehicle: each {"points": [[x, y], ...], "closed": bool}."""
+    for w in walls:
+        pts = w["points"]
+        xy = (ctypes.c_double * (2 * len(pts)))(*[c for p in pts for c in p[:2]])
+        rc = lib.rc_twin_add_wall(car, xy, len(pts), 1 if w.get("closed") else 0)
+        if rc != OK:
+            raise ValueError(f"rc_twin_add_wall {w.get('name', '')!r} failed with {rc}")
+
+
+def wall_report(lib, car) -> "WallReport":
+    r = WallReport()
+    lib.rc_twin_get_wall_report(car, ctypes.byref(r))
+    return r
 
 
 def check_road(road: dict) -> None:

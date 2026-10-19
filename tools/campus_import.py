@@ -9,7 +9,10 @@ building footprints, in Unity metres and Unity's frame.
 Output, at 1/10 scale in the ISO 8855 frame (x forward = Unity z, y left =
 -Unity x, z up = Unity y):
   campus/campus_network.json   nodes, edges (centreline polylines), stops,
-                               buildings, and the measured road dimensions
+                               buildings, the measured road dimensions, the
+                               sidewalk runs, and the walls (kerb lines and
+                               building footprints, ADR 0009) that the Unity
+                               scene and the RL environment share
   roads/campus/edge_NN.json    one roads/road.schema.json file per edge, so
                                the edge profiler can cost the real campus
 
@@ -78,6 +81,155 @@ def clean(points: list[tuple]) -> list[tuple]:
     return out
 
 
+STEP = 0.05   # resampling of the centrelines for kerb trimming [m]
+
+
+def _resample(pts: list) -> tuple[list, list]:
+    """Points every STEP metres along each segment (x, y, z), and which were
+    corners of the input."""
+    out, corner = [list(pts[0])], [True]
+    for a, b in zip(pts, pts[1:]):
+        n = max(1, math.ceil(math.hypot(b[0] - a[0], b[1] - a[1]) / STEP))
+        for k in range(1, n + 1):
+            t = k / n
+            out.append([a[i] + (b[i] - a[i]) * t for i in range(3)])
+            corner.append(k == n)
+    return out, corner
+
+
+def right_normals(pts: list) -> list:
+    """Unit normals to the right of the line in plan, mitred at corners, so
+    an offset line keeps its distance round them. The Unity scene offsets
+    sidewalk runs with the same rule."""
+    seg = []
+    for a, b in zip(pts, pts[1:]):
+        dx, dy = b[0] - a[0], b[1] - a[1]
+        L = math.hypot(dx, dy)
+        seg.append((dy / L, -dx / L))
+    out = [seg[0]]
+    for s0, s1 in zip(seg, seg[1:]):
+        mx, my = s0[0] + s1[0], s0[1] + s1[1]
+        L = math.hypot(mx, my)
+        c = (mx * s1[0] + my * s1[1]) / L if L > 0 else 0.0
+        out.append((mx / L / c, my / L / c) if c > 0.2 else s1)
+    out.append(seg[-1])
+    return out
+
+
+def chains(nodes: list, edges: list) -> list:
+    """The roads between junctions: edges joined through every node with two
+    edges, so a kerb runs on round a joint instead of stopping at it. Each
+    chain is (edge ids, polyline), in a deterministic order."""
+    degree = {n["id"]: 0 for n in nodes}
+    at = {n["id"]: [] for n in nodes}
+    for e in edges:
+        degree[e["a"]] += 1
+        degree[e["b"]] += 1
+        at[e["a"]].append(e)
+        at[e["b"]].append(e)
+    used, out = set(), []
+
+    def walk(start_node, first):
+        ids, poly, node, e = [], [], start_node, first
+        while e is not None and e["id"] not in used:
+            used.add(e["id"])
+            ids.append(e["id"])
+            seg = e["polyline"] if e["a"] == node else e["polyline"][::-1]
+            poly += seg if not poly else seg[1:]
+            node = e["b"] if e["a"] == node else e["a"]
+            nxt = [x for x in at[node] if x["id"] not in used]
+            e = nxt[0] if degree[node] == 2 and nxt else None
+        return ids, poly
+
+    for n in sorted(degree):
+        if degree[n] == 2:
+            continue
+        for e in sorted(at[n], key=lambda x: x["id"]):
+            if e["id"] not in used:
+                out.append(walk(n, e))
+    for e in sorted(edges, key=lambda x: x["id"]):   # loops with no junction
+        if e["id"] not in used:
+            out.append(walk(e["a"], e))
+    return out
+
+
+def _near_other_road(q, own: set, edges: list, r: float) -> bool:
+    """Whether q is within r of a centreline outside its own chain, by more
+    than a millimetre of rounding."""
+    for e in edges:
+        if e["id"] in own:
+            continue
+        for a, b in zip(e["polyline"], e["polyline"][1:]):
+            ax, ay, bx, by = a[0], a[1], b[0], b[1]
+            dx, dy = bx - ax, by - ay
+            t = max(0.0, min(1.0, ((q[0] - ax) * dx + (q[1] - ay) * dy) / max(dx * dx + dy * dy, 1e-24)))
+            if math.hypot(ax + t * dx - q[0], ay + t * dy - q[1]) < r - 1e-3:
+                return True
+    return False
+
+
+def sidewalk_runs(nodes: list, edges: list, width: float, sidewalk: float) -> list:
+    """Each road's sidewalks either side as centreline runs: left out where
+    its kerb would run onto another road's asphalt (the junctions),
+    thinned to each run's ends and the corners within it. side -1 is left of
+    the run's direction, +1 right; the sidewalk spans width/2 to width/2 +
+    sidewalk from the run, and its kerb line (at width/2) is a wall."""
+    inner = 0.5 * width
+    out = []
+    for ids, poly in chains(nodes, edges):
+        pts, corner = _resample(poly)
+        n = right_normals(pts)
+        own = set(ids)
+        for side, name in ((-1, "left"), (1, "right")):
+            # The kerb line must be clear of every other road's asphalt. (The
+            # sidewalk's middle, further out, then is too; testing the kerb
+            # rather than the middle is what keeps a kerb from ending inside
+            # the other road at a sharp junction.)
+            keep = [not _near_other_road((p[0] + nx * side * inner, p[1] + ny * side * inner), own, edges, inner)
+                    for p, (nx, ny) in zip(pts, n)]
+            runs, run = [], None
+            for i, p in enumerate(pts):
+                if not keep[i]:
+                    if run and len(run) >= 2:
+                        runs.append(run)
+                    run = None
+                    continue
+                last = i + 1 == len(pts) or not keep[i + 1]
+                if run is None:
+                    run = [p]
+                elif corner[i] or last:
+                    run.append(p)
+            if run and len(run) >= 2:
+                runs.append(run)
+            for k, r in enumerate(runs):
+                label = "edges " + "-".join(str(i) for i in ids) + f", {name}"
+                out.append({"name": label + (f", part {k + 1}" if len(runs) > 1 else ""),
+                            "side": side, "points": r})
+    return out
+
+
+def kerb_walls(runs: list, width: float) -> list:
+    inner = 0.5 * width
+    walls = []
+    for r in runs:
+        rn = right_normals(r["points"])
+        line = [[p[0] + nx * r["side"] * inner, p[1] + ny * r["side"] * inner]
+                for p, (nx, ny) in zip(r["points"], rn)]
+        walls.append({"name": "kerb, " + r["name"], "closed": False, "points": line})
+    return walls
+
+
+def building_walls(buildings: list) -> list:
+    out = []
+    for b in buildings:
+        c, s = math.cos(b["yaw"]), math.sin(b["yaw"])
+        hl, hw = b["half_length"], b["half_width"]
+        pts = [[b["x"] + c * hl * a - s * hw * w, b["y"] + s * hl * a + c * hw * w]
+               for a, w in ((1, 1), (1, -1), (-1, -1), (-1, 1))]
+        out.append({"name": f"building {b['name']}", "closed": True, "points": pts})
+    return out
+
+
 def convert(export: dict) -> tuple[dict, dict[int, dict]]:
     dims = measured_dimensions(export)
     width = 2.0 * dims["asphalt_half_width"] * SCALE
@@ -134,6 +286,9 @@ def convert(export: dict) -> tuple[dict, dict[int, dict]]:
         "stops": stops,
         "buildings": buildings,
     }
+    sidewalk = (dims["sidewalk_outer_half_width"] - dims["asphalt_half_width"]) * SCALE
+    network["sidewalks"] = sidewalk_runs(nodes, edges, width, sidewalk)
+    network["walls"] = kerb_walls(network["sidewalks"], width) + building_walls(buildings)
     return network, roads
 
 
@@ -151,7 +306,8 @@ def main() -> int:
     total = sum(e["length"] for e in network["edges"])
     print(f"campus_import: {len(network['nodes'])} nodes, {len(network['edges'])} edges "
           f"({total:.1f} m at 1/10), {len(network['stops'])} stops, "
-          f"{len(network['buildings'])} buildings; road width {network['road']['width']:.3f} m",
+          f"{len(network['buildings'])} buildings, {len(network['walls'])} walls; "
+          f"road width {network['road']['width']:.3f} m",
           file=sys.stderr)
     return 0
 

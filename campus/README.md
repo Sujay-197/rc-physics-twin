@@ -13,7 +13,7 @@ The campus fleet sim's road network ([`Sujay-197/campus_fleet_man_unity`](https:
 ## The numbers
 
 - 36 nodes, 37 edges, 132.7 m of road (1,327 m in the fleet sim), 10 stops (S3 is the hub with weight 6, AB4 has 4, the rest 1), 4 apartment blocks.
-- **Drivable width 1.409 m**: the asphalt of the road tiles (14.09 m), measured from their meshes. A 0.235 m sidewalk runs along each side, raised 0.6 m in the fleet sim and **6 cm here**: more than the car's 5 cm wheel radius, so they are kerbs, not road. In Unity the kerb lines and the buildings are walls (ADR 0009) that the car bounces off; in the RL environment leaving the asphalt ends an episode.
+- **Drivable width 1.409 m**: the asphalt of the road tiles (14.09 m), measured from their meshes. A 0.235 m sidewalk runs along each side, raised 0.6 m in the fleet sim and **6 cm here**: more than the car's 5 cm wheel radius, so they are kerbs, not road. The kerb lines and the buildings' footprints are walls (ADR 0009) that the car bounces off, in Unity and in the RL environment alike. `campus_network.json` carries them (`walls`) and the sidewalk runs they edge (`sidewalks`): roads are joined into chains between junctions so kerbs run on round bends, and a kerb stops where it would reach another road's asphalt, so no wall cuts into a road (tested).
 - **Why 1/10:** the campus is modelled at full scale (its city pack is sized for real cars), and the twin is a 1/10 car. A 3.5 m lane becomes 0.35 m against the car's 0.24 m track.
 
 ## Using it
@@ -29,7 +29,7 @@ env = campus.CampusEnv(seed=0)             # RL: a stop-to-stop trip per episode
 obs, info = env.reset(seed=0)              # info["trip"] == (origin, destination)
 ```
 
-`CampusEnv` draws each episode's trip by the stops' demand weights (as the fleet sim's `DemandAgent` does) and routes it with Dijkstra by edge length (as its `GraphRouter` does), then runs the `RcTwinEnv` task on it: same actions, observations, domain randomisation and reward. The observation-only pure-pursuit baseline drives every trip tried, including the longest (69 m), 90-degree intersection corners included.
+`CampusEnv` draws each episode's trip by the stops' demand weights (as the fleet sim's `DemandAgent` does) and routes it with Dijkstra by edge length (as its `GraphRouter` does), then runs the `RcTwinEnv` task on it: same actions, observations, domain randomisation and reward, plus the campus's walls. A kerb strike bounces the car and costs the reward's `wall` term; leaving the route's road (into a side street at a junction) ends the episode. `CampusEnv(walls=False)` drops the walls. The observation-only pure-pursuit baseline drives every trip tried, including the longest (69 m), 90-degree intersection corners included.
 
 ## Re-exporting
 

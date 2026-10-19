@@ -37,6 +37,7 @@ class CampusNetwork:
         self.nodes = {n["id"]: n for n in data["nodes"]}
         self.edges = {e["id"]: e for e in data["edges"]}
         self.stops = {s["name"]: s for s in data["stops"]}
+        self.walls = data.get("walls", [])
         self.adj: dict[int, list[tuple[int, int, float]]] = {n: [] for n in self.nodes}
         for e in data["edges"]:
             self.adj[e["a"]].append((e["b"], e["id"], e["length"]))
@@ -109,13 +110,20 @@ class CampusNetwork:
 
 class CampusEnv(envmod.RcTwinEnv):
     """RcTwinEnv on campus routes: each reset draws a trip and drives it.
-    reset(options={"trip": ("S3", "AB4")}) fixes the trip instead."""
+    reset(options={"trip": ("S3", "AB4")}) fixes the trip instead. The
+    campus's kerbs and buildings are walls (ADR 0009) unless walls=False:
+    a kerb strike bounces the car and costs the reward's wall term, and
+    only leaving the route's road (into a side street at a junction) ends
+    the episode early."""
 
-    def __init__(self, network: CampusNetwork | None = None, seed: int | None = None, **kwargs):
+    def __init__(self, network: CampusNetwork | None = None, seed: int | None = None,
+                 walls: bool = True, **kwargs):
         self.network = network or CampusNetwork.load()
         self._trip_rng = random.Random(seed)
         first = self.network.sample_trip(random.Random(seed))
         kwargs.setdefault("max_time", 120.0)
+        if walls:
+            kwargs["walls"] = self.network.walls
         super().__init__(self.network.route_road(*first), **kwargs)
 
     def reset(self, seed: int | None = None, options: dict | None = None):

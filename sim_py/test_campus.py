@@ -75,6 +75,91 @@ class Import(unittest.TestCase):
             self.assertEqual(rep["status"], "reached_end", path.name)
 
 
+def dist_to_polyline(q, poly) -> float:
+    best = math.inf
+    for a, b in zip(poly, poly[1:]):
+        dx, dy = b[0] - a[0], b[1] - a[1]
+        t = max(0.0, min(1.0, ((q[0] - a[0]) * dx + (q[1] - a[1]) * dy) / (dx * dx + dy * dy)))
+        best = min(best, math.hypot(a[0] + t * dx - q[0], a[1] + t * dy - q[1]))
+    return best
+
+
+class Walls(unittest.TestCase):
+    def test_chains_cover_every_edge_once(self):
+        ids = [i for chain, _ in importer.chains(NET.data["nodes"], NET.data["edges"]) for i in chain]
+        self.assertEqual(sorted(ids), sorted(NET.edges))
+
+    def test_chains_follow_a_loop_with_no_junction(self):
+        # A square of four edges, every node with two: one chain of all four.
+        sq = [(0, 0), (1, 0), (1, 1), (0, 1)]
+        nodes = [{"id": i} for i in range(4)]
+        edges = [{"id": i, "a": i, "b": (i + 1) % 4,
+                  "polyline": [[*sq[i], 0.0], [*sq[(i + 1) % 4], 0.0]]} for i in range(4)]
+        out = importer.chains(nodes, edges)
+        self.assertEqual(len(out), 1)
+        self.assertEqual(sorted(out[0][0]), [0, 1, 2, 3])
+
+    def test_every_road_is_kerbed_both_sides_away_from_junctions(self):
+        # Sample each edge every 5 cm; away from junctions (nodes with other
+        # than two edges) there must be a kerb wall at the asphalt edge on
+        # both sides, so there is no gap a car could leave the road through.
+        half = 0.5 * NET.width
+        degree = collections.Counter()
+        for e in NET.edges.values():
+            degree[e["a"]] += 1
+            degree[e["b"]] += 1
+        junctions = [NET.nodes[n] for n, d in degree.items() if d != 2]
+        segs = [(a, b) for w in NET.walls if w["name"].startswith("kerb")
+                for a, b in zip(w["points"], w["points"][1:])]
+        for e in NET.edges.values():
+            poly = e["polyline"]
+            for a, b in zip(poly, poly[1:]):
+                L = math.dist(a[:2], b[:2])
+                ux, uy = (b[0] - a[0]) / L, (b[1] - a[1]) / L
+                for k in range(1, int(L / 0.05)):
+                    c = (a[0] + ux * 0.05 * k, a[1] + uy * 0.05 * k)
+                    if min(math.hypot(c[0] - j["x"], c[1] - j["y"]) for j in junctions) < 2.0 * NET.width:
+                        continue
+                    if min(math.dist(c, p[:2]) for p in poly) < half:
+                        # Near a vertex: on the inside of a bend the kerb turns
+                        # at the mitre, half width x tan(half the bend) early.
+                        continue
+                    for side in (-1, 1):
+                        q = (c[0] - side * uy * half, c[1] + side * ux * half)
+                        near = min(dist_to_polyline(q, [s0, s1]) for s0, s1 in segs)
+                        self.assertLess(near, 0.01, f"edge {e['id']} at {c}, side {side}")
+
+    def test_no_wall_reaches_into_any_road(self):
+        # Every wall, sampled densely, keeps at least the asphalt's half width
+        # from every centreline: the kerbs bound the roads, never cut them.
+        half = 0.5 * NET.width
+        for w in NET.walls:
+            pts = w["points"] + ([w["points"][0]] if w["closed"] else [])
+            for a, b in zip(pts, pts[1:]):
+                for k in range(21):
+                    q = (a[0] + (b[0] - a[0]) * k / 20, a[1] + (b[1] - a[1]) * k / 20)
+                    near = min(dist_to_polyline(q, e["polyline"]) for e in NET.edges.values())
+                    self.assertGreater(near, half - 1e-4, w["name"])   # 0.1 mm: mitres at graph kinks
+
+    def test_kerbs_run_along_the_roads_at_the_asphalt_edge(self):
+        kerbs = [w for w in NET.walls if w["name"].startswith("kerb")]
+        self.assertEqual(len(kerbs), len(NET.data["sidewalks"]))
+        total = 0.0
+        for w in kerbs:
+            for q in w["points"]:
+                near = min(dist_to_polyline(q, e["polyline"]) for e in NET.edges.values())
+                # On the asphalt edge. A mitred point on the outside of a bend
+                # is half width / cos(half the bend) from the corner: under
+                # sqrt(2) times it for the campus's bends, all under 90 deg.
+                self.assertGreater(near, 0.5 * NET.width - 1e-4, w["name"])
+                self.assertLess(near, 0.5 * NET.width * math.sqrt(2.0), w["name"])
+            total += sum(math.dist(a, b) for a, b in zip(w["points"], w["points"][1:]))
+        # Both sides of 132.7 m of road, less the junction mouths.
+        self.assertGreater(total, 2 * 132.7 * 0.85)
+        self.assertLess(total, 2 * 132.7 * 1.05)
+        self.assertEqual(sum(w["name"].startswith("building") for w in NET.walls), len(NET.data["buildings"]))
+
+
 class Routing(unittest.TestCase):
     def test_routes_are_shortest_paths(self):
         # Against Floyd-Warshall over the whole graph.
@@ -127,6 +212,52 @@ class Env(unittest.TestCase):
                 done = te or tr
             self.assertEqual(info["status"], "reached_end", trip)
             self.assertEqual(info["trip"], trip)
+
+    def test_the_baseline_never_touches_a_kerb(self):
+        env = campus.CampusEnv(seed=0, ranges=campus.envmod.RANGES_TRAIN, lib_path=LIB)
+        for k, trip in enumerate([("S3", "AB4"), ("AB1", "S6"), ("S4", "S3")]):
+            obs, info = env.reset(seed=k, options={"trip": trip})
+            done = False
+            while not done:
+                obs, r, te, tr, info = env.step(campus.envmod.pure_pursuit_policy(obs))
+                done = te or tr
+            self.assertEqual(info["status"], "reached_end", trip)
+            self.assertEqual(info["wall_contacts"], 0, trip)
+
+    def test_the_footprint_is_widened_by_the_drawn_tyre(self):
+        env = campus.CampusEnv(seed=0, ranges=campus.envmod.RANGES_NOMINAL, lib_path=LIB)
+        env.reset(seed=0)
+        got, base = dr.Contact(), dr.Contact()
+        env.lib.rc_twin_get_contact(env._car, __import__("ctypes").byref(got))
+        env.lib.rc_twin_contact_default(__import__("ctypes").byref(env.params), __import__("ctypes").byref(base))
+        self.assertAlmostEqual(got.half_width, base.half_width + campus.envmod.FOOTPRINT_MARGIN, places=12)
+        self.assertGreater(env.lib.rc_twin_wall_count(env._car), 100)
+
+    def test_a_kerb_strike_bounces_and_costs_instead_of_ending(self):
+        # Hard left at full throttle from the start of a trip: without walls
+        # the car leaves the road and the episode ends; with the campus's
+        # walls it hits the kerb, keeps going, and pays the wall term.
+        out = {}
+        for walls in (False, True):
+            env = campus.CampusEnv(seed=0, ranges=campus.envmod.RANGES_NOMINAL, lib_path=LIB, walls=walls)
+            obs, info = env.reset(seed=0, options={"trip": ("S3", "AB4")})
+            worst, first_hit, k = 0.0, None, 0
+            for k in range(300):
+                obs, r, te, tr, info = env.step((1.0, 1.0))
+                if info["wall_contacts"] and first_hit is None:
+                    first_hit = (k, r)
+                worst = min(worst, r)
+                if te or tr:
+                    break
+            out[walls] = (info, first_hit, k)
+        no_walls, _, k_end = out[False]
+        self.assertEqual(no_walls["status"], "left_road")
+        self.assertEqual(no_walls["wall_contacts"], 0)
+        info, first_hit, k = out[True]
+        self.assertIsNotNone(first_hit, "it hit a kerb")
+        self.assertLess(first_hit[0], k_end + 1, "where the wall-less car left the road")
+        self.assertLess(first_hit[1], 0.0, "and the strike cost reward")
+        self.assertGreater(info["wall_impulse"], 0.0)
 
     def test_episodes_draw_different_trips_reproducibly(self):
         env = campus.CampusEnv(seed=0, ranges=campus.envmod.RANGES_NOMINAL, lib_path=LIB)

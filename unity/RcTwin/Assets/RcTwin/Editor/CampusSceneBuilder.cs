@@ -8,7 +8,9 @@
 //     a collider: it is what the Core feels through RaycastGround;
 //   - the sidewalks, 6 cm kerbs either side, and the buildings, drawn
 //     without colliders; the kerb lines and the buildings' footprints are
-//     walls instead (ADR 0009), so the car stays on the asphalt;
+//     walls instead (ADR 0009), so the car stays on the asphalt. Sidewalk
+//     runs and walls come from the data (tools/campus_import.py), the same
+//     geometry the RL environment's walls use;
 //   - the grass beyond, 1 mm below the asphalt: driveable here, but leaving
 //     the asphalt ends an RL episode;
 //   - each bus stop as a stop line across its node and a post at the kerb;
@@ -32,7 +34,6 @@ namespace RcTwin.EditorTools
         public const string AsphaltName = "Campus asphalt";
         public const string HomeStop = "S3";
         private const string GenDir = "Assets/RcTwin/Generated/Campus";
-        private const float Step = 0.05f;  // resampling of the centrelines [m]
 
         public static string NetworkPath =>
             Path.GetFullPath(Path.Combine(Application.dataPath, "..", "..", "..", "campus", "campus_network.json"));
@@ -40,9 +41,7 @@ namespace RcTwin.EditorTools
         private sealed class Edge
         {
             public int id, a, b;
-            public List<Vector3> pts;   // Unity frame, every Step metres
-            public bool[] corner;       // pts[i] is one of raw's points
-            public List<Vector3> raw;   // Unity frame, as imported
+            public List<Vector3> pts;   // Unity frame
         }
 
         [MenuItem("RcTwin/Build Campus Scene")]
@@ -63,8 +62,7 @@ namespace RcTwin.EditorTools
                 var pts = new List<Vector3>();
                 foreach (List<object> q in (List<object>)e["polyline"])
                     pts.Add(TwinCar.ToUnity(D(q[0]), D(q[1]), D(q[2])));
-                var edge = new Edge { id = I(e["id"]), a = I(e["a"]), b = I(e["b"]), raw = pts };
-                edge.pts = Resample(pts, out edge.corner);
+                var edge = new Edge { id = I(e["id"]), a = I(e["a"]), b = I(e["b"]), pts = pts };
                 edges.Add(edge);
                 degree[edge.a] = degree.TryGetValue(edge.a, out int da) ? da + 1 : 1;
                 degree[edge.b] = degree.TryGetValue(edge.b, out int db) ? db + 1 : 1;
@@ -86,7 +84,7 @@ namespace RcTwin.EditorTools
             // Asphalt: one ribbon per edge, plus a disc wherever the road turns
             // at a node, to fill the outside of the corner.
             var asphalt = new MeshBuilder();
-            foreach (var e in edges) asphalt.Band(e.raw, -0.5f * width, 0.5f * width, 0f);
+            foreach (var e in edges) asphalt.Band(e.pts, -0.5f * width, 0.5f * width, 0f);
             foreach (var kv in nodes)
             {
                 if (TurnsAt(kv.Key, edges)) asphalt.Disc(kv.Value, 0.5f * width, 32);
@@ -95,38 +93,32 @@ namespace RcTwin.EditorTools
                                        FlatGroundSceneBuilder.ColourMaterial("Asphalt", new Color(0.23f, 0.23f, 0.25f)),
                                        collider: true);
 
-            // Sidewalks: a band either side, kerb_height up, with the kerb face
-            // toward the road. Where a sidewalk would run onto another road's
-            // asphalt (at a junction) it is left out; at the junction's corners
-            // the two roads' sidewalks then meet along the kerb lines.
+            // Sidewalks: the data's runs (left out at junctions), a band either
+            // side kerb_height up with the kerb face toward the road. Walls:
+            // the data's kerb lines and building footprints, in ISO.
             var walks = new MeshBuilder();
-            var walls = new GameObject("Walls (kerbs and buildings, ADR 0009)").AddComponent<TwinWalls>();
             float inner = 0.5f * width, outer = 0.5f * width + walk, mid = 0.5f * (inner + outer);
-            foreach (var e in edges)
+            foreach (Dictionary<string, object> run in (List<object>)net["sidewalks"])
             {
-                foreach (int side in new[] { -1, 1 })
+                var pts = new List<Vector3>();
+                foreach (List<object> q in (List<object>)run["points"])
+                    pts.Add(TwinCar.ToUnity(D(q[0]), D(q[1]), D(q[2])));
+                int side = I(run["side"]);
+                if (side < 0) walks.Band(pts, -outer, -inner, kerb);
+                else walks.Band(pts, inner, outer, kerb);
+                walks.Kerb(pts, side * inner, kerb, side);
+            }
+            var walls = new GameObject("Walls (kerbs and buildings, ADR 0009)").AddComponent<TwinWalls>();
+            foreach (Dictionary<string, object> w in (List<object>)net["walls"])
+            {
+                var pts = (List<object>)w["points"];
+                var xy = new Vector2[pts.Count];
+                for (int k = 0; k < pts.Count; k++)
                 {
-                    var keep = new bool[e.pts.Count];
-                    var normals = MiterNormals(e.pts);
-                    for (int i = 0; i < e.pts.Count; i++)
-                        keep[i] = !OnOtherRoad(e.pts[i] + normals[i] * (side * mid), e, edges, inner);
-                    // Mesh only each kept run's ends and the corners within it.
-                    foreach (var run in Runs(e.pts, e.corner, keep))
-                    {
-                        if (side < 0) walks.Band(run, -outer, -inner, kerb);
-                        else walks.Band(run, inner, outer, kerb);
-                        walks.Kerb(run, side * inner, kerb, side);
-                        // The kerb line is a wall: 6 cm is more than the step.
-                        var n = MiterNormals(run);
-                        var line = new Vector2[run.Count];
-                        for (int i = 0; i < run.Count; i++)
-                        {
-                            Vector3 q = run[i] + n[i] * (side * inner);
-                            line[i] = new Vector2(q.z, -q.x);   // ISO (x, y)
-                        }
-                        walls.Add($"Kerb, edge {e.id}, {(side < 0 ? "left" : "right")}", false, line);
-                    }
+                    var q = (List<object>)pts[k];
+                    xy[k] = new Vector2(F(q[0]), F(q[1]));
                 }
+                walls.Add((string)w["name"], (bool)w["closed"], xy);
             }
             MeshObject("Campus sidewalks (drawn only)", "CampusSidewalks", walks,
                        FlatGroundSceneBuilder.ColourMaterial("Sidewalk", new Color(0.62f, 0.6f, 0.56f)),
@@ -147,17 +139,6 @@ namespace RcTwin.EditorTools
                     Quaternion.Euler(0f, TwinCar.YawToUnityDeg(D(b["yaw"])), 0f));
                 box.transform.localScale = new Vector3(2f * F(b["half_width"]), h, 2f * F(b["half_length"]));
                 box.GetComponent<Renderer>().sharedMaterial = buildingMat;
-
-                // Its footprint is a closed wall, in ISO.
-                double bx = D(b["x"]), by = D(b["y"]), yaw = D(b["yaw"]);
-                double hl = D(b["half_length"]), hw = D(b["half_width"]);
-                double c = Math.Cos(yaw), sn = Math.Sin(yaw);
-                var corners = new Vector2[4];
-                double[] sl = { 1, 1, -1, -1 }, sw = { 1, -1, -1, 1 };
-                for (int i = 0; i < 4; i++)
-                    corners[i] = new Vector2((float)(bx + c * hl * sl[i] - sn * hw * sw[i]),
-                                             (float)(by + sn * hl * sl[i] + c * hw * sw[i]));
-                walls.Add($"Building {b["name"]}", true, corners);
             }
 
             // Stops: a stop line across the road at the stop's node and a post
@@ -233,47 +214,6 @@ namespace RcTwin.EditorTools
                       $"The car starts at stop {HomeStop}; W/S throttle, A/D steer, R back to {HomeStop}.");
         }
 
-        // Points every Step metres along each segment, keeping the corners.
-        private static List<Vector3> Resample(List<Vector3> pts, out bool[] corner)
-        {
-            var o = new List<Vector3> { pts[0] };
-            var c = new List<bool> { true };
-            for (int i = 1; i < pts.Count; i++)
-            {
-                Vector3 a = pts[i - 1], b = pts[i];
-                int n = Mathf.Max(1, Mathf.CeilToInt(Vector3.Distance(a, b) / Step));
-                for (int k = 1; k <= n; k++)
-                {
-                    o.Add(Vector3.Lerp(a, b, (float)k / n));
-                    c.Add(k == n);
-                }
-            }
-            corner = c.ToArray();
-            return o;
-        }
-
-        // The runs of consecutive kept points, each thinned to its ends and
-        // the corners between them (a straight stretch needs no more).
-        private static List<List<Vector3>> Runs(List<Vector3> pts, bool[] corner, bool[] keep)
-        {
-            var runs = new List<List<Vector3>>();
-            List<Vector3> run = null;
-            for (int i = 0; i < pts.Count; i++)
-            {
-                if (!keep[i])
-                {
-                    if (run != null && run.Count >= 2) runs.Add(run);
-                    run = null;
-                    continue;
-                }
-                bool last = i + 1 == pts.Count || !keep[i + 1];
-                if (run == null) run = new List<Vector3> { pts[i] };
-                else if (corner[i] || last) run.Add(pts[i]);
-            }
-            if (run != null && run.Count >= 2) runs.Add(run);
-            return runs;
-        }
-
         // Unit vectors to the right of the line in plan, mitred at corners so
         // a band keeps its width round them.
         private static Vector3[] MiterNormals(List<Vector3> pts)
@@ -322,26 +262,6 @@ namespace RcTwin.EditorTools
         }
 
         private static Vector3 Flat(Vector3 v) => new Vector3(v.x, 0f, v.z).normalized;
-
-        // Whether q (in plan) is within r of any other edge's centreline, by
-        // more than a millimetre of rounding.
-        private static bool OnOtherRoad(Vector3 q, Edge self, List<Edge> edges, float r)
-        {
-            var q2 = new Vector2(q.x, q.z);
-            foreach (var e in edges)
-            {
-                if (e == self) continue;
-                for (int i = 1; i < e.raw.Count; i++)
-                {
-                    var a = new Vector2(e.raw[i - 1].x, e.raw[i - 1].z);
-                    var b = new Vector2(e.raw[i].x, e.raw[i].z);
-                    Vector2 ab = b - a;
-                    float t = Mathf.Clamp01(Vector2.Dot(q2 - a, ab) / Mathf.Max(ab.sqrMagnitude, 1e-12f));
-                    if ((a + t * ab - q2).magnitude < r - 1e-3f) return true;
-                }
-            }
-            return false;
-        }
 
         private static GameObject MeshObject(string name, string asset, MeshBuilder mb, Material mat, bool collider)
         {
