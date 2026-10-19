@@ -1,0 +1,39 @@
+# build outputs
+build/
+out/
+cmake-build-*/
+*.o
+*.obj
+*.so
+*.dll
+*.dylib
+*.pyd
+
+# python
+__pycache__/
+*.pyc
+.venv/
+.pytest_cache/
+*.egg-info/
+dist/
+
+# unity
+unity/**/Library/
+unity/**/Temp/
+unity/**/Obj/
+unity/**/Logs/
+unity/**/UserSettings/
+unity/**/*.csproj
+unity/**/*.sln
+
+# run outputs (keep small reference runs under results/reference/)
+results/*
+!results/reference/
+*.mcap
+wandb/
+
+# editor / os
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
