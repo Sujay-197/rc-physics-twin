@@ -68,6 +68,11 @@ class State(ctypes.Structure):
                  "lag_fl", "lag_fr", "lag_rl", "lag_rr")]
 
 
+class GroundSample(ctypes.Structure):
+    """rc_twin_ground_sample."""
+    _fields_ = [(n, ctypes.c_double) for n in ("height", "nx", "ny", "nz", "mu_scale")]
+
+
 class RoadError(ValueError):
     pass
 
@@ -97,6 +102,10 @@ def load_lib(path: pathlib.Path) -> ctypes.CDLL:
     lib.rc_twin_road_add_breaker.argtypes = [vp, d, d, d]
     lib.rc_twin_road_locate.argtypes = [vp, d, d, dp, dp]
     lib.rc_twin_road_point.argtypes = [vp, d, dp, dp, dp, dp]
+    lib.rc_twin_road_ground.restype = i32
+    lib.rc_twin_road_ground.argtypes = [vp, i32, d, d, ctypes.POINTER(GroundSample)]
+    lib.rc_twin_set_params.restype = i32
+    lib.rc_twin_set_params.argtypes = [vp, ctypes.POINTER(Params), cpp]
     if lib.rc_twin_abi_version() != ABI:
         raise RuntimeError(f"rc_twin ABI {lib.rc_twin_abi_version()}, this script needs {ABI}")
     return lib

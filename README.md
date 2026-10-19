@@ -88,7 +88,7 @@ native/          rc_twin: C ABI over the Core (rc_twin.dll), with C, C++ and C# 
 unity/RcTwin/    Unity 6 project: P/Invoke bindings, keyboard car, scene builder (hill, bank, ice, speed breaker)
 tools/           toolchain bootstrap; drive_road.py, the headless harness; edge_profiler.py
 profiles/        edge profile cache schema (the fleet sim's input)
-sim_py/          Python bindings, gymkhana cross-validation, SB3 training
+sim_py/          RL environment (rc_twin_env.py); later gymkhana cross-validation, SB3 training
 cars/            versioned car directories (YAML), every set labeled measured|identified|provisional
 roads/           road-feature schema and sample data (grade, speed breakers, friction)
 Docs/            specs, ADRs, roadmap, references

@@ -41,9 +41,9 @@
 
 ## Phase 5: Learning
 
-- [ ] Gymnasium env around the Core.
-- [ ] Domain randomization and history-conditioned policy.
-- [ ] Held-out-parameter and perturbation evaluation.
+- [x] Gymnasium env around the Core. `sim_py/rc_twin_env.py`: road following at a target speed, standard library only, optional `gymnasium.Env` wrapper; tests in ctest (`sim_py.env`).
+- [x] Domain randomization and history-conditioned observations (friction, payload, servo lag, motor torque, tyre stiffness, battery resistance; seeded). A trained history-conditioned policy is still to do: needs gymnasium, numpy and SB3 installed.
+- [ ] Held-out-parameter and perturbation evaluation. The tools are in place (`RANGES_HELD_OUT`, mid-episode `perturb`, `evaluate`, a pure-pursuit baseline); evaluating a trained policy waits on training.
 
 ## Phase 6: Empirical (optional)
 
