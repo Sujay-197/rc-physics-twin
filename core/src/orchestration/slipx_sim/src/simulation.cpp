@@ -1,5 +1,6 @@
 // Copyright 2026 The SlipX Authors
 // SPDX-License-Identifier: Apache-2.0
+// Modified 2026-10-19 by the rc-physics-twin project: see THIRD_PARTY.md.
 
 #include "slipx/sim/simulation.hpp"
 
@@ -74,6 +75,9 @@ std::string params_digest(const VehicleParams& p) {
   h.update(p.roll_resist);
   h.update(p.v_eps);
   h.update_u64(static_cast<std::uint64_t>(p.provenance));
+  // rc-physics-twin ADR 0006. Only when set, so every digest of a car without
+  // wheel dynamics is the digest it always was.
+  if (p.wheel_inertia != 0.0) h.update(p.wheel_inertia);
   return h.hex();
 }
 

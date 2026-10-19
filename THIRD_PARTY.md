@@ -32,6 +32,10 @@ Checked 2026-10-19 against the upstream repository, not package metadata.
 | `core/src/core/slipx_core/include/slipx/load_transfer.hpp` | Optional `g_normal` argument (default is the old arithmetic) | Ours (ADR 0005); not sent |
 | `core/src/core/slipx_core/src/l2_double_track.cpp` | Grade, banking and per-wheel grip at L2; level ground unchanged bit for bit | Ours (ADR 0005); not sent |
 | `core/src/core/slipx_core/tests/test_ground.cpp` (new), `tests/CMakeLists.txt` | 18 tests for the above | Ours (ADR 0005); not sent |
+| `core/src/core/slipx_core/include/slipx/params.hpp`, `src/params.cpp` | `wheel_inertia` (default 0) and its validation | Ours (ADR 0006); not sent |
+| `core/src/core/slipx_core/src/l2_double_track.cpp` | Wheel rotational dynamics when `wheel_inertia > 0`; inertia 0 unchanged bit for bit | Ours (ADR 0006); not sent |
+| `core/src/orchestration/slipx_sim/src/simulation.cpp` | `wheel_inertia` in the manifest's params digest, only when set | Ours (ADR 0006); not sent |
+| `core/src/core/slipx_core/tests/test_wheels.cpp` (new) | 19 tests for the above | Ours (ADR 0006); not sent |
 
 Upstream lineage note: Gym-Khana says it is based on the UPenn `f1tenth_gym`. Check that lineage's license before copying code that may originate there.
 

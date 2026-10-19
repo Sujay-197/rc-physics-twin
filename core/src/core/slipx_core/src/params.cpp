@@ -1,5 +1,6 @@
 // Copyright 2026 The SlipX Authors
 // SPDX-License-Identifier: Apache-2.0
+// Modified 2026-10-19 by the rc-physics-twin project: see THIRD_PARTY.md.
 //
 // Physical sanity checks on VehicleParams.
 //
@@ -121,6 +122,9 @@ const char* validate(const VehicleParams& p) {
   // v_eps is the slip-angle denominator floor (see l1_bicycle.cpp). Zero
   // reintroduces the standstill singularity it exists to prevent.
   if (!(p.v_eps > 0.0)) return "v_eps must be positive [m/s]";
+  if (!(p.wheel_inertia >= 0.0) || !std::isfinite(p.wheel_inertia)) {
+    return "wheel_inertia must be finite and not negative [kg m^2]";
+  }
 
   return nullptr;
 }

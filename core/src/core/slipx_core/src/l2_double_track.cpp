@@ -52,7 +52,8 @@
 // What is absent, and is absent deliberately rather than forgotten
 // ============================================================================
 //
-//   No wheel rotational state (ADR-0027). Wheel speeds and slip ratios are
+//   No wheel rotational state (ADR-0027) unless params.wheel_inertia > 0
+//   (rc-physics-twin ADR 0006, below). Wheel speeds and slip ratios are
 //   reported quasi-statically from the delivered forces, so a locked or a
 //   spinning wheel is not a dynamic event this tier can represent. When the
 //   friction ellipse caps one wheel of a spool axle, the reported wheel
@@ -122,6 +123,23 @@
 //
 //   pos.z is set to the mean contact height. Per-wheel height differences and
 //   normals beyond their mean need a suspension, which is L3's.
+//
+// ============================================================================
+// Wheel rotational dynamics (rc-physics-twin ADR 0006)
+// ============================================================================
+//
+// With params.wheel_inertia > 0, omega_w is integrated state. The step is
+// split: the chassis integrates as usual with each wheel's
+// entry slip velocity (omega R - v_long), every tyre's longitudinal force
+// following from its slip ratio (c_kappa at load times kappa, through the
+// friction ellipse); then each wheel
+// speed is advanced by backward Euler on the linear tyre law, in closed form,
+// at the end-of-step loads. That answers ADR-0027's step-size objection: the
+// wheel mode's time constant is far below 1 ms, and the implicit update is
+// stable for any inertia. A saturated tyre's force barely depends on the wheel
+// speed, so there the update is explicit. The ESC torque reaches the wheels
+// through the differential as torque; motor braking can stop a wheel but not
+// reverse it, which is lock-up. With wheel_inertia == 0 none of this runs.
 //
 // Still planar: x, y and yaw are the horizontal projection, and the speed is
 // integrated into them as if horizontal, which overstates horizontal travel
@@ -210,6 +228,17 @@ struct StepConstants {
 
   // The ground (see the note at the top). The defaults are level, unscaled
   // ground, under which every use below is an exact identity.
+  // Wheel dynamics (ADR 0006): on, and each wheel's slip velocity
+  // (omega R - v_long) at the entry state, held for the chassis step.
+  bool wheels = false;
+  std::array<double, kWheelCount> slip_v{};                  //      [m/s]
+  // The ESC's total wheel torque as the wheel update sees it, linear in the
+  // driven wheels' mean speed: esc_a - esc_b * omega_mean. On the
+  // torque-speed curve esc_b is the curve's slope (the motor's back-EMF
+  // damping); anywhere else the torque is the step's constant budget.
+  double esc_a = 0.0;                                          //    [N m]
+  double esc_b = 0.0;                                          // [N m s]
+
   bool graded = false;          // the road plane is tilted
   Vec3 normal{0.0, 0.0, 1.0};   // mean unit road normal, world frame    [-]
   double g_normal = kGravity;   // gravity into the road            [m/s^2]
@@ -239,6 +268,13 @@ struct Forces {
   std::array<double, kWheelCount> fz{};       //                         [N]
   std::array<double, kWheelCount> vx_wheel{}; // wheel centre, body x  [m/s]
   std::array<bool, kWheelCount> saturated{};
+  // What the wheel update needs (ADR 0006); filled only with wheel dynamics.
+  std::array<double, kWheelCount> v_long{};   // along the wheel heading[m/s]
+  std::array<double, kWheelCount> v_abs{};    // |v_long| floored at v_eps
+  std::array<double, kWheelCount> c_kappa{};  // slip stiffness at load
+  std::array<double, kWheelCount> fy_pure{};  // lateral demand          [N]
+  std::array<double, kWheelCount> fx_max{};   // ellipse axes            [N]
+  std::array<double, kWheelCount> fy_max{};
   double ax = 0.0;                            //                    [m/s^2]
   double ay = 0.0;                            //                    [m/s^2]
   double mz = 0.0;                            // yaw moment          [N m]
@@ -271,6 +307,8 @@ struct WheelKinematics {
   double shape = 0.0;     // MF shape term at the lagged slip        [-]
   double vxw = 0.0;       // wheel centre velocity, body x         [m/s]
   double vx_safe = 0.0;   // the same, floored away from zero      [m/s]
+  double v_long = 0.0;    // along the wheel heading (ADR 0006)    [m/s]
+  double v_abs = 0.0;     // |v_long| floored at v_eps             [m/s]
 };
 
 struct Kinematics {
@@ -320,6 +358,7 @@ class DoubleTrackL2 final : public VehicleModel {
 
     StepConstants c;
     c.delta_cmd = delta_cmd;
+    c.wheels = (params_.wheel_inertia > 0.0);
     if (ground != nullptr) {
       // One road plane from the four normals, each normalised first so a
       // sample's length carries no weight. Axle pairs first: mirror symmetry.
@@ -344,6 +383,21 @@ class DoubleTrackL2 final : public VehicleModel {
     }
     for (unsigned i = 0; i < kWheelCount; ++i) {
       wheel_offset(i, &c.wheel_x[i], &c.wheel_y[i]);
+    }
+    if (c.wheels) {
+      // Holding the slip velocity rather than the wheel speed over the
+      // chassis step: a rolling wheel keeps its slip while the car speeds up
+      // or slows within the step, so the chassis does not see a wheel that
+      // lags the road by a whole step's change in speed (ADR 0006).
+      const double cd = std::cos(s.steer);
+      const double sd = std::sin(s.steer);
+      for (unsigned i = 0; i < kWheelCount; ++i) {
+        const bool front = (i == kFrontLeft || i == kFrontRight);
+        const double vxw = s.vel_body.x - s.rates.z * c.wheel_y[i];
+        const double vyw = s.vel_body.y + s.rates.z * c.wheel_x[i];
+        const double v_long = front ? vxw * cd + vyw * sd : vxw;
+        c.slip_v[i] = s.omega_w[i] * params_.wheel_radius - v_long;
+      }
     }
     switch (params_.layout) {
       case DriveLayout::kFrontWheelDrive:
@@ -433,6 +487,19 @@ class DoubleTrackL2 final : public VehicleModel {
     const bool esc_sat = (t_budget != t_cmd);
 
     c.fx_demand = t_budget / params_.wheel_radius;
+    c.esc_a = t_budget;
+    if (c.wheels) {
+      // Is the torque the curve's? The same expression as esc_budget, so the
+      // comparison is exact.
+      const double scale = v_pack / params_.pack_nominal_v;
+      const double curve = params_.torque_stall * scale *
+                           (1.0 - omega_mean / (params_.omega_free * scale));
+      const double cap = params_.torque_per_amp * params_.current_max;
+      if (t_budget > 0.0 && t_budget == curve && curve < cap) {
+        c.esc_a = params_.torque_stall * scale;
+        c.esc_b = params_.torque_stall / params_.omega_free;
+      }
+    }
     c.soc_rate = -pack_current / (3600.0 * params_.pack_capacity_ah);
 
     // The tyres are built once per step rather than once per derivative
@@ -516,12 +583,18 @@ class DoubleTrackL2 final : public VehicleModel {
     Forces f;
     const StateVec<kN> d = derivative(y, c, &f);
 
-    // Wheel speeds follow from the reported slip ratio rather than from a
-    // rotational state (ADR-0027). kappa = (omega R - v) / v, so
-    // omega = v (1 + kappa) / R. These are consistent with the delivered
-    // force by construction and are NOT an independent degree of freedom.
-    for (unsigned i = 0; i < kWheelCount; ++i) {
-      s.omega_w[i] = f.vx_wheel[i] * (1.0 + f.kappa[i]) / params_.wheel_radius;
+    if (c.wheels) {
+      // Integrated wheel speeds (ADR 0006), at the end-of-step loads.
+      update_wheels(c, f, t_budget, dt, &s.omega_w);
+    } else {
+      // Wheel speeds follow from the reported slip ratio rather than from a
+      // rotational state (ADR-0027). kappa = (omega R - v) / v, so
+      // omega = v (1 + kappa) / R. These are consistent with the delivered
+      // force by construction and are NOT an independent degree of freedom.
+      for (unsigned i = 0; i < kWheelCount; ++i) {
+        s.omega_w[i] =
+            f.vx_wheel[i] * (1.0 + f.kappa[i]) / params_.wheel_radius;
+      }
     }
     for (unsigned i = 0; i < kWheelCount; ++i) s.Fz[i] = f.fz[i];
 
@@ -567,6 +640,243 @@ class DoubleTrackL2 final : public VehicleModel {
       out->accel_saturated = accel_sat;
       out->speed_saturated = speed_sat;
       out->esc_saturated = esc_sat;
+    }
+  }
+
+  // ----------------------------------------------- wheel update (ADR 0006)
+
+  // One tyre's force at wheel speed w, with everything else as evaluated.
+  CombinedForce tyre_at(const Forces& f, unsigned i, double w) const {
+    const double kappa = (w * params_.wheel_radius - f.v_long[i]) / f.v_abs[i];
+    return friction_ellipse(f.c_kappa[i] * kappa, f.fy_pure[i], f.fx_max[i],
+                            f.fy_max[i]);
+  }
+
+  // One wheel with its own torque: backward Euler on I dw/dt = T - R Fx with
+  // Fx linear in w, solved in closed form; explicit if the tyre saturates.
+  // Used for undriven wheels (no torque) and the LSD decision.
+  double wheel_solve(const Forces& f, unsigned i, double torque, double w0,
+                     double a) const {
+    const double r = params_.wheel_radius;
+    const double k = f.c_kappa[i] / f.v_abs[i];
+    double w = (a * w0 + torque + r * k * f.v_long[i]) / (a + r * r * k);
+    const CombinedForce at = tyre_at(f, i, w);
+    if (at.saturated) w = w0 + (torque - r * at.fx) / a;
+    return w;
+  }
+
+  // A locked axle: one speed, both tyres, inertia 2 I. Pair sums only, so the
+  // solve is exactly mirror symmetric.
+  double spool_solve(const Forces& f, unsigned l, unsigned rr, double torque,
+                     double w0, double a) const {
+    const double r = params_.wheel_radius;
+    const double kl = f.c_kappa[l] / f.v_abs[l];
+    const double kr = f.c_kappa[rr] / f.v_abs[rr];
+    double w = (2.0 * a * w0 + torque +
+                r * (kl * f.v_long[l] + kr * f.v_long[rr])) /
+               (2.0 * a + r * r * (kl + kr));
+    const CombinedForce fl = tyre_at(f, l, w);
+    const CombinedForce fr = tyre_at(f, rr, w);
+    if (fl.saturated || fr.saturated) {
+      w = w0 + (torque - r * (fl.fx + fr.fx)) / (2.0 * a);
+    }
+    return w;
+  }
+
+  // One degree of freedom of the driven wheels: a single wheel, or a locked
+  // pair turning at one speed.
+  struct Dof {
+    unsigned wheel[2] = {0, 0};
+    unsigned n = 1;          // wheels in it
+    double share = 0.0;      // fraction of the ESC torque it receives,
+                             // signed: under braking, against the rotation
+    double extra = 0.0;      // constant torque on top (LSD bias)     [N m]
+    double w0 = 0.0;         // entry speed                           [rad/s]
+  };
+
+  // The driven wheels, solved together. Each DOF j obeys, by backward Euler,
+  //
+  //   n_j a (w_j' - w_j) = share_j (A - B w_mean') + extra_j - R F_j(w_j')
+  //
+  // with w_mean' the mean of the driven wheel speeds, the ESC's coupling.
+  // F_j is linear in w_j' for a tyre inside its ellipse and a constant for a
+  // saturated one, so the system is a diagonal plus one rank-one term and
+  // Sherman-Morrison solves it in closed form. Two passes, always: linear
+  // tyres first, then saturated ones frozen at the force the first pass
+  // found. Sums are formed per axle and then across axles, so the solve is
+  // exactly mirror symmetric.
+  void solve_driven(const StepConstants& c, const Forces& f, double a,
+                    const Dof* dofs, const unsigned* axle_of, unsigned count,
+                    unsigned driven_wheels,
+                    std::array<double, kWheelCount>* w) const {
+    const double r = params_.wheel_radius;
+    std::array<bool, kWheelCount> sat{};
+    std::array<double, kWheelCount> fsat{};
+    std::array<double, 4> out{};
+    const double inv_n = 1.0 / static_cast<double>(driven_wheels);
+
+    for (int pass = 0; pass < 2; ++pass) {
+      std::array<double, 4> y{};
+      std::array<double, 4> z{};
+      // Per axle partial sums of v.y and v.z, then front + rear.
+      double num_axle[2] = {0.0, 0.0};
+      double den_axle[2] = {0.0, 0.0};
+      for (unsigned j = 0; j < count; ++j) {
+        const Dof& d = dofs[j];
+        double diag = static_cast<double>(d.n) * a;
+        double rhs = diag * d.w0 + d.share * c.esc_a + d.extra;
+        double tyre_diag[2] = {0.0, 0.0};
+        double tyre_rhs[2] = {0.0, 0.0};
+        for (unsigned m = 0; m < d.n; ++m) {
+          const unsigned i = d.wheel[m];
+          if (sat[i]) {
+            tyre_rhs[m] = -r * fsat[i];
+          } else {
+            const double k = f.c_kappa[i] / f.v_abs[i];
+            tyre_diag[m] = r * r * k;
+            tyre_rhs[m] = r * k * f.v_long[i];
+          }
+        }
+        diag += (d.n == 2) ? (tyre_diag[0] + tyre_diag[1]) : tyre_diag[0];
+        rhs += (d.n == 2) ? (tyre_rhs[0] + tyre_rhs[1]) : tyre_rhs[0];
+        y[j] = rhs / diag;
+        z[j] = d.share * c.esc_b / diag;
+        const double v = static_cast<double>(d.n) * inv_n;
+        num_axle[axle_of[j]] += v * y[j];
+        den_axle[axle_of[j]] += v * z[j];
+      }
+      const double num = num_axle[0] + num_axle[1];
+      const double den = 1.0 + (den_axle[0] + den_axle[1]);
+      const double w_mean = num / den;
+      for (unsigned j = 0; j < count; ++j) out[j] = y[j] - z[j] * w_mean;
+
+      if (pass == 0) {
+        for (unsigned j = 0; j < count; ++j) {
+          for (unsigned m = 0; m < dofs[j].n; ++m) {
+            const unsigned i = dofs[j].wheel[m];
+            const CombinedForce at = tyre_at(f, i, out[j]);
+            sat[i] = at.saturated;
+            fsat[i] = at.fx;
+          }
+        }
+      }
+    }
+
+    for (unsigned j = 0; j < count; ++j) {
+      for (unsigned m = 0; m < dofs[j].n; ++m) (*w)[dofs[j].wheel[m]] = out[j];
+    }
+  }
+
+  // An LSD axle locks while the torque its clutch must carry to hold both
+  // wheels at one speed is within the preload (decided with the axle's share
+  // of the entry torque); past it, it runs open with the preload biased to
+  // the slower wheel, SlipX's force rule in torque.
+  bool lsd_locked(const Forces& f, unsigned l, unsigned rr, double torque,
+                  double wl0, double wr0, double a) const {
+    const double r = params_.wheel_radius;
+    const double half = 0.5 * torque;
+    const double ws = spool_solve(f, l, rr, torque, 0.5 * (wl0 + wr0), a);
+    const double need_l = a * (ws - wl0) - half + r * tyre_at(f, l, ws).fx;
+    const double need_r = a * (ws - wr0) - half + r * tyre_at(f, rr, ws).fx;
+    return 2.0 * std::fabs(0.5 * (need_l - need_r)) <= params_.lsd_preload;
+  }
+
+  void update_wheels(const StepConstants& c, const Forces& f, double t_budget,
+                     double dt, std::array<double, kWheelCount>* w) const {
+    const double a = params_.wheel_inertia / dt;
+    Dof dofs[4];
+    unsigned axle_of[4] = {0, 0, 0, 0};
+    unsigned count = 0;
+    unsigned driven_wheels = 0;
+
+    const auto add_axle = [&](unsigned axle, unsigned l, unsigned rr,
+                              double share) {
+      const double wl0 = (*w)[l];
+      const double wr0 = (*w)[rr];
+      driven_wheels += 2;
+      bool locked = params_.differential == Differential::kSpool;
+      if (params_.differential == Differential::kLsd) {
+        locked = lsd_locked(f, l, rr, share * t_budget, wl0, wr0, a);
+      }
+      if (locked) {
+        Dof d;
+        d.wheel[0] = l;
+        d.wheel[1] = rr;
+        d.n = 2;
+        d.share = share;
+        d.w0 = 0.5 * (wl0 + wr0);
+        axle_of[count] = axle;
+        dofs[count++] = d;
+        return;
+      }
+      double bias_l = 0.0;
+      double bias_r = 0.0;
+      if (params_.differential == Differential::kLsd) {
+        const double bias = 0.5 * params_.lsd_preload;
+        if (wl0 < wr0) {
+          bias_l = bias;
+          bias_r = -bias;
+        } else if (wr0 < wl0) {
+          bias_l = -bias;
+          bias_r = bias;
+        }
+      }
+      Dof dl;
+      dl.wheel[0] = l;
+      dl.share = 0.5 * share;
+      dl.extra = bias_l;
+      dl.w0 = wl0;
+      Dof dr;
+      dr.wheel[0] = rr;
+      dr.share = 0.5 * share;
+      dr.extra = bias_r;
+      dr.w0 = wr0;
+      axle_of[count] = axle;
+      dofs[count++] = dl;
+      axle_of[count] = axle;
+      dofs[count++] = dr;
+    };
+
+    if (c.front_share != 0.0) add_axle(0, kFrontLeft, kFrontRight, c.front_share);
+    if (c.rear_share != 0.0) add_axle(1, kRearLeft, kRearRight, c.rear_share);
+
+    // Motor braking (a negative budget off the curve) acts against the
+    // wheel's rotation whichever way it turns, and stops it rather than
+    // reversing it. The direction is the one the tyre alone would turn it
+    // this step; a wheel the tyre would not turn at all stays where it is.
+    const bool braking = (c.esc_b == 0.0 && c.esc_a < 0.0);
+    std::array<double, kWheelCount> free = *w;
+    if (braking) {
+      StepConstants no_torque = c;
+      no_torque.esc_a = 0.0;
+      solve_driven(no_torque, f, a, dofs, axle_of, count, driven_wheels, &free);
+      for (unsigned j = 0; j < count; ++j) {
+        const double wf = free[dofs[j].wheel[0]];
+        const double dir = (wf > 0.0) ? 1.0 : (wf < 0.0) ? -1.0 : 0.0;
+        dofs[j].share *= dir;
+      }
+    }
+    solve_driven(c, f, a, dofs, axle_of, count, driven_wheels, w);
+    if (braking) {
+      for (unsigned j = 0; j < count; ++j) {
+        const double wf = free[dofs[j].wheel[0]];
+        for (unsigned m = 0; m < dofs[j].n; ++m) {
+          double& wi = (*w)[dofs[j].wheel[m]];
+          if ((wf > 0.0 && wi < 0.0) || (wf < 0.0 && wi > 0.0) || wf == 0.0) {
+            wi = 0.0;
+          }
+        }
+      }
+    }
+
+    // Undriven wheels roll on their own with no torque.
+    if (c.front_share == 0.0) {
+      (*w)[kFrontLeft] = wheel_solve(f, kFrontLeft, 0.0, (*w)[kFrontLeft], a);
+      (*w)[kFrontRight] = wheel_solve(f, kFrontRight, 0.0, (*w)[kFrontRight], a);
+    }
+    if (c.rear_share == 0.0) {
+      (*w)[kRearLeft] = wheel_solve(f, kRearLeft, 0.0, (*w)[kRearLeft], a);
+      (*w)[kRearRight] = wheel_solve(f, kRearRight, 0.0, (*w)[kRearRight], a);
     }
   }
 
@@ -727,6 +1037,13 @@ class DoubleTrackL2 final : public VehicleModel {
       kin.wheel[i].shape = mf_shape(tyre.b, tyre.c, tyre.e, q[kLag0 + i]);
       kin.wheel[i].vxw = vxw;
       kin.wheel[i].vx_safe = vx_safe;
+      if (c.wheels) {
+        // The slip ratio's speed is along the wheel's own heading.
+        const double v_long =
+            front ? vxw * kin.cos_delta + vyw * kin.sin_delta : vxw;
+        kin.wheel[i].v_long = v_long;
+        kin.wheel[i].v_abs = std::fmax(std::fabs(v_long), params_.v_eps);
+      }
     }
 
     // Aerodynamic drag and rolling resistance, both opposing travel, and both
@@ -794,8 +1111,26 @@ class DoubleTrackL2 final : public VehicleModel {
     // Phase two: the drivetrain. Each driven axle splits its share of the
     // demand through the differential; an undriven axle freewheels, which is
     // a zero longitudinal demand through the same ellipse.
+    //
+    // With wheel dynamics (ADR 0006) the wheels are state: each tyre's
+    // longitudinal force follows from its own slip ratio at the held wheel
+    // speed, and the differential acts on torque in the wheel update instead.
     std::array<CombinedForce, kWheelCount> delivered{};
-    if (c.front_share != 0.0) {
+    if (c.wheels) {
+      for (unsigned i = 0; i < kWheelCount; ++i) {
+        const double kappa = c.slip_v[i] / kin.wheel[i].v_abs;
+        delivered[i] = friction_ellipse(budget[i].c_kappa * kappa,
+                                        pre[i].fy_pure, pre[i].fx_max,
+                                        pre[i].fy_max);
+        f->kappa[i] = kappa;
+        f->v_long[i] = kin.wheel[i].v_long;
+        f->v_abs[i] = kin.wheel[i].v_abs;
+        f->c_kappa[i] = budget[i].c_kappa;
+        f->fy_pure[i] = pre[i].fy_pure;
+        f->fx_max[i] = pre[i].fx_max;
+        f->fy_max[i] = pre[i].fy_max;
+      }
+    } else if (c.front_share != 0.0) {
       split_axle(kFrontLeft, kFrontRight, c.front_share * c.fx_demand, pre,
                  &delivered);
     } else {
@@ -806,7 +1141,9 @@ class DoubleTrackL2 final : public VehicleModel {
           0.0, pre[kFrontRight].fy_pure, pre[kFrontRight].fx_max,
           pre[kFrontRight].fy_max);
     }
-    if (c.rear_share != 0.0) {
+    if (c.wheels) {
+      // Done above, all four wheels.
+    } else if (c.rear_share != 0.0) {
       split_axle(kRearLeft, kRearRight, c.rear_share * c.fx_demand, pre,
                  &delivered);
     } else {
@@ -854,10 +1191,13 @@ class DoubleTrackL2 final : public VehicleModel {
       // The slip ratio consistent with the force that was actually delivered,
       // through the linear slip stiffness at this load. Reported, not
       // integrated (ADR-0027). An undriven wheel delivers no longitudinal
-      // force and freewheels at exactly zero slip.
-      f->kappa[i] = (pre[i].c_kappa > 0.0)
-                        ? (delivered[i].fx / pre[i].c_kappa)
-                        : 0.0;
+      // force and freewheels at exactly zero slip. With wheel dynamics the
+      // slip ratio is the wheel's own, set above.
+      if (!c.wheels) {
+        f->kappa[i] = (pre[i].c_kappa > 0.0)
+                          ? (delivered[i].fx / pre[i].c_kappa)
+                          : 0.0;
+      }
     }
 
     // Axle first, then the two axles. See the note above the arrays.

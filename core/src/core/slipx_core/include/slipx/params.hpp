@@ -1,5 +1,6 @@
 // Copyright 2026 The SlipX Authors
 // SPDX-License-Identifier: Apache-2.0
+// Modified 2026-10-19 by the rc-physics-twin project: see THIRD_PARTY.md.
 //
 // VehicleParams: the plain struct through which every parameter enters the
 // core (CORE-01).
@@ -239,6 +240,18 @@ struct VehicleParams {
   // than hidden so that it appears in the manifest hash and so that a caller
   // who changes it knows they have changed the model.
   double v_eps = 0.5;        // [m/s]
+
+  // ------------------------------------------------------- wheel dynamics
+  // Rotational inertia of ONE wheel about its axle, including the drivetrain
+  // inertia reflected to it (rc-physics-twin ADR 0006). Zero, the default,
+  // keeps L2's quasi-static wheels (ADR-0027) exactly: wheel speeds are then
+  // derived from the delivered force. Positive makes them integrated state at
+  // L2, so lock-up and wheelspin are dynamic events. No effect below L2.
+  //
+  // No default is offered beyond zero: a value has to come from the car. It
+  // is identifiable from a lifted-wheel spin-down or a step-torque wheelspin
+  // run with wheel encoders.
+  double wheel_inertia = 0.0;  //                                 [kg m^2]
 };
 
 // Returns nullptr if the parameter set is usable, or a static message naming
