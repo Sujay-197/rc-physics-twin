@@ -73,6 +73,9 @@ static class Program
         Eq(p.dragCoeff, 0.015, "dragCoeff"); Eq(p.rollResist, 0.015, "rollResist"); Eq(p.vEps, 0.5, "vEps");
         Eq(p.wheelInertia, 0.0, "wheelInertia");
         Eq(p.ackermann, 0.0, "ackermann");
+        Eq(p.wheelRateFront, 0.0, "wheelRateFront"); Eq(p.wheelRateRear, 0.0, "wheelRateRear");
+        Eq(p.dampingFront, 0.0, "dampingFront"); Eq(p.dampingRear, 0.0, "dampingRear");
+        Eq(p.suspensionTravel, 0.0, "suspensionTravel");
 
         using (var car = new TwinVehicle(RcTwinNative.Tier.L2DoubleTrack, p))
         {
@@ -86,10 +89,15 @@ static class Program
             Check(s.yaw > 0.1 && s.y > 0.0, "left steer turns left");
 
             var heavier = p; heavier.mass = 5.0; heavier.wheelInertia = 2e-5; heavier.ackermann = 0.8;
+            heavier.wheelRateFront = 310; heavier.wheelRateRear = 290; heavier.dampingFront = 9;
+            heavier.dampingRear = 8; heavier.suspensionTravel = 0.015;
             car.Params = heavier;
             Check(car.Params.mass == 5.0, "set/get params");
             Check(car.Params.wheelInertia == 2e-5, "wheel inertia round trip");
-            Check(car.Params.ackermann == 0.8, "ackermann round trip (last field)");
+            Check(car.Params.ackermann == 0.8, "ackermann round trip");
+            Check(car.Params.wheelRateFront == 310 && car.Params.wheelRateRear == 290, "wheel rates round trip");
+            Check(car.Params.dampingFront == 9 && car.Params.dampingRear == 8, "damping round trip");
+            Check(car.Params.suspensionTravel == 0.015, "travel round trip (last field)");
 
             var snap = car.State;
             car.Step(0.1, 1.0, 0.001, 50);

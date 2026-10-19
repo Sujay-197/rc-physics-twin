@@ -18,7 +18,7 @@ static int same_state(const rc_twin_state* a, const rc_twin_state* b) {
 static void test_versions(void) {
   const char* v = rc_twin_core_version();
   CHECK(rc_twin_abi_version() == RC_TWIN_ABI_VERSION);
-  CHECK(RC_TWIN_ABI_VERSION == 4u);
+  CHECK(RC_TWIN_ABI_VERSION == 5u);
   CHECK(v != NULL && strcmp(v, "0.2.0") == 0);
 }
 
@@ -188,11 +188,19 @@ static void test_params_roundtrip_and_set(void) {
   heavier.mass = def.mass * 1.5;
   heavier.wheel_inertia = 2e-4;
   heavier.ackermann = 0.7;
+  heavier.wheel_rate_front = 310.0;
+  heavier.wheel_rate_rear = 290.0;
+  heavier.damping_front = 9.0;
+  heavier.damping_rear = 8.0;
+  heavier.suspension_travel = 0.015;
   CHECK(rc_twin_set_params(v, &heavier, &reason) == RC_TWIN_OK);
   rc_twin_get_params(v, &got);
   CHECK(got.mass == heavier.mass);
   CHECK(got.wheel_inertia == 2e-4);
   CHECK(got.ackermann == 0.7);
+  CHECK(got.wheel_rate_front == 310.0 && got.wheel_rate_rear == 290.0);
+  CHECK(got.damping_front == 9.0 && got.damping_rear == 8.0);
+  CHECK(got.suspension_travel == 0.015);
   CHECK(memcmp(&got, &heavier, sizeof got) == 0);
   rc_twin_get_state(v, &after);
   CHECK(same_state(&before, &after)); /* state kept across set_params */

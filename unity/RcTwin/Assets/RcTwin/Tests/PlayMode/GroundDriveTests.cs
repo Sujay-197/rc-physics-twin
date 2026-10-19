@@ -113,6 +113,28 @@ namespace RcTwin.Tests
         }
 
         [UnityTest]
+        public IEnumerator TheSpeedBreakerPitchesTheBodyAndItSettles()
+        {
+            yield return Load();
+            Assert.Greater(_car.Params.wheelRateFront, 0.0, "suspension on (ADR 0008)");
+            _car.ResetTo(2.0, 0.0, 0.0, 2.0);  // rolling at 2 m/s toward the hump at z 4
+            Assert.AreEqual(0.0, _car.State.pitch, 1e-9, "starts level");
+            double peak = 0.0;
+            double peakLoad = 0.0;
+            for (int k = 0; k < 75; k++)                            // 1.5 s at 50 Hz
+            {
+                yield return new WaitForFixedUpdate();
+                peak = System.Math.Max(peak, System.Math.Abs(_car.State.pitch));
+                peakLoad = System.Math.Max(peakLoad, _car.State.fzFL);
+            }
+            Assert.Greater(peak, 0.003, "the hump pitched the body");
+            Assert.Greater(peakLoad, 1.3 * 0.25 * _car.Params.mass * 9.81, "and loaded the front tyres");
+            yield return new WaitForSeconds(1.5f);
+            Assert.Less(System.Math.Abs(_car.State.pitch), 0.003, "settled again");
+            Assert.IsFalse(_car.OffGround);
+        }
+
+        [UnityTest]
         public IEnumerator NoGroundStopsTheCarInsteadOfGuessing()
         {
             yield return Load();

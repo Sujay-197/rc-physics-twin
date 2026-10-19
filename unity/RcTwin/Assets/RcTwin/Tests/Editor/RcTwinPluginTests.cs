@@ -91,6 +91,18 @@ namespace RcTwin.Tests
         }
 
         [Test]
+        public void BodyTiltAndDemoSuspensionMapCorrectly()
+        {
+            // Nose up lifts the nose; right side down lowers the right.
+            Assert.Greater((TwinCar.BodyTilt(0.1, 0.0) * UnityEngine.Vector3.forward).y, 0f);
+            Assert.Less((TwinCar.BodyTilt(0.0, 0.1) * UnityEngine.Vector3.right).y, 0f);
+            // The demo rates give the target heave frequency and damping ratio.
+            double m = 3.5, k = TwinCar.DemoWheelRate(m, 3.0), c = TwinCar.DemoDamping(m, k, 0.3);
+            Assert.That(Math.Sqrt(4 * k / m) / (2 * Math.PI), Is.EqualTo(3.0).Within(1e-12));
+            Assert.That(4 * c / (2 * Math.Sqrt(4 * k * m)), Is.EqualTo(0.3).Within(1e-12));
+        }
+
+        [Test]
         public void InvalidParamsAreRejectedWithReason()
         {
             var p = RcTwinNative.DefaultParams();

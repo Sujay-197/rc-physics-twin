@@ -22,6 +22,8 @@
  *     RC_TWIN_E_GROUND).
  * v3: rc_twin_params.wheel_inertia (ADR 0006).
  * v4: rc_twin_params.ackermann (ADR 0007).
+ * v5: rc_twin_params suspension fields (ADR 0008); with suspension on, the
+ *     state's z, pitch, roll, vz, pitch_rate and roll_rate are the body's.
  */
 #ifndef RC_TWIN_H
 #define RC_TWIN_H
@@ -42,7 +44,7 @@
 extern "C" {
 #endif
 
-#define RC_TWIN_ABI_VERSION 4u
+#define RC_TWIN_ABI_VERSION 5u
 
 typedef int32_t rc_twin_status;
 enum {
@@ -125,6 +127,15 @@ typedef struct rc_twin_params {
   /* Fraction of ideal Ackermann at L2: 0 parallel steer (the default), 1
    * ideal, negative anti-Ackermann; in [-1, 1] (ADR 0007). */
   double ackermann;
+
+  /* Suspension at L2 (ADR 0008). On when both wheel rates are positive; all
+   * 0 (the default) keeps quasi-static load transfer. Rates and damping are
+   * per wheel, measured at the wheel; travel is compression from static to
+   * the bump stop. With it on, z is the world height of the point h_cog below
+   * the CoG, pitch is nose up and roll right side down, absolute. */
+  double wheel_rate_front, wheel_rate_rear;   /* [N/m]   */
+  double damping_front, damping_rear;         /* [N s/m] */
+  double suspension_travel;                   /* [m]     */
 } rc_twin_params;
 
 typedef struct rc_twin_vehicle rc_twin_vehicle;

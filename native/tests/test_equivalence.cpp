@@ -91,6 +91,10 @@ void test_defaults_match_core() {
   CHECK(c.wheel_inertia == 0.0);
   CHECK(p.ackermann == c.ackermann);
   CHECK(c.ackermann == 0.0);
+  CHECK(p.wheel_rate_front == c.wheel_rate_front && c.wheel_rate_front == 0.0);
+  CHECK(p.wheel_rate_rear == c.wheel_rate_rear && c.wheel_rate_rear == 0.0);
+  CHECK(p.damping_front == c.damping_front && p.damping_rear == c.damping_rear);
+  CHECK(p.suspension_travel == c.suspension_travel);
 }
 
 // Every field moved off its default by a distinct factor, so a swap of any
@@ -148,6 +152,11 @@ void nudge(P& p) {
   p.v_eps *= 1.0 + 34 * k;
   p.wheel_inertia = 1e-4 * (1.0 + 35 * k);  // default is 0: set, to exercise it
   p.ackermann = 0.6 + 36 * k;               // likewise
+  p.wheel_rate_front = 300.0 * (1.0 + 37 * k);  // suspension on (ADR 0008)
+  p.wheel_rate_rear = 300.0 * (1.0 - 38 * k);
+  p.damping_front = 9.0 * (1.0 + 39 * k);
+  p.damping_rear = 9.0 * (1.0 - 40 * k);
+  p.suspension_travel = 0.015 * (1.0 + 41 * k);
 }
 
 // A drive that exercises steering, drive, coast and regen.
