@@ -60,5 +60,5 @@
 
 ## Housekeeping
 
-- [ ] CI: build, unit tests, determinism hash check per build.
+- [x] CI: build, unit tests, determinism hash check per build. `.github/workflows/ci.yml` on the reference toolchain: rc_twin and its suites, the C# bindings, every SlipX layer's tests, and `tools/check_determinism.py` against `conformance/reference_hashes.tsv`. Unity's suites need a licensed editor and stay local.
 - [ ] Decide public/private and set GitHub repo description and topics.

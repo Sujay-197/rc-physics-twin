@@ -1,0 +1,19 @@
+# rc-physics-twin's determinism references: SlipX's conformance scenario
+# (core/src/orchestration/slipx_sim/tools/conformance.cpp) as built by this
+# repository's toolchain (tools/bootstrap_toolchain.py: Zig 0.16 / Clang 21,
+# x86_64-windows-gnu, UCRT, RelWithDebInfo, -ffp-contract=off), checked by
+# tools/check_determinism.py. Same columns as SlipX's own file
+# (core/conformance/reference_hashes.tsv), which records other builds.
+#
+# These certify that the arithmetic repeats, nothing about a real car: the
+# scenario runs SlipX's provisional defaults. Every change in this repository
+# keeps these six (opt-in features default off); a change that moves them must
+# update this file in the same commit and say why.
+#
+# system_processor	compiler_id	compiler_major	libc	build_type	tier	integrator	hash
+AMD64	Clang	21	ucrt	RelWithDebInfo	L0	rk4	f656be2edf4d1201
+AMD64	Clang	21	ucrt	RelWithDebInfo	L0	semi_implicit_euler	f542326a7d1132d0
+AMD64	Clang	21	ucrt	RelWithDebInfo	L1	rk4	d8e60c176ea8a981
+AMD64	Clang	21	ucrt	RelWithDebInfo	L1	semi_implicit_euler	600616380d658a2c
+AMD64	Clang	21	ucrt	RelWithDebInfo	L2	rk4	69add79003d93539
+AMD64	Clang	21	ucrt	RelWithDebInfo	L2	semi_implicit_euler	951e69f4c203cd69

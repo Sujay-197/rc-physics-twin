@@ -60,6 +60,16 @@ python tools/bootstrap_toolchain.py
 .toolchain/venv/Scripts/ctest --test-dir build --output-on-failure
 ```
 
+The vendored Core's own tests and the determinism check (the six conformance hashes this toolchain must reproduce, `conformance/reference_hashes.tsv`); CI runs all of this on every push (`.github/workflows/ci.yml`):
+
+```bash
+.toolchain/venv/Scripts/cmake -S core -B build-core -G Ninja -DCMAKE_TOOLCHAIN_FILE="$PWD/.toolchain/zig-toolchain.cmake" -DSLIPX_BUILD_TESTS=ON -DSLIPX_BUILD_PYTHON=OFF
+```
+
+```bash
+python tools/check_determinism.py --build-dir build-core --require-row
+```
+
 Then copy the plugin into Unity (close the editor first; it keeps native plugins loaded):
 
 ```bash
