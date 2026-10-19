@@ -50,6 +50,10 @@
 - [ ] Coast-down, skidpad and acceleration tests on the real RC car.
 - [ ] Identify parameters; promote labels from `provisional` to `identified`.
 
+## Known issues
+
+- [ ] **Vertical faces in the scene (ramp sides, plateau edges) are not obstacles.** The ground query is height-only (ADR 0005): `RaycastGround` reports whatever is under each wheel, so driving into a ramp's side snaps that wheel up onto the top, and driving off an edge drops it. The Core has no wall or obstacle contact. Needs: a step-height limit in the ground query (a rise above some height is an obstacle, not ground) and an obstacle contact model in the Core. Reported 2026-10-19 while driving the twin; deferred.
+
 ## Housekeeping
 
 - [ ] CI: build, unit tests, determinism hash check per build.
