@@ -27,7 +27,7 @@
 
 ## Phase 3: Road
 
-- [ ] Suspension tier (spring/damper per corner).
+- [x] Suspension (spring/damper per corner). ADR 0008: opt-in at L2 from measured wheel rates and damping (L3 stays SlipX's); body heave, pitch and roll; per-wheel ground heights act; bump stop. The Unity twin runs DEMO springs (3 Hz, 0.3 damping, 15 mm travel) and has a speed breaker. Replace the demo values with bench measurements.
 - [ ] Road-feature schema: elevation, banking, speed breakers, surface.
 - [ ] Add elevation and features to `RoadGraph` and the Unity build tool.
 - [ ] Validate against gymkhana (planar) plus coast-down and skidpad tests.
