@@ -652,6 +652,32 @@ class DoubleTrackL2 final : public VehicleModel {
                             f.fy_max[i]);
   }
 
+  // The wheel speed at which tyre i's longitudinal force reaches its peak,
+  // for the lateral demand it carries, on the side of the force's sign. Past
+  // it the force no longer grows with the wheel speed; short of it the tyre
+  // is linear. Returns false for a tyre with no slip stiffness (unloaded).
+  bool knee(const Forces& f, unsigned i, double force, double* w) const {
+    if (!(f.c_kappa[i] > 0.0) || force == 0.0) return false;
+    const double ny = f.fy_max[i] > 0.0 ? f.fy_pure[i] / f.fy_max[i] : 1.0;
+    const double room = 1.0 - ny * ny;
+    const double fx_peak = room > 0.0 ? f.fx_max[i] * std::sqrt(room) : 0.0;
+    const double slip = fx_peak * f.v_abs[i] / f.c_kappa[i];
+    *w = (f.v_long[i] + (force > 0.0 ? slip : -slip)) / params_.wheel_radius;
+    return true;
+  }
+
+  // A saturated update uses the peak force and is explicit. If that carries
+  // the wheel back past the peak, the implicit answer is the peak itself: the
+  // force there is continuous and the wheel settles on it. Without this a
+  // light wheel overshoots to the far side of the peak every step and its
+  // force flips sign: chatter.
+  double settle_at_knee(const Forces& f, unsigned i, double force,
+                        double w) const {
+    double wk = 0.0;
+    if (!knee(f, i, force, &wk)) return w;
+    return force > 0.0 ? std::fmax(w, wk) : std::fmin(w, wk);
+  }
+
   // One wheel with its own torque: backward Euler on I dw/dt = T - R Fx with
   // Fx linear in w, solved in closed form; explicit if the tyre saturates.
   // Used for undriven wheels (no torque) and the LSD decision.
@@ -661,7 +687,9 @@ class DoubleTrackL2 final : public VehicleModel {
     const double k = f.c_kappa[i] / f.v_abs[i];
     double w = (a * w0 + torque + r * k * f.v_long[i]) / (a + r * r * k);
     const CombinedForce at = tyre_at(f, i, w);
-    if (at.saturated) w = w0 + (torque - r * at.fx) / a;
+    if (at.saturated) {
+      w = settle_at_knee(f, i, at.fx, w0 + (torque - r * at.fx) / a);
+    }
     return w;
   }
 
@@ -763,6 +791,10 @@ class DoubleTrackL2 final : public VehicleModel {
     }
 
     for (unsigned j = 0; j < count; ++j) {
+      for (unsigned m = 0; m < dofs[j].n; ++m) {
+        const unsigned i = dofs[j].wheel[m];
+        if (sat[i]) out[j] = settle_at_knee(f, i, fsat[i], out[j]);
+      }
       for (unsigned m = 0; m < dofs[j].n; ++m) (*w)[dofs[j].wheel[m]] = out[j];
     }
   }

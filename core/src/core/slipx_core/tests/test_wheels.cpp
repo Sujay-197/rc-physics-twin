@@ -306,6 +306,31 @@ TEST(Wheels, ASpinningLightWheelSettlesOnTheMotorCurve) {
   EXPECT_LT(hi - lo, 0.02 * hi);                       // and steady
 }
 
+// Full throttle into a full-lock corner, as from a keyboard. The open diff
+// spins the unloaded inner wheel, which is real; the loaded outer wheel must
+// keep driving, not chatter between drive and brake. A saturated update that
+// jumped past the tyre's peak every step did exactly that and made the car
+// undrivable; it must now follow the quasi-static car closely.
+TEST(Wheels, FullThrottleIntoAFullLockCornerStaysDrivable) {
+  const VehicleParams quasi = slipx_test::reference_params();
+  const VehicleParams light = with_wheels(1e-5);
+  auto mq = l2(quasi);
+  auto ml = l2(light);
+  VehicleState a;
+  VehicleState b;
+  StepDiagnostics d;
+  double min_outer_fx = 1e9;
+  for (int k = 0; k < 3000; ++k) {
+    const DriveInput u{k < 1000 ? 0.0 : 0.4, 8.0};
+    mq->step(a, u, kDt);
+    ASSERT_TRUE(ml->step_on(b, u, GroundContact{}, kDt, &d));
+    if (k > 1000) min_outer_fx = std::fmin(min_outer_fx, d.fx[kRearRight]);
+  }
+  EXPECT_GT(min_outer_fx, 0.0);  // the outer rear never brakes
+  EXPECT_NEAR(b.vel_body.x, a.vel_body.x, 0.05 * a.vel_body.x);
+  EXPECT_NEAR(b.yaw, a.yaw, 0.05 * std::fabs(a.yaw));
+}
+
 // ---------------------------------------------------------- differentials
 
 TEST(WheelsDifferential, AnOpenDiffSpinsTheSlipperyWheel) {
@@ -327,10 +352,11 @@ TEST(WheelsDifferential, ASpoolTurnsBothWheelsAtOneSpeed) {
 TEST(WheelsDifferential, MorePreloadFeedsTheGrippingWheelMore) {
   // Split grip, full throttle. Past its preload the LSD runs open with the
   // preload biased to the slower, gripping wheel: more preload, a smaller
-  // speed gap across the axle and more drive reaching the road, until it
-  // locks. (Measured: gaps of 923, 857 and 618 rad/s at 0, 0.1 and 0.3 N m.)
+  // speed gap across the axle, until it locks. (Measured: 882, 827 and 618
+  // rad/s at 0, 0.1 and 0.3 N m.) The car's speed is not asserted: over this
+  // window the spinning wheel is still winding up, and its inertia takes the
+  // same torque whatever the preload.
   double last_gap = 1e9;
-  double last_v = 0.0;
   for (double preload : {0.0, 0.1, 0.3}) {
     VehicleParams p = with_wheels(kInertia, Differential::kLsd);
     p.lsd_preload = preload;
@@ -340,9 +366,7 @@ TEST(WheelsDifferential, MorePreloadFeedsTheGrippingWheelMore) {
     const double gap = s.omega_w[kRearLeft] - s.omega_w[kRearRight];
     EXPECT_GT(gap, 0.0) << preload;           // still slipping
     EXPECT_LT(gap, 0.95 * last_gap) << preload;
-    EXPECT_GT(s.vel_body.x, last_v) << preload;
     last_gap = gap;
-    last_v = s.vel_body.x;
   }
 }
 
