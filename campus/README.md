@@ -9,6 +9,7 @@ The campus fleet sim's road network ([`Sujay-197/campus_fleet_man_unity`](https:
 | `campus_export.json` | Raw export from the campus scene, Unity metres and frame: the fleet sim's `RoadGraph` (nodes and edges with centreline polylines), its 10 `BusStop`s with demand weights, every road tile with its surfaces' measured extents, the building footprints. Numbers only: no meshes, textures or other assets. |
 | `campus_network.json` | Made from the export by `tools/campus_import.py`: the same network at 1/10 in the ISO 8855 frame (x = Unity z, y = -Unity x, z = Unity y), with the measured road dimensions. |
 | `../roads/campus/edge_NN.json` | One `roads/road.schema.json` file per edge, for `tools/drive_road.py` and `tools/edge_profiler.py`. |
+| `../profiles/campus_edges.json` | The edge profile cache for the fleet sim (`profiles/edge_profile.schema.json`): every edge at 1, 2 and 3 m/s, 0 and 1 kg payload, 80 % and 40 % charge, driven from node `a` to node `b` by the reference driver on the provisional car. Times and energies are for the 1/10 car on the 1/10 campus. |
 
 ## The numbers
 
@@ -40,4 +41,8 @@ When the fleet sim's map changes:
 3. Delete the exporter again and revert any settings Unity rewrote (`git checkout -- ProjectSettings`), so the campus repo is unchanged.
 4. Update `SOURCE["commit"]` in `tools/campus_import.py`, then `python tools/campus_import.py`.
 
-The tests (`sim_py/test_campus.py`, ctest `sim_py.campus`) check that the committed data is exactly what the importer makes from the export.
+The tests (`sim_py/test_campus.py`, ctest `sim_py.campus`) check that the committed data is exactly what the importer makes from the export. They also rerun the profiler and require every cached entry to be reused; when the car, the driver or the roads change, regenerate the cache:
+
+```bash
+python tools/edge_profiler.py roads/campus/edge_*.json --out profiles/campus_edges.json --speeds 1 2 3 --payloads 0 1 --soc 0.8 0.4
+```

@@ -160,6 +160,27 @@ class Walls(unittest.TestCase):
         self.assertEqual(sum(w["name"].startswith("building") for w in NET.walls), len(NET.data["buildings"]))
 
 
+class Profiles(unittest.TestCase):
+    def test_the_committed_edge_profiles_are_current(self):
+        # profiles/campus_edges.json is the fleet sim's input for the campus.
+        # Rerunning the profiler with the same sweep must reuse every entry:
+        # a change to the car, the controller or the roads that moves a cost
+        # shows up here until the cache is regenerated (campus/README.md).
+        import shutil, subprocess, sys, tempfile
+        with tempfile.TemporaryDirectory() as tmp:
+            out = pathlib.Path(tmp) / "cache.json"
+            shutil.copy(ROOT / "profiles" / "campus_edges.json", out)
+            lib = LIB or str(ROOT / "build" / "bin" / "rc_twin.dll")
+            r = subprocess.run([sys.executable, "-I", str(ROOT / "tools" / "edge_profiler.py"),
+                                *sorted(str(x) for x in (ROOT / "roads" / "campus").glob("edge_*.json")),
+                                "--out", str(out), "--speeds", "1", "2", "3", "--payloads", "0", "1",
+                                "--soc", "0.8", "0.4", "--lib", lib], capture_output=True, text=True)
+            self.assertEqual(r.returncode, 0, r.stderr)
+            self.assertIn("444 entries (0 computed, 444 reused, 0 dropped)", r.stderr + r.stdout)
+            cache = json.loads(out.read_text(encoding="utf-8"))
+            self.assertTrue(all(e["status"] == "reached_end" for e in cache["entries"]))
+
+
 class Routing(unittest.TestCase):
     def test_routes_are_shortest_paths(self):
         # Against Floyd-Warshall over the whole graph.
