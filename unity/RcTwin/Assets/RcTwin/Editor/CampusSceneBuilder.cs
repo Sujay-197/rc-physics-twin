@@ -241,6 +241,17 @@ namespace RcTwin.EditorTools
             var pilot = car.gameObject.AddComponent<TwinAutopilot>();
             pilot.network = AssetDatabase.LoadAssetAtPath<TextAsset>(netAsset);
             pilot.routeMaterial = ReplaySceneBuilder.UnlitMaterial("ReplayLine");
+            // The released learned policy, if any (policies/release/autopilot.json,
+            // tools/export_policy.py): offered on the panel beside pure pursuit.
+            string release = Path.GetFullPath(Path.Combine(Application.dataPath, "..", "..", "..", "policies", "release", "autopilot.json"));
+            if (File.Exists(release))
+            {
+                string policyAsset = $"{GenDir}/autopilot_policy.json";
+                File.Copy(release, Path.GetFullPath(Path.Combine(Application.dataPath, "..", policyAsset)), true);
+                AssetDatabase.ImportAsset(policyAsset, ImportAssetOptions.ForceSynchronousImport);
+                pilot.policy = AssetDatabase.LoadAssetAtPath<TextAsset>(policyAsset);
+                pilot.useLearned = false;   // the tuned pure pursuit drives by default (Docs/policy-study.md)
+            }
 
             FlatGroundSceneBuilder.AttachChaseCamera(car.transform);
             var cam = Camera.main;
