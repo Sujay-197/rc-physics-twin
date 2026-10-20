@@ -104,19 +104,7 @@ namespace RcTwin
             return list;
         }
 
-        public static int CompareStops(string a, string b)
-        {
-            static (string, int) Key(string s)
-            {
-                int i = s.Length;
-                while (i > 0 && char.IsDigit(s[i - 1])) i--;
-                return (s.Substring(0, i), i < s.Length ? int.Parse(s.Substring(i), CultureInfo.InvariantCulture) : 0);
-            }
-            var (pa, na) = Key(a);
-            var (pb, nb) = Key(b);
-            int c = string.CompareOrdinal(pa, pb);
-            return c != 0 ? c : na.CompareTo(nb);
-        }
+        public static int CompareStops(string a, string b) => CampusRoutes.CompareStops(a, b);
 
         public static ReplayData Parse(string json)
         {

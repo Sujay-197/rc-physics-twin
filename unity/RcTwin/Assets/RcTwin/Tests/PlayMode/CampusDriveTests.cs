@@ -37,6 +37,48 @@ namespace RcTwin.Tests
         }
 
         [UnityTest]
+        public IEnumerator TheAutopilotDrivesToAStopAndStopsThere()
+        {
+            // S3 to AB1 (about 25 m, two 90-degree corners) at 2 m/s with the
+            // tuned pure pursuit, on the Unity twin's own physics.
+            yield return Load();
+            var pilot = _car.GetComponent<TwinAutopilot>();
+            Assert.IsNotNull(pilot, "the campus car has an autopilot");
+            Assert.AreEqual("S3", pilot.CurrentStop());
+            pilot.targetSpeed = 2.0;
+            Assert.IsTrue(pilot.Go("AB1"), pilot.Message);
+            float scale = Time.timeScale;
+            Time.timeScale = 5f;
+            try
+            {
+                float t0 = Time.time;
+                while (pilot.State == TwinAutopilot.Status.Driving && Time.time - t0 < 60f) yield return null;
+            }
+            finally { Time.timeScale = scale; }
+            Assert.AreEqual(TwinAutopilot.Status.Arrived, pilot.State, pilot.Message);
+            Assert.AreEqual("AB1", pilot.CurrentStop());
+            Assert.Less(System.Math.Abs(_car.State.vx), 0.05, "stopped");
+            Assert.Less(pilot.Remaining, 0.25, "at the stop");
+            Assert.Less(pilot.TripTime, 30.0);
+            Assert.AreEqual(0, pilot.TripWallContacts, "no kerb strikes at 2 m/s");
+        }
+
+        [UnityTest]
+        public IEnumerator HoldingAKeyTakesTheCarBack()
+        {
+            yield return Load();
+            var pilot = _car.GetComponent<TwinAutopilot>();
+            Assert.IsTrue(pilot.Go("S1"), pilot.Message);
+            yield return new WaitForSeconds(0.3f);
+            Press(_kb.sKey);
+            yield return null;                       // TwinCar reads the key in Update
+            yield return new WaitForFixedUpdate();   // the autopilot sees it on its next tick
+            yield return new WaitForFixedUpdate();
+            Assert.AreEqual(TwinAutopilot.Status.Manual, pilot.State);
+            Assert.IsNull(_car.Command, "the keyboard has the car");
+        }
+
+        [UnityTest]
         public IEnumerator EveryStopIsOnTheAsphalt()
         {
             yield return Load();

@@ -16,7 +16,8 @@
 //   - each bus stop as a stop line across its node and a post at the kerb;
 //   - the real campus around it, drawn only: buildings, ground and trees
 //     (CampusScenery, tools/campus_scenery.py);
-//   - the car at the hub stop, S3, facing along its first edge (R returns it).
+//   - the car at the hub stop, S3, facing along its first edge (R returns it),
+//     with an autopilot that drives it to any stop picked on screen.
 // Unity coordinates: ISO (x, y, z) is Unity (-y, z, x).
 using System;
 using System.Collections.Generic;
@@ -43,6 +44,32 @@ namespace RcTwin.EditorTools
         {
             public int id, a, b;
             public List<Vector3> pts;   // Unity frame
+        }
+
+        public static string PlayerPath =>
+            Path.GetFullPath(Path.Combine(Application.dataPath, "..", "..", "..", "build", "campus", "RcTwinCampus.exe"));
+
+        /// <summary>The campus as a Windows player: drive it, or let the
+        /// autopilot drive it to a stop. Builds the scene first.</summary>
+        [MenuItem("RcTwin/Build Campus Player")]
+        public static void BuildPlayer()
+        {
+            if (!EditorSceneManager.SaveCurrentModifiedScenesIfUserWantsTo()) return;
+            BuildPlayerBatch();
+        }
+
+        public static void BuildPlayerBatch()
+        {
+            Build();
+            Directory.CreateDirectory(Path.GetDirectoryName(PlayerPath));
+            var report = BuildPipeline.BuildPlayer(new BuildPlayerOptions
+            {
+                scenes = new[] { ScenePath }, locationPathName = PlayerPath,
+                target = BuildTarget.StandaloneWindows64, options = BuildOptions.None,
+            });
+            if (report.summary.result != UnityEditor.Build.Reporting.BuildResult.Succeeded)
+                throw new Exception($"campus player build {report.summary.result}: {report.summary.totalErrors} errors");
+            Debug.Log($"Built {PlayerPath}.");
         }
 
         [MenuItem("RcTwin/Build Campus Scene")]
@@ -181,6 +208,7 @@ namespace RcTwin.EditorTools
                 var label = new GameObject("Label");
                 label.transform.SetParent(stop.transform, false);
                 label.transform.localPosition = new Vector3(sideSign * mid, kerb + 0.55f, 0f);
+                label.AddComponent<FaceCamera>();
                 var text = label.AddComponent<TextMesh>();
                 text.text = name;
                 text.font = font;
@@ -206,6 +234,14 @@ namespace RcTwin.EditorTools
             car.transform.SetPositionAndRotation(
                 hp + Vector3.up * (float)RcTwinNative.DefaultParams().hCog,
                 Quaternion.Euler(0f, TwinCar.YawToUnityDeg(car.homeYaw), 0f));
+            // The autopilot: pick a stop, the car drives there (TwinAutopilot).
+            string netAsset = $"{GenDir}/campus_network.json";
+            File.Copy(NetworkPath, Path.GetFullPath(Path.Combine(Application.dataPath, "..", netAsset)), true);
+            AssetDatabase.ImportAsset(netAsset, ImportAssetOptions.ForceSynchronousImport);
+            var pilot = car.gameObject.AddComponent<TwinAutopilot>();
+            pilot.network = AssetDatabase.LoadAssetAtPath<TextAsset>(netAsset);
+            pilot.routeMaterial = ReplaySceneBuilder.UnlitMaterial("ReplayLine");
+
             FlatGroundSceneBuilder.AttachChaseCamera(car.transform);
             var cam = Camera.main;
             if (cam != null) cam.transform.position = car.transform.position - hd * 1.8f + Vector3.up * 0.8f;
@@ -215,7 +251,7 @@ namespace RcTwin.EditorTools
             FlatGroundSceneBuilder.RegisterScene(ScenePath);
             AssetDatabase.SaveAssets();
             Debug.Log($"Built {ScenePath} from {NetworkPath}: {edges.Count} edges, {nodes.Count} nodes. " +
-                      $"The car starts at stop {HomeStop}; W/S throttle, A/D steer, R back to {HomeStop}.");
+                      $"The car starts at stop {HomeStop}; W/S throttle, A/D steer, R back to {HomeStop}; the panel drives it to a stop.");
         }
 
         // Unit vectors to the right of the line in plan, mitred at corners so

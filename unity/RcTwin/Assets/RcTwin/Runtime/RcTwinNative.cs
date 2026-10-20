@@ -1,4 +1,4 @@
-// P/Invoke bindings for native/include/rc_twin.h (ABI version 7; the roads API is not bound).
+// P/Invoke bindings for native/include/rc_twin.h (ABI version 7).
 //
 // Deliberately free of UnityEngine so native/tests/csharp can compile and run
 // it against rc_twin.dll outside the editor. Field order here must match the
@@ -173,6 +173,29 @@ namespace RcTwin
         [DllImport(Lib, CallingConvention = CallingConvention.Cdecl)]
         public static extern int rc_twin_step(IntPtr v, double steerCmd, double accelCmd,
                                               double dt, uint n);
+
+        // Roads (rc_twin_road_*): a centreline to measure against, as the RL
+        // environment does (sim_py/rc_twin_env.py); TwinRoad wraps them.
+        [DllImport(Lib, CallingConvention = CallingConvention.Cdecl)]
+        public static extern IntPtr rc_twin_road_create(double[] xyz, double[] bank, uint nPoints, double width,
+                                                        out IntPtr reason);
+
+        [DllImport(Lib, CallingConvention = CallingConvention.Cdecl)]
+        public static extern void rc_twin_road_destroy(IntPtr r);
+
+        [DllImport(Lib, CallingConvention = CallingConvention.Cdecl)]
+        public static extern double rc_twin_road_length(IntPtr r);
+
+        [DllImport(Lib, CallingConvention = CallingConvention.Cdecl)]
+        public static extern int rc_twin_road_locate(IntPtr r, double x, double y, out double s, out double d);
+
+        [DllImport(Lib, CallingConvention = CallingConvention.Cdecl)]
+        public static extern int rc_twin_road_point(IntPtr r, double s, out double x, out double y, out double z,
+                                                    out double heading);
+
+        [DllImport(Lib, CallingConvention = CallingConvention.Cdecl)]
+        public static extern int rc_twin_road_ground(IntPtr road, int wheel, double x, double y,
+                                                     out GroundSample sample);
 
         public static string CoreVersion => Marshal.PtrToStringAnsi(rc_twin_core_version());
 

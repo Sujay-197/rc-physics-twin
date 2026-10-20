@@ -59,7 +59,7 @@ namespace RcTwin.EditorTools
             Debug.Log($"Built {ScenePath} from {CampusSceneBuilder.ScenePath}. Press Play; it reads {DrivesPath}.");
         }
 
-        private static Material UnlitMaterial(string name)
+        internal static Material UnlitMaterial(string name)
         {
             string path = $"{GenDir}/{name}.mat";
             var m = AssetDatabase.LoadAssetAtPath<Material>(path);

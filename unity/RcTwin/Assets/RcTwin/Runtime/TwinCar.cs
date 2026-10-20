@@ -11,6 +11,8 @@
 // ISO yaw maps to a Unity Y rotation of -yaw.
 //
 // Keys: W/S or Up/Down throttle and brake, A/D or Left/Right steer, R reset.
+// An autopilot (TwinAutopilot) drives it through Command; holding any drive
+// key takes over from it.
 using System;
 using UnityEngine;
 using UnityEngine.InputSystem;
@@ -81,6 +83,16 @@ namespace RcTwin
         private Vector3 _prevBodyN, _currBodyN;  // ground mean, body pitch, roll rel. to road
 
         public RcTwinNative.State State => _curr;
+
+        /// <summary>Steer (+ left) and throttle (- brake) in [-1, 1] from an
+        /// autopilot, applied each physics step; null for the keyboard.</summary>
+        public (double steer, double throttle)? Command { get; set; }
+
+        /// <summary>A drive key is held: the keyboard has the car, whatever Command says.</summary>
+        public bool ManualOverride { get; private set; }
+
+        /// <summary>Raised after a reset (R or ResetTo).</summary>
+        public event Action Resetted;
 
         /// <summary>Wall contacts of the last physics frame (ADR 0009).</summary>
         public RcTwinNative.WallReport LastWallReport { get; private set; }
@@ -191,6 +203,7 @@ namespace RcTwin
             _offGround = false;
             _prev = _curr = _car.State;
             _prevUp = _currUp = Vector3.up;
+            Resetted?.Invoke();
         }
 
         private void Update()
@@ -210,6 +223,7 @@ namespace RcTwin
             float down = (kb.sKey.isPressed || kb.downArrowKey.isPressed) ? 1f : 0f;
             _steerIn = left - right;   // + is left, as in the Core
             _throttleIn = up - down;
+            ManualOverride = left + right + up + down > 0f;
 
             if (kb.rKey.wasPressedThisFrame) ResetTo(homeX, homeY, homeYaw);
         }
@@ -219,8 +233,15 @@ namespace RcTwin
             if (_offGround) return;
 
             uint n = (uint)Mathf.Max(1, Mathf.RoundToInt((float)(Time.fixedDeltaTime / coreDt)));
-            double steer = _steerIn * _p.steerMax;
-            double accel = _throttleIn >= 0f ? _throttleIn * _p.accelMax : _throttleIn * _p.decelMax;
+            double steerIn = _steerIn, throttleIn = _throttleIn;
+            if (Command.HasValue && !ManualOverride)
+            {
+                var (cs, ct) = Command.Value;
+                steerIn = Math.Max(-1.0, Math.Min(1.0, cs));
+                throttleIn = Math.Max(-1.0, Math.Min(1.0, ct));
+            }
+            double steer = steerIn * _p.steerMax;
+            double accel = throttleIn >= 0.0 ? throttleIn * _p.accelMax : throttleIn * _p.decelMax;
             try
             {
                 _car.Step(steer, accel, coreDt, n);

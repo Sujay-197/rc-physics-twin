@@ -92,6 +92,10 @@ python tools/edge_profiler.py roads/samples/*.json --out profiles/cache.json --s
 
 Open `unity/RcTwin` in Unity Hub with **6000.5.3f1**, run **RcTwin > Build Flat Ground Scene**, and press Play. W/S throttle and brake, A/D steer, R reset. **RcTwin > Build Campus Scene** builds the campus fleet sim's roads at 1/10 instead, the car at the S3 stop. The C# bindings can also be checked without Unity: `native/tests/csharp` (`dotnet run -- build/bin`).
 
+**Autopilot.** In the campus scene, the panel at the top right drives the car to any stop you pick. It starts from rest at the stop it is at and stops at the destination, on the twin's own physics, along the route the fleet sim and the RL environment use. Holding a drive key takes the car back. **RcTwin > Build Campus Player** builds the campus scene as `build/campus/RcTwinCampus.exe`; `-goto AB1 -speed 3` starts a trip from the command line.
+
+The autopilot's driver is an `IDriver` (`unity/RcTwin/Assets/RcTwin/Runtime/Drivers.cs`). Each control tick it gets the RL environment's own observation, computed in C# by `TwinObservation` on the native road, plus the distance left to the stop. The default driver is the tuned pure pursuit. To use a new controller or a learned policy, write another `IDriver` and set it as `TwinAutopilot.Driver`. Edit Mode tests check, against a drive recorded in Python (`tools/make_autopilot_fixture.py`), that the C# observation, the pure pursuit and the campus routes match Python to 1e-9.
+
 **RcTwin > Build Replay Scene** turns the campus into a replay of trained policies: pick any two stops, and every policy recorded by `tools/record_drives.py` drives that route with the same car at once, one coloured car each, with every route's outcome per policy in a grid. **RcTwin > Build Replay Player** builds it as `build/replay/RcTwinReplay.exe`, with `results/drives.json` beside it. See `sim_py/README.md`.
 
 ## Layout
