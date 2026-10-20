@@ -4,11 +4,14 @@
 // from the evaluation harness, sampled at 25 Hz and interpolated here, so what
 // is on screen is what the study scored, not a re-simulation.
 //
-// Keys: Space play/pause, Left/Right trip, Up/Down condition, C camera,
+// Pick a route with the From and To stop buttons (every pair is there when
+// the recording was made with --pairs), or step through trips in order.
+//
+// Keys: Space play/pause, Left/Right trip, V reverse the route, Up/Down condition, C camera,
 // 1-9 follow a policy, [ and ] speed, R restart, A auto-advance, G trip
 // grid, L labels, H hide the panels, F5 reload the file, Esc quit (player).
 //
-// Command line (the player): -drives <path>, and for a still picture
+// Command line (the player): -drives <path>, -from <stop> -to <stop>, and for a still picture
 // -condition <train|held_out|perturbed> -trip <1-based> -camera
 // <pack|chase|route|campus> -follow <1-based> -at <seconds> -screenshot <png>,
 // which pauses at that time, saves the frame and quits.
@@ -110,6 +113,7 @@ namespace RcTwin
             if (_d == null) return;
             if (Arg("-condition") is string c && _d.conditions.IndexOf(c) >= 0) SetCondition(_d.conditions.IndexOf(c));
             if (int.TryParse(Arg("-trip"), out int trip)) ShowTrip(trip - 1);
+            if (Arg("-from") is string from && Arg("-to") is string to) PickRoute(from, to);
             if (int.TryParse(Arg("-follow"), out int f) && f >= 1 && f <= _ghosts.Length) Follow(f - 1);
             if (Enum.TryParse(Arg("-camera") ?? "", true, out CamMode m)) _mode = m;
             _shot = Arg("-screenshot");
@@ -298,11 +302,35 @@ namespace RcTwin
 
         // ------------------------------------------------------------- trips
 
+        /// <summary>The trip from one stop to another; with no such trip, the
+        /// first from that stop (to changed) or else to that stop.</summary>
+        private void PickRoute(string from, string to)
+        {
+            int k = _d.FindTrip(Condition, from, to);
+            if (k < 0)
+            {
+                int n = _d.TripCount(Condition);
+                for (int j = 0; j < n && k < 0; j++)
+                {
+                    var d = FirstOf(j);
+                    if (d != null && (d.from == from || (from == null && d.to == to))) k = j;
+                }
+            }
+            if (k >= 0) ShowTrip(k);
+        }
+
+        private void Reverse()
+        {
+            var d = FirstDrive();
+            if (d != null && _d.FindTrip(Condition, d.to, d.from) is int k && k >= 0) ShowTrip(k);
+        }
+
         private void ShowTrip(int trip)
         {
             int n = _d.TripCount(Condition);
             if (n == 0) return;
             _trip = ((trip % n) + n) % n;
+            _gridScroll.y = Mathf.Max(0f, (_trip - 6) * 21f);   // keep the row in view
             _t = 0f;
             _hold = 0f;
             foreach (var m in _marks) Destroy(m);
@@ -351,11 +379,15 @@ namespace RcTwin
 
         // A drive that timed out is usually a car pinned against a kerb until
         // the 120 s limit; playback stops a few seconds after the last drive
-        // that finished or left the road, and shows the rest as timed out.
+        // that finished or left the road (the trip's "until", which the
+        // recorder sets and records timed-out drives up to), and shows the
+        // rest as timed out.
         private float Cap
         {
             get
             {
+                var lead = FirstDrive();
+                if (lead != null && lead.until > 0f) return lead.until;
                 float c = 0f;
                 foreach (var g in _ghosts)
                     if (g.drive != null && g.drive.status != "timeout") c = Mathf.Max(c, g.drive.time);
@@ -507,6 +539,7 @@ namespace RcTwin
                     if (kb.cKey.wasPressedThisFrame) _mode = (CamMode)(((int)_mode + 1) % 4);
                     if (kb.rKey.wasPressedThisFrame) { _t = 0f; _hold = 0f; _playing = true; }
                     if (kb.aKey.wasPressedThisFrame) _auto = !_auto;
+                    if (kb.vKey.wasPressedThisFrame) Reverse();
                     if (kb.gKey.wasPressedThisFrame) _grid = !_grid;
                     if (kb.lKey.wasPressedThisFrame) _labels = !_labels;
                     if (kb.leftBracketKey.wasPressedThisFrame) StepRate(-1);
@@ -635,7 +668,7 @@ namespace RcTwin
 
         private void LeftPanel(float w, float h)
         {
-            var r = new Rect(16f, 16f, 480f, Mathf.Min(h - 120f, 150f + 26f * _ghosts.Length + 120f));
+            var r = new Rect(16f, 16f, 480f, Mathf.Min(h - 120f, 150f + 26f * _ghosts.Length + 180f));
             _guiRects.Add(r);
             GUILayout.BeginArea(r, _panel);
             GUILayout.Label("Policy replay", _title);
@@ -655,7 +688,19 @@ namespace RcTwin
             string trip = lead == null ? "" : $"Trip {_trip + 1} of {_d.TripCount(Condition)}:  {lead.from} → {lead.to}";
             GUILayout.Label(trip, new GUIStyle(_text) { alignment = TextAnchor.MiddleCenter, fontStyle = FontStyle.Bold }, GUILayout.Height(24f));
             if (GUILayout.Button(">", _btn, GUILayout.Width(30f), GUILayout.Height(24f))) ShowTrip(_trip + 1);
+            bool canReverse = lead != null && _d.FindTrip(Condition, lead.to, lead.from) >= 0;
+            GUI.enabled = canReverse;
+            if (GUILayout.Button("Reverse", _btn, GUILayout.Width(64f), GUILayout.Height(24f))) Reverse();
+            GUI.enabled = true;
             GUILayout.EndHorizontal();
+            if (lead != null)
+            {
+                var stops = _d.Stops(Condition);
+                StopRow("From", stops, lead.from, s => StartsATrip(s),
+                        s => PickRoute(s, lead.to));
+                StopRow("To", stops, lead.to, s => _d.FindTrip(Condition, lead.from, s) >= 0,
+                        s => PickRoute(lead.from, s));
+            }
             if (lead != null)
             {
                 var c = lead.car;
@@ -714,6 +759,33 @@ namespace RcTwin
             GUILayout.EndArea();
         }
 
+        // One row of stop buttons: the current one lit, the ones with no
+        // recorded trip greyed out.
+        private void StopRow(string what, List<string> stops, string current, Func<string, bool> available,
+                             Action<string> pick)
+        {
+            GUILayout.BeginHorizontal();
+            GUILayout.Label(what, _small, GUILayout.Width(34f), GUILayout.Height(22f));
+            float bw = Mathf.Max(30f, (440f - 34f) / Mathf.Max(1, stops.Count) - 4f);
+            foreach (var stop in stops)
+            {
+                bool on = stop == current;
+                GUI.enabled = on || available(stop);
+                if (GUILayout.Button(stop, on ? _btnOn : _btn, GUILayout.Width(bw), GUILayout.Height(22f)) && !on)
+                    pick(stop);
+            }
+            GUI.enabled = true;
+            GUILayout.EndHorizontal();
+        }
+
+        private bool StartsATrip(string stop)
+        {
+            int n = _d.TripCount(Condition);
+            for (int j = 0; j < n; j++)
+                if (FirstOf(j) is ReplayData.Drive d && d.from == stop) return true;
+            return false;
+        }
+
         private ReplayData.Drive FirstDrive()
         {
             foreach (var g in _ghosts)
@@ -735,13 +807,14 @@ namespace RcTwin
             for (int i = 0; i < m; i++)
             {
                 int ok = 0;
-                foreach (var d in _d.policies[i].runs[Condition]) ok += d.Finished ? 1 : 0;
+                foreach (var d in _d.policies[i].runs[Condition]) ok += d != null && d.Finished ? 1 : 0;
                 var col = GUILayoutUtility.GetRect(cell, 30f, GUILayout.Width(cell + 1f));
                 Swatch(new Rect(col.x + 2f, col.y, cell - 4f, 6f), _ghosts[i].colour);
                 GUI.Label(new Rect(col.x - 6f, col.y + 7f, cell + 12f, 22f), $"{ok}", new GUIStyle(_small) { alignment = TextAnchor.UpperCenter });
             }
             GUILayout.EndHorizontal();
-            _gridScroll = GUILayout.BeginScrollView(_gridScroll, GUIStyle.none, GUIStyle.none);
+            _gridScroll = GUILayout.BeginScrollView(_gridScroll, false, false, GUIStyle.none, GUI.skin.verticalScrollbar,
+                                                    GUILayout.Height(Mathf.Max(60f, r.height - 140f)));
             for (int k = 0; k < n; k++)
             {
                 GUILayout.BeginHorizontal(GUILayout.Height(cell + 1f));
@@ -809,7 +882,7 @@ namespace RcTwin
             float dur = Duration;
             float t = GUILayout.HorizontalSlider(_t, 0f, Mathf.Max(0.01f, dur));
             if (!Mathf.Approximately(t, _t)) { _t = t; _hold = 0f; }
-            GUILayout.Label("Space play · ←/→ trip · ↑/↓ condition · C camera · 1–9 follow · [ ] speed · " +
+            GUILayout.Label("Space play · ←/→ trip · V reverse · ↑/↓ condition · C camera · 1–9 follow · [ ] speed · " +
                             "drag to orbit, scroll to zoom · G grid · L labels · H hide · F5 reload", _small);
             GUILayout.EndArea();
         }

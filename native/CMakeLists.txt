@@ -51,6 +51,8 @@ if(BUILD_TESTING)
              COMMAND ${Python3_EXECUTABLE} -I ${PROJECT_SOURCE_DIR}/tools/test_drive_road.py)
     add_test(NAME tools.edge_profiler
              COMMAND ${Python3_EXECUTABLE} -I ${PROJECT_SOURCE_DIR}/tools/test_edge_profiler.py)
+    add_test(NAME tools.record_drives
+             COMMAND ${Python3_EXECUTABLE} -I ${PROJECT_SOURCE_DIR}/tools/test_record_drives.py)
     add_test(NAME sim_py.env
              COMMAND ${Python3_EXECUTABLE} -I ${PROJECT_SOURCE_DIR}/sim_py/test_rc_twin_env.py)
     add_test(NAME sim_py.campus
@@ -67,7 +69,7 @@ if(BUILD_TESTING)
              COMMAND ${RC_TWIN_RL_PYTHON} -I ${PROJECT_SOURCE_DIR}/sim_py/test_train_rl.py)
     add_test(NAME sim_py.controllers
              COMMAND ${Python3_EXECUTABLE} -I ${PROJECT_SOURCE_DIR}/sim_py/test_controllers.py)
-    set_tests_properties(tools.drive_road tools.edge_profiler sim_py.env sim_py.campus sim_py.train_cem
+    set_tests_properties(tools.drive_road tools.edge_profiler tools.record_drives sim_py.env sim_py.campus sim_py.train_cem
                          sim_py.train_rl sim_py.controllers PROPERTIES
       ENVIRONMENT "RC_TWIN_LIB=$<TARGET_FILE:rc_twin>")
   endif()

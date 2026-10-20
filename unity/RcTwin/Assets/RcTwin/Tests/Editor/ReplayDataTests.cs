@@ -10,21 +10,26 @@ namespace RcTwin.Tests
 {
     public class ReplayDataTests
     {
-        // Two policies, one condition, one trip: a 0.1 s drive sampled at
-        // 25 Hz (t 0, 0.04, 0.08) that ends at 0.1 s, then a left-road drive.
-        private const string Sample = @"{""format"":""rc-physics-twin drives 0.1.0"",""created"":""2026-10-20 15:00"",
- ""target_speed"":4.0,""sample_hz"":25,""eval_seed"":20000,""conditions"":[""train""],
+        // Two policies, one condition, two trips. Trip 0, S1 to AB4: a 0.1 s
+        // drive sampled at 25 Hz (t 0, 0.04, 0.08) that ends at 0.1 s, and a
+        // left-road drive. Trip 1, AB4 to S1: pure pursuit only.
+        private const string Sample = @"{""format"":""rc-physics-twin drives 0.2.0"",""created"":""2026-10-20 15:00"",
+ ""trip_set"":""pairs"",""target_speed"":4.0,""sample_hz"":25,""conditions"":[""train""],
  ""perturbation"":{""at_s"":4.0,""friction"":0.6},
  ""policies"":[{""spec"":""controller:pure_pursuit"",""label"":""pure pursuit""},{""spec"":""sb3:x"",""label"":""PPO""}],
  ""campus"":{""road_width"":1.409,""car"":{""half_length"":0.21,""wheel_radius"":0.05}},
+ ""trips"":{""train"":[
+   {""from"":""S1"",""to"":""AB4"",""seed"":50000,""until"":3.1,""car"":{""friction"":0.9},""route"":[[0,0],[3,0],[3,4]]},
+   {""from"":""AB4"",""to"":""S1"",""seed"":50001,""car"":{""friction"":1.1},""route"":[[3,4],[3,0],[0,0]]}]},
  ""runs"":{
   ""controller:pure_pursuit"":{""train"":[{""status"":""reached_end"",""time"":0.1,""return"":1.5,""offset_mean"":0.01,
-    ""wall_contacts"":0,""energy_wh"":0.001,""s"":0.4,""hits"":[],""perturbed"":null,""trip_seed"":20000,""trip"":[""S1"",""AB4""],
-    ""car"":{""friction"":0.9},""route"":[[0,0],[3,0],[3,4]],
-    ""frames"":[[0,0,0,4,0,0,0],[0.16,0,0.1,4,0.5,1,0.01],[0.32,0,0.2,4,0,0,0],[0.4,0,3.1,4,0,0,0.02]]}]},
+    ""wall_contacts"":0,""energy_wh"":0.001,""s"":0.4,""hits"":[],""perturbed"":null,
+    ""frames"":[[0,0,0,4,0,0,0],[0.16,0,0.1,4,0.5,1,0.01],[0.32,0,0.2,4,0,0,0],[0.4,0,3.1,4,0,0,0.02]]},
+   {""status"":""timeout"",""time"":120,""return"":-50,""offset_mean"":0.2,""wall_contacts"":1,""energy_wh"":0,""s"":1,
+    ""hits"":[],""perturbed"":null,""frames"":[[3,4,0,4,0,0,0],[3,3,0,0,0,1,0]]}]},
   ""sb3:x"":{""train"":[{""status"":""left_road"",""time"":0.04,""return"":-9,""offset_mean"":0.3,
-    ""wall_contacts"":2,""energy_wh"":0,""s"":0.1,""hits"":[[0.04,0.1,0.6]],""perturbed"":[0.02,0.05,0],""trip_seed"":20000,
-    ""trip"":[""S1"",""AB4""],""car"":{},""route"":[[0,0],[3,0]],""frames"":[[0,0,0,4,0,0,0],[0.1,0.05,0,4,1,1,0.3]]}]}}}";
+    ""wall_contacts"":2,""energy_wh"":0,""s"":0.1,""hits"":[[0.04,0.1,0.6]],""perturbed"":[0.02,0.05,0],
+    ""frames"":[[0,0,0,4,0,0,0],[0.1,0.05,0,4,1,1,0.3]]},null]}}}";
 
         [Test]
         public void ParsesEveryField()
@@ -32,22 +37,46 @@ namespace RcTwin.Tests
             var d = ReplayData.Parse(Sample);
             Assert.AreEqual(4f, d.targetSpeed);
             Assert.AreEqual(25, d.sampleHz);
+            Assert.AreEqual("pairs", d.tripSet);
             Assert.AreEqual(2, d.policies.Count);
             Assert.AreEqual("PPO", d.policies[1].label);
-            Assert.AreEqual(1, d.TripCount("train"));
+            Assert.AreEqual(2, d.TripCount("train"));
             Assert.AreEqual(0.6f, d.perturbation["friction"]);
             var pp = d.Get(0, "train", 0);
             Assert.IsTrue(pp.Finished);
             Assert.AreEqual(("S1", "AB4"), (pp.from, pp.to));
+            Assert.AreEqual(50000, pp.tripSeed);
+            Assert.AreEqual(3.1f, pp.until);
+            Assert.AreEqual(0f, d.Get(0, "train", 1).until, "absent: the replay works it out");
+            Assert.AreEqual(0.9f, pp.car["friction"]);
             Assert.AreEqual(4, pp.samples.Length);
             Assert.AreEqual(3, pp.route.Length);
             Assert.IsNull(pp.perturbed);
             Assert.AreEqual(0.4f, pp.odometer[3], 1e-6f);
             var ppo = d.Get(1, "train", 0);
             Assert.IsFalse(ppo.Finished);
+            Assert.AreSame(pp.route, ppo.route, "a trip's route is stored once for every policy");
+            Assert.AreSame(pp.car, ppo.car);
             Assert.AreEqual(new Vector3(0.04f, 0.1f, 0.6f), ppo.hits[0]);
             Assert.AreEqual(0.02f, ppo.perturbed.Value.x, 1e-6f);
-            Assert.IsNull(d.Get(1, "train", 1));
+            Assert.AreEqual(("AB4", "S1"), (d.Get(0, "train", 1).from, d.Get(0, "train", 1).to));
+            Assert.AreEqual(1.1f, d.Get(0, "train", 1).car["friction"]);
+            Assert.IsNull(d.Get(1, "train", 1), "a policy with no drive on a trip");
+            Assert.IsNull(d.Get(1, "train", 2));
+        }
+
+        [Test]
+        public void FindsRoutesByStops()
+        {
+            var d = ReplayData.Parse(Sample);
+            Assert.AreEqual(0, d.FindTrip("train", "S1", "AB4"));
+            Assert.AreEqual(1, d.FindTrip("train", "AB4", "S1"));
+            Assert.AreEqual(-1, d.FindTrip("train", "S1", "S2"));
+            Assert.AreEqual(-1, d.FindTrip("held_out", "S1", "AB4"));
+            CollectionAssert.AreEqual(new[] { "AB4", "S1" }, d.Stops("train"));
+            var names = new System.Collections.Generic.List<string> { "S10", "S2", "AB1", "S1", "AB12", "AB2" };
+            names.Sort(ReplayData.CompareStops);
+            CollectionAssert.AreEqual(new[] { "AB1", "AB2", "AB12", "S1", "S2", "S10" }, names);
         }
 
         [Test]

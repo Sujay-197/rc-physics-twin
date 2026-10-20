@@ -1,6 +1,7 @@
 // Recorded drives for the policy replay (tools/record_drives.py): which
-// policies drove, in which conditions, over which campus trips, and every
-// drive sampled at a fixed rate. Positions are ISO world [m]; the replay
+// policies drove, in which conditions, over which campus trips (each trip's
+// stops, car and route stored once, shared by every policy's drive), and
+// every drive sampled at a fixed rate. Positions are ISO world [m]; the replay
 // converts with TwinCar.ToUnity.
 using System;
 using System.Collections.Generic;
@@ -12,7 +13,7 @@ namespace RcTwin
 {
     public sealed class ReplayData
     {
-        public const string Format = "rc-physics-twin drives 0.1.0";
+        public const string Format = "rc-physics-twin drives 0.2.0";
 
         public sealed class Policy
         {
@@ -26,6 +27,9 @@ namespace RcTwin
             public string status, from, to;
             public int tripSeed, wallContacts;
             public float time, ret, offsetMean, energyWh, distance;
+            /// <summary>When the replay stops showing this trip [s]; a timed-out
+            /// drive is recorded up to then and at its end.</summary>
+            public float until;
             public Vector2[] route;
             public Dictionary<string, float> car = new Dictionary<string, float>();
             /// <summary>(time, x, y) of each new wall contact.</summary>
@@ -50,9 +54,10 @@ namespace RcTwin
         }
 
         public string created;
+        /// <summary>"pairs": every stop-to-stop route; "evaluation": the harness's draws.</summary>
+        public string tripSet;
         public float targetSpeed;
         public int sampleHz;
-        public int evalSeed;
         public List<string> conditions = new List<string>();
         public Dictionary<string, float> perturbation = new Dictionary<string, float>();
         public List<Policy> policies = new List<Policy>();
@@ -73,6 +78,46 @@ namespace RcTwin
             return r[trip];
         }
 
+        /// <summary>The first trip from one stop to another in the condition, or -1.</summary>
+        public int FindTrip(string condition, string from, string to)
+        {
+            foreach (var p in policies)
+            {
+                if (!p.runs.TryGetValue(condition, out var r)) continue;
+                for (int k = 0; k < r.Count; k++)
+                    if (r[k] != null && r[k].from == from && r[k].to == to) return k;
+            }
+            return -1;
+        }
+
+        /// <summary>Every stop that starts or ends a trip in the condition,
+        /// letters then number (AB1, ..., S1, S2, ...), as record_drives.py orders them.</summary>
+        public List<string> Stops(string condition)
+        {
+            var set = new HashSet<string>();
+            foreach (var p in policies)
+                if (p.runs.TryGetValue(condition, out var r))
+                    foreach (var d in r)
+                        if (d != null) { set.Add(d.from); set.Add(d.to); }
+            var list = new List<string>(set);
+            list.Sort(CompareStops);
+            return list;
+        }
+
+        public static int CompareStops(string a, string b)
+        {
+            static (string, int) Key(string s)
+            {
+                int i = s.Length;
+                while (i > 0 && char.IsDigit(s[i - 1])) i--;
+                return (s.Substring(0, i), i < s.Length ? int.Parse(s.Substring(i), CultureInfo.InvariantCulture) : 0);
+            }
+            var (pa, na) = Key(a);
+            var (pb, nb) = Key(b);
+            int c = string.CompareOrdinal(pa, pb);
+            return c != 0 ? c : na.CompareTo(nb);
+        }
+
         public static ReplayData Parse(string json)
         {
             var root = (Dictionary<string, object>)MiniJson.Parse(json);
@@ -81,9 +126,9 @@ namespace RcTwin
             var d = new ReplayData
             {
                 created = root.TryGetValue("created", out var c) ? (string)c : "",
+                tripSet = root.TryGetValue("trip_set", out var ts) ? (string)ts : "",
                 targetSpeed = F(root["target_speed"]),
                 sampleHz = (int)Math.Round(D(root["sample_hz"])),
-                evalSeed = (int)Math.Round(D(root["eval_seed"])),
             };
             foreach (var x in (List<object>)root["conditions"]) d.conditions.Add((string)x);
             if (root.TryGetValue("perturbation", out var pert) && pert is Dictionary<string, object> pd)
@@ -92,7 +137,11 @@ namespace RcTwin
             d.roadWidth = F(campus["road_width"]);
             foreach (var kv in (Dictionary<string, object>)campus["car"]) d.car[kv.Key] = F(kv.Value);
 
+            var tripTable = (Dictionary<string, object>)root["trips"];
             var runs = (Dictionary<string, object>)root["runs"];
+            // One route and car per trip, shared by every policy's drive.
+            var shared = new Dictionary<string, Dictionary<int, (Vector2[], Dictionary<string, float>)>>();
+            foreach (var cond in d.conditions) shared[cond] = new Dictionary<int, (Vector2[], Dictionary<string, float>)>();
             foreach (Dictionary<string, object> po in (List<object>)root["policies"])
             {
                 var p = new Policy { spec = (string)po["spec"], label = (string)po["label"] };
@@ -100,8 +149,14 @@ namespace RcTwin
                 foreach (var cond in d.conditions)
                 {
                     var list = new List<Drive>();
+                    var trips = (List<object>)tripTable[cond];
                     if (byCond.TryGetValue(cond, out var rs))
-                        foreach (Dictionary<string, object> r in (List<object>)rs) list.Add(ParseDrive(r, d.sampleHz));
+                    {
+                        var rl = (List<object>)rs;
+                        for (int k = 0; k < rl.Count; k++)
+                            list.Add(rl[k] is Dictionary<string, object> r
+                                ? ParseDrive(r, (Dictionary<string, object>)trips[k], shared[cond], k) : null);
+                    }
                     p.runs[cond] = list;
                 }
                 d.policies.Add(p);
@@ -109,15 +164,16 @@ namespace RcTwin
             return d;
         }
 
-        private static Drive ParseDrive(Dictionary<string, object> r, int hz)
+        private static Drive ParseDrive(Dictionary<string, object> r, Dictionary<string, object> trip,
+                                        Dictionary<int, (Vector2[], Dictionary<string, float>)> shared, int k)
         {
-            var trip = (List<object>)r["trip"];
             var dr = new Drive
             {
                 status = (string)r["status"],
-                from = (string)trip[0],
-                to = (string)trip[1],
-                tripSeed = (int)Math.Round(D(r["trip_seed"])),
+                from = (string)trip["from"],
+                to = (string)trip["to"],
+                tripSeed = (int)Math.Round(D(trip["seed"])),
+                until = trip.TryGetValue("until", out var u) ? F(u) : 0f,
                 wallContacts = (int)Math.Round(D(r["wall_contacts"])),
                 time = F(r["time"]),
                 ret = F(r["return"]),
@@ -125,14 +181,20 @@ namespace RcTwin
                 energyWh = F(r["energy_wh"]),
                 distance = F(r["s"]),
             };
-            var route = (List<object>)r["route"];
-            dr.route = new Vector2[route.Count];
-            for (int i = 0; i < route.Count; i++)
+            if (!shared.TryGetValue(k, out var rc))
             {
-                var q = (List<object>)route[i];
-                dr.route[i] = new Vector2(F(q[0]), F(q[1]));
+                var route = (List<object>)trip["route"];
+                var pts = new Vector2[route.Count];
+                for (int i = 0; i < route.Count; i++)
+                {
+                    var q = (List<object>)route[i];
+                    pts[i] = new Vector2(F(q[0]), F(q[1]));
+                }
+                var car = new Dictionary<string, float>();
+                foreach (var kv in (Dictionary<string, object>)trip["car"]) car[kv.Key] = F(kv.Value);
+                shared[k] = rc = (pts, car);
             }
-            foreach (var kv in (Dictionary<string, object>)r["car"]) dr.car[kv.Key] = F(kv.Value);
+            (dr.route, dr.car) = rc;
             foreach (List<object> h in (List<object>)r["hits"]) dr.hits.Add(new Vector3(F(h[0]), F(h[1]), F(h[2])));
             if (r["perturbed"] is List<object> pt) dr.perturbed = new Vector3(F(pt[0]), F(pt[1]), F(pt[2]));
             var frames = (List<object>)r["frames"];
