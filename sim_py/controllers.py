@@ -77,8 +77,13 @@ class _Base:
     """Shared plumbing: the observation's fields and the speed loop."""
 
     def __init__(self, envmod, nominal: Nominal, half_width: float, k_speed: float = 3.0,
-                 a_lat: float | None = None):
+                 a_lat: float | None = None, a_stop: float = 1.2, stop_margin: float = 0.1):
         self.i = _idx(envmod)
+        # "stop" task: planned braking [m/s^2], below what the weakest (held-out)
+        # cars can do, aimed stop_margin [m] short of the end. Provisional car.
+        self.a_stop, self.stop_margin = a_stop, stop_margin
+        self.remaining_scale = getattr(envmod, "REMAINING_SCALE_M", None)
+        self.i_rem = None      # set by build() for the "stop" task
         self.car = nominal
         self.hw = half_width
         self.k_speed = k_speed
@@ -89,6 +94,8 @@ class _Base:
         v_ref_ratio = obs[i["target_speed_ratio"]]
         v_ratio = obs[i["speed_ratio"]]
         return {
+            "remaining": (obs[self.i_rem] * self.remaining_scale
+                          if self.i_rem is not None and obs[self.i_rem] < 1.0 else None),
             "v_ratio": v_ratio,
             "v_ref_ratio": v_ref_ratio,
             "vy": obs[i["lateral_velocity"]],
@@ -102,11 +109,18 @@ class _Base:
         """Hold the target speed, or less where the road ahead curves more
         than the cornering limit allows at that speed."""
         goal = s["v_ref_ratio"]
+        if s["remaining"] is not None:
+            # Stop at the end: no faster than braking at a_stop allows.
+            rem = max(0.0, s["remaining"] - self.stop_margin)
+            goal = min(goal, math.sqrt(2.0 * self.a_stop * rem) / self.v_ref * s["v_ref_ratio"])
         if self.a_lat:
             k = abs(path_curvature(*s["pts"]))
             if k > 1e-6:
                 goal = min(goal, math.sqrt(self.a_lat / k) / self.v_ref * s["v_ref_ratio"])
-        return _clip(self.k_speed * (goal - s["v_ratio"]))
+        u = _clip(self.k_speed * (goal - s["v_ratio"]))
+        if s["remaining"] is not None and u < 0.0 and s["v_ratio"] <= 0.01:
+            u = 0.0   # braking at rest would reverse
+        return u
 
     def _steer_out(self, delta: float) -> float:
         return _clip(delta / self.car.steer_max)
@@ -272,10 +286,12 @@ def _dlqr(Ad, Bd, q, r: float, iters: int = 5000, tol: float = 1e-10):
 KINDS = {"pure_pursuit": PurePursuit, "stanley": Stanley, "lqr": LQR}
 
 
-def build(kind: str, envmod, params, half_width: float, target_speed: float, **gains):
+def build(kind: str, envmod, params, half_width: float, target_speed: float, task: str = "follow", **gains):
     """A controller of `kind` for the nominal car `params` (dr.Params)."""
     nominal = Nominal(params)
     extra = {"dt": envmod.TICK} if kind == "lqr" else {}
     c = KINDS[kind](envmod, nominal, half_width, **extra, **gains)
     c.v_ref = target_speed
+    if task == "stop":
+        c.i_rem = envmod.STOP_FIELDS.index("remaining_ratio")
     return c

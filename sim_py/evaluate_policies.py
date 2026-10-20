@@ -93,7 +93,7 @@ def build_policy(spec: str, env):
             tuned = json.loads((ROOT / "policies" / "controllers.json").read_text(encoding="utf-8"))
             gains = tuned[name]["gains"]
         nominal = env.nominal_params()
-        return ctl.build(name, envmod, nominal, 0.5 * env.network.width, env.target_speed, **gains)
+        return ctl.build(name, envmod, nominal, 0.5 * env.network.width, env.target_speed, task=env.task, **gains)
     if kind == "cem":
         cem = _load("train_cem", HERE / "train_cem.py")
         return cem.LinearPolicy.from_json(json.loads(pathlib.Path(rest).read_text(encoding="utf-8")))
@@ -137,7 +137,7 @@ def run_episode(env, policy, seed: int, options=None) -> dict:
 
 
 def _job(args):
-    spec, condition, seeds, lib, target_speed = args
+    spec, condition, seeds, lib, target_speed, task = args
     c = campus()
     extra = {}
     if spec.startswith("sb3:"):
@@ -146,7 +146,7 @@ def _job(args):
         cfg = json.loads(pathlib.Path(spec[4:]).with_suffix(".json").read_text(encoding="utf-8"))["config"]
         extra["history"] = cfg["history"]
     env = c.CampusEnv(seed=seeds[0], ranges=ranges_for(condition), lib_path=lib, target_speed=target_speed,
-                      **extra)
+                      task=task, **extra)
     policy = build_policy(spec, env)
     out = [run_episode(env, policy, s, options_for(condition)) for s in seeds]
     env.close()
@@ -183,6 +183,7 @@ def summarise(episodes: list) -> dict:
     out = {"trips": n,
            "success": wilson(len(ok), n),
            "left_road": wilson(sum(e["status"] == "left_road" for e in episodes), n),
+           "overshot": wilson(sum(e["status"] == "overshot" for e in episodes), n),
            "wall_contact": wilson(sum(e["wall"] for e in episodes), n),
            "return": mean_ci([e["return"] for e in episodes])}
     # Driving quality over the trips that finished, so a crash does not
@@ -195,9 +196,9 @@ def summarise(episodes: list) -> dict:
 # --------------------------------------------------------------------- main
 
 def evaluate(specs, trips: int = 100, conditions=CONDITIONS, lib=None, workers=None, chunk: int = 10,
-             seed: int = EVAL_SEED, target_speed: float = 2.0) -> dict:
+             seed: int = EVAL_SEED, target_speed: float = 2.0, task: str = "follow") -> dict:
     seeds = list(range(seed, seed + trips))
-    jobs = [(spec, cond, seeds[i:i + chunk], lib, target_speed) for spec in specs for cond in conditions
+    jobs = [(spec, cond, seeds[i:i + chunk], lib, target_speed, task) for spec in specs for cond in conditions
             for i in range(0, trips, chunk)]
     workers = workers or max(1, (os.cpu_count() or 4) - 2)
     results = {spec: {cond: [] for cond in conditions} for spec in specs}
@@ -215,7 +216,7 @@ def evaluate(specs, trips: int = 100, conditions=CONDITIONS, lib=None, workers=N
         for cond in conditions:
             results[spec][cond].sort(key=lambda e: e["seed"])
     return {"protocol": {"trips": trips, "seed": seed, "conditions": list(conditions),
-                         "target_speed": target_speed,
+                         "target_speed": target_speed, "task": task,
                          "perturbation": PERTURBATION},
             "policies": {spec: {cond: {"summary": summarise(eps), "episodes": eps}
                                 for cond, eps in conds.items()} for spec, conds in results.items()}}
@@ -249,13 +250,14 @@ def main(argv=None) -> int:
     ap.add_argument("--conditions", nargs="+", default=list(CONDITIONS), choices=CONDITIONS)
     ap.add_argument("--workers", type=int)
     ap.add_argument("--target-speed", type=float, default=2.0, help="[m/s]")
+    ap.add_argument("--task", choices=("follow", "stop"), default="follow", help="rc_twin_env.py's tasks")
     ap.add_argument("--out", type=pathlib.Path, help="JSON report (episodes included)")
     ap.add_argument("--lib")
     args = ap.parse_args(argv)
     lib = os.path.abspath(args.lib) if args.lib else None
     t0 = time.perf_counter()
     report = evaluate(args.specs, args.trips, args.conditions, lib, args.workers,
-                      target_speed=args.target_speed)
+                      target_speed=args.target_speed, task=args.task)
     report["seconds"] = round(time.perf_counter() - t0, 1)
     print(table(report))
     if args.out:

@@ -85,7 +85,7 @@ def build_base(inner, kind: str):
     if abs(tuned["target_speed"] - inner.target_speed) > 1e-9:
         raise ValueError(f"{kind} was tuned at {tuned['target_speed']} m/s, the env runs {inner.target_speed}")
     return ctl.build(kind, c.envmod, inner.nominal_params(), 0.5 * inner.network.width, inner.target_speed,
-                     **tuned["gains"])
+                     task=inner.task, **tuned["gains"])
 
 
 def residual_action(base_action, a, scale: float):
@@ -100,7 +100,8 @@ def make_env(cfg: dict, seed: int):
     c = _campus()
     env = c.envmod.make_gymnasium_env(env_cls=c.CampusEnv, seed=seed, lib_path=cfg["lib"],
                                       ranges=c.envmod.RANGES_TRAIN, target_speed=cfg["target_speed"],
-                                      history=cfg["history"], max_time=cfg["max_time"])
+                                      history=cfg["history"], max_time=cfg["max_time"],
+                                      task=cfg.get("task", "follow"))
     if cfg["residual"]:
         env = ResidualWrapper(env, cfg["residual"], cfg["residual_scale"])
     env.reset(seed=seed)
@@ -228,7 +229,8 @@ class Validator:
     def __init__(self, cfg: dict, algo: str, trips: int):
         c = _campus()
         self.env = c.CampusEnv(seed=VAL_SEED, ranges=c.envmod.RANGES_TRAIN, lib_path=cfg["lib"],
-                               target_speed=cfg["target_speed"], history=cfg["history"], max_time=60.0)
+                               target_speed=cfg["target_speed"], history=cfg["history"], max_time=60.0,
+                               task=cfg.get("task", "follow"))
         self.base = build_base(self.env, cfg["residual"]) if cfg["residual"] else None
         self.meta = {"algo": algo, "residual_scale": cfg["residual_scale"]}
         self.trips = trips
@@ -262,6 +264,8 @@ def load_policy(prefix: pathlib.Path, env):
     import pickle
     meta = json.loads(prefix.with_suffix(".json").read_text(encoding="utf-8"))
     cfg = meta["config"]
+    if cfg.get("task", "follow") != env.task:
+        raise ValueError(f"{prefix.name} trained on the {cfg.get('task', 'follow')!r} task; the env runs {env.task!r}")
     if abs(cfg["target_speed"] - env.target_speed) > 1e-9 or cfg["history"] != env.history:
         raise ValueError(f"{prefix.name} trained at {cfg['target_speed']} m/s with history {cfg['history']}; "
                          f"the env runs {env.target_speed} m/s with history {env.history}")
@@ -296,6 +300,8 @@ def main(argv=None) -> int:
     ap.add_argument("--target-speed", type=float, default=4.0)
     ap.add_argument("--history", type=int, help="history frames (default 4; rppo 0, its LSTM remembers)")
     ap.add_argument("--max-time", type=float, default=30.0)
+    ap.add_argument("--task", choices=("follow", "stop"), default="follow",
+                    help="follow: from the target speed past the end; stop: from rest to a stop (rc_twin_env.py)")
     ap.add_argument("--workers", type=int, default=max(1, (os.cpu_count() or 4) - 2))
     ap.add_argument("--per-worker", type=int)
     ap.add_argument("--device", default="auto")
@@ -331,7 +337,7 @@ def main(argv=None) -> int:
     from stable_baselines3.common.vec_env import VecNormalize
     device = args.device if args.device != "auto" else ("cuda" if torch.cuda.is_available() else "cpu")
     torch.set_num_threads(2)
-    cfg = {"target_speed": args.target_speed, "history": args.history, "max_time": args.max_time,
+    cfg = {"task": args.task, "target_speed": args.target_speed, "history": args.history, "max_time": args.max_time,
            "residual": args.residual, "residual_scale": args.residual_scale, "lib": lib}
     n_envs = args.workers * args.per_worker
     venv = VecNormalize(make_vec(cfg, n_envs, args.workers, args.seed * 100_000),
