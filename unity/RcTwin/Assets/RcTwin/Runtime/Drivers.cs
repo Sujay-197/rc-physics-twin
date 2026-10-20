@@ -2,9 +2,9 @@
 // (TwinAutopilot) asks one each control tick; a new controller or a learned
 // policy is a new IDriver, nothing else changes.
 //
-// PurePursuitDriver is sim_py/controllers.py's PurePursuit, line for line
-// (tests/Editor/AutopilotParityTests.cs checks it against Python), with one
-// addition the RL task does not have: it can stop at the end of the route.
+// PurePursuitDriver is sim_py/controllers.py's PurePursuit, line for line,
+// stop plan included (tests/Editor/AutopilotParityTests.cs checks it
+// against Python in both RL tasks). PolicyDriver runs a trained network.
 //
 // Free of UnityEngine, like RcTwinNative.
 using System;
@@ -17,8 +17,8 @@ namespace RcTwin
         /// <summary>The observation vector: TwinObservation's current frame,
         /// then its history (sim_py/rc_twin_env.py's layout).</summary>
         public double[] Observation;
-        /// <summary>Distance left to the end of the route [m]; NaN to drive on
-        /// at the target speed, as the RL task does.</summary>
+        /// <summary>Distance left to the end of the route [m], for display;
+        /// drivers read it from the observation, as the RL policies do.</summary>
         public double Remaining;
     }
 
@@ -62,9 +62,13 @@ namespace RcTwin
         public double Wheelbase;           // nominal car [m]
         public double SteerMax;            // nominal car [rad]
         public double TargetSpeed;         // the speed the observation is scaled by [m/s]
-        /// <summary>Braking used to plan the stop at the end of the route
-        /// [m/s^2] (with DriveContext.Remaining).</summary>
-        public double StopDecel = 2.0;
+        /// <summary>The stop plan ("stop" task): braking [m/s^2] and how far
+        /// short of the end to aim [m], as sim_py/controllers.py plans it.</summary>
+        public double StopDecel = 1.2, StopMargin = 0.1;
+        /// <summary>Where the observation carries remaining_ratio ("stop"
+        /// task), or -1: the driver then drives on, as in the "follow" task.</summary>
+        public int RemainingIndex = -1;
+        public double RemainingScale = TwinObservation.RemainingScaleM;
 
         public string Name => $"pure pursuit (lookahead {Lookahead:0.##} m)";
         public int History => 0;
@@ -72,11 +76,13 @@ namespace RcTwin
 
         /// <summary>The tuned pure pursuit (policies/controllers.json) for the nominal car.</summary>
         public static PurePursuitDriver Tuned(in RcTwinNative.Params nominal, double targetSpeed,
-                                              double lookahead = 1.5, double kSpeed = 4.0, double aLat = 5.0) =>
+                                              double lookahead = 1.5, double kSpeed = 4.0, double aLat = 5.0,
+                                              bool stopTask = false) =>
             new PurePursuitDriver
             {
                 Lookahead = lookahead, KSpeed = kSpeed, ALat = aLat, TargetSpeed = targetSpeed,
                 Wheelbase = nominal.lf + nominal.lr, SteerMax = nominal.steerMax,
+                RemainingIndex = stopTask ? TwinObservation.RemainingIndex : -1,
             };
 
         public (double steer, double throttle) Act(in DriveContext c)
@@ -100,24 +106,22 @@ namespace RcTwin
             double ld2 = ax * ax + ay * ay;
             double delta = Math.Atan2(2.0 * Wheelbase * ay, ld2);
 
+            // The distance left, when the observation says it is near (ratio below 1).
+            double remaining = RemainingIndex >= 0 && o[RemainingIndex] < 1.0 ? o[RemainingIndex] * RemainingScale : double.NaN;
             double goal = vRefRatio;
+            if (!double.IsNaN(remaining))
+            {
+                // Stop at the end: no faster than braking at StopDecel allows.
+                double rem = Math.Max(0.0, remaining - StopMargin);
+                goal = Math.Min(goal, Math.Sqrt(2.0 * StopDecel * rem) / TargetSpeed * vRefRatio);
+            }
             if (!double.IsNaN(ALat) && ALat > 0.0)
             {
                 double k = Math.Abs(DriverMath.PathCurvature(p0x, p0y, p1x, p1y, p2x, p2y));
                 if (k > 1e-6) goal = Math.Min(goal, Math.Sqrt(ALat / k) / TargetSpeed * vRefRatio);
             }
-            double throttle;
-            if (double.IsNaN(c.Remaining))
-            {
-                throttle = DriverMath.Clip(KSpeed * (goal - vRatio));
-            }
-            else
-            {
-                // Stop at the end: no faster than braking at StopDecel allows.
-                goal = Math.Min(goal, Math.Sqrt(2.0 * StopDecel * Math.Max(0.0, c.Remaining)) / TargetSpeed * vRefRatio);
-                throttle = DriverMath.Clip(KSpeed * (goal - vRatio));
-                if (throttle < 0.0 && vRatio <= 0.01) throttle = 0.0;   // braking at rest would reverse
-            }
+            double throttle = DriverMath.Clip(KSpeed * (goal - vRatio));
+            if (!double.IsNaN(remaining) && throttle < 0.0 && vRatio <= 0.01) throttle = 0.0;   // braking at rest would reverse
             return (DriverMath.Clip(delta / SteerMax), throttle);
         }
     }

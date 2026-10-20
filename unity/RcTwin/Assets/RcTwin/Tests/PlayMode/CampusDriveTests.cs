@@ -57,8 +57,9 @@ namespace RcTwin.Tests
             finally { Time.timeScale = scale; }
             Assert.AreEqual(TwinAutopilot.Status.Arrived, pilot.State, pilot.Message);
             Assert.AreEqual("AB1", pilot.CurrentStop());
-            Assert.Less(System.Math.Abs(_car.State.vx), 0.05, "stopped");
-            Assert.Less(pilot.Remaining, 0.25, "at the stop");
+            // Arrived as the RL "stop" task counts it: within 0.3 m, under 0.1 m/s.
+            Assert.LessOrEqual(System.Math.Abs(_car.State.vx), TwinAutopilot.StopSpeed, "stopped");
+            Assert.LessOrEqual(pilot.Remaining, TwinAutopilot.StopTolerance, "at the stop");
             Assert.Less(pilot.TripTime, 30.0);
             Assert.AreEqual(0, pilot.TripWallContacts, "no kerb strikes at 2 m/s");
         }

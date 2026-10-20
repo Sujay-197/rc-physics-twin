@@ -3,12 +3,16 @@
 // stop at the destination, along the route the fleet sim and the RL
 // environment use (CampusRoutes).
 //
-// Each 10 ms control tick (the RL environment's) it measures the car along
-// the route as the environment does (TwinObservation on a TwinRoad), asks
-// its driver (an IDriver: by default the tuned pure pursuit) for a command,
-// and hands it to TwinCar. Holding a drive key takes the car back; the trip
-// ends there. A driver is the only thing to change for a new controller or a
-// learned policy.
+// Each 10 ms control tick it measures the car along the route as the RL
+// environment's "stop" task does (TwinObservation on a TwinRoad: the frame
+// plus the distance left), asks its driver for a command, and hands it to
+// TwinCar. The trip ends as that task's episodes do: stopped within 0.3 m of
+// the end, or failed past it, off the route or out of time. Holding a drive
+// key takes the car back.
+//
+// Drivers (IDriver): the tuned pure pursuit, or a learned policy exported by
+// tools/export_policy.py (PolicyDriver) when `policy` is set; the panel
+// switches between them. A new controller is a new IDriver.
 //
 // Keys: P stops or resumes the trip. The panel picks the destination and speed.
 // Command line (the player): -goto <stop> [-speed <m/s>] starts a trip;
@@ -30,8 +34,10 @@ namespace RcTwin
         public TextAsset network;
         [Tooltip("Cruise speed [m/s]. The tuned gains are for 4 m/s; lower is gentler.")]
         public double targetSpeed = 2.0;
-        [Tooltip("Planned braking for the stop at the destination [m/s^2].")]
-        public double stopDecel = 2.0;
+        [Tooltip("A learned policy (tools/export_policy.py JSON) trained on the \"stop\" task; empty for pure pursuit only.")]
+        public TextAsset policy;
+        [Tooltip("Drive with the learned policy when there is one.")]
+        public bool useLearned = true;
         [Tooltip("Give up when further than this off the centreline [m].")]
         public double maxOffset = 1.2;
         [Tooltip("Give up after this long on one trip [s].")]
@@ -52,6 +58,7 @@ namespace RcTwin
         public double LastOffset { get; private set; }
 
         public const double ControlTick = 0.01;   // [s], sim_py/rc_twin_env.py TICK
+        public const double StopTolerance = 0.3, StopSpeed = 0.1;   // rc_twin_env.py STOP_TOLERANCE_M, STOP_SPEED
 
         private TwinCar _car;
         private CampusRoutes _net;
@@ -61,6 +68,8 @@ namespace RcTwin
         private bool _first;
         private long _wallsAtStart;
         private LineRenderer _line;
+        private PolicyDriver _learned;
+        private string _learnedError;
 
         private float _savedFixedDelta = -1f;
 
@@ -75,6 +84,29 @@ namespace RcTwin
                 Time.fixedDeltaTime = (float)ControlTick;
             }
             _car.Resetted += OnReset;
+            if (policy != null)
+            {
+                try
+                {
+                    _learned = PolicyDriver.Load(policy.text, RcTwinNative.DefaultParams());
+                    if (_learned.Task != "stop") { _learnedError = $"{_learned.PolicyName} was trained to follow roads, not to stop at stops."; _learned = null; }
+                }
+                catch (Exception e) { _learnedError = e.Message; _learned = null; }
+                if (_learnedError != null) Debug.LogWarning($"TwinAutopilot: learned policy not used: {_learnedError}");
+            }
+        }
+
+        /// <summary>The learned policy, if one loaded.</summary>
+        public PolicyDriver Learned => _learned;
+
+        private IDriver ChooseDriver()
+        {
+            if (useLearned && _learned != null)
+            {
+                targetSpeed = _learned.TargetSpeed;   // it was trained at one speed
+                return _learned;
+            }
+            return PurePursuitDriver.Tuned(RcTwinNative.DefaultParams(), targetSpeed, stopTask: true);
         }
 
         private void OnDestroy()
@@ -144,10 +176,9 @@ namespace RcTwin
             if (_net.Stops[origin].node == _net.Stops[destination].node) { Message = $"Already at {destination}."; return false; }
             _road?.Dispose();
             _road = new TwinRoad(_net.Route(origin, destination), _net.RoadWidth);
-            Driver ??= PurePursuitDriver.Tuned(RcTwinNative.DefaultParams(), targetSpeed);
-            if (Driver is PurePursuitDriver pp) { pp.TargetSpeed = targetSpeed; pp.StopDecel = stopDecel; }
+            Driver = ChooseDriver();
             Driver.Reset();
-            _obs = new TwinObservation(Driver.History);
+            _obs = new TwinObservation(Driver.History, stopTask: true);
             _first = true;
             Origin = origin;
             Destination = destination;
@@ -189,25 +220,33 @@ namespace RcTwin
             var p = _car.Params;
             var (s, d) = _road.Locate(st.x, st.y);
             LastOffset = d;
-            var frame = TwinObservation.Frame(_road, st, p, targetSpeed, s, d);
+            var frame = TwinObservation.Frame(_road, st, p, targetSpeed, s, d, stopTask: true);
             if (_first) { _obs.Reset(frame); _first = false; }
             else _obs.Push(_last.steer, _last.throttle, frame);
 
             Remaining = _road.Length - s;
             TripTime += Time.fixedDeltaTime;
             TripWallContacts = _car.WallContacts - _wallsAtStart;
-            if (Remaining < 0.25 && Math.Abs(st.vx) < 0.05)
+            if (Remaining <= StopTolerance && Math.Abs(st.vx) <= StopSpeed)
             {
                 End(Status.Arrived, $"Arrived at {Destination} in {TripTime:0.0} s" +
                                     (TripWallContacts > 0 ? $", {TripWallContacts} kerb contacts." : "."));
                 return;
             }
             if (Math.Abs(d) > maxOffset) { End(Status.Failed, $"Left the route ({d:+0.00;-0.00} m off). Drive back or press R."); return; }
+            if (PastEnd(st) > StopTolerance) { End(Status.Failed, $"Ran past {Destination}."); return; }
             if (TripTime > timeout) { End(Status.Failed, $"Gave up after {timeout:0} s."); return; }
 
             var a = Driver.Act(new DriveContext { Observation = _obs.Vector(), Remaining = Remaining });
             _last = (DriverMath.Clip(a.steer), DriverMath.Clip(a.throttle));
             _car.Command = _last;
+        }
+
+        // How far beyond the end of the route, along its last heading [m].
+        private double PastEnd(in RcTwinNative.State st)
+        {
+            var (x, y, _, h) = _road.Point(_road.Length);
+            return (st.x - x) * Math.Cos(h) + (st.y - y) * Math.Sin(h);
         }
 
         private void DrawRoute()
@@ -254,17 +293,29 @@ namespace RcTwin
                 _btn = new GUIStyle(GUI.skin.button) { fontSize = 12 };
                 _on = new GUIStyle(_btn) { normal = { background = on, textColor = Color.white } };
             }
-            var r = new Rect(Screen.width - 330, 10, 320, 300);
+            var r = new Rect(Screen.width - 350, 10, 340, 340);
             GUILayout.BeginArea(r, _box);
             GUILayout.Label("Autopilot", _title);
-            GUILayout.Label($"{(Driver ?? PurePursuitDriver.Tuned(RcTwinNative.DefaultParams(), targetSpeed)).Name}, tuned " +
-                            $"(policies/controllers.json). At stop: {CurrentStop() ?? "none"}.", _text);
-            GUILayout.Label("Speed", _text);
+            GUILayout.Label("Driver", _text);
             GUILayout.BeginHorizontal();
-            foreach (double v in new[] { 1.0, 2.0, 3.0, 4.0 })
-                if (GUILayout.Button($"{v:0} m/s", Math.Abs(targetSpeed - v) < 1e-6 ? _on : _btn) && State != Status.Driving)
-                    targetSpeed = v;
+            bool learned = useLearned && _learned != null;
+            if (GUILayout.Button("Pure pursuit (tuned)", learned ? _btn : _on) && State != Status.Driving) useLearned = false;
+            GUI.enabled = _learned != null;
+            if (GUILayout.Button(_learned != null ? $"Learned: {_learned.PolicyName}" : "Learned: none", learned ? _on : _btn)
+                && State != Status.Driving) useLearned = true;
+            GUI.enabled = true;
             GUILayout.EndHorizontal();
+            if (_learnedError != null) GUILayout.Label(_learnedError, _text);
+            GUILayout.Label(learned ? $"Speed {_learned.TargetSpeed:0} m/s (the policy's)" : "Speed", _text);
+            if (!learned)
+            {
+                GUILayout.BeginHorizontal();
+                foreach (double v in new[] { 1.0, 2.0, 3.0, 4.0 })
+                    if (GUILayout.Button($"{v:0} m/s", Math.Abs(targetSpeed - v) < 1e-6 ? _on : _btn) && State != Status.Driving)
+                        targetSpeed = v;
+                GUILayout.EndHorizontal();
+            }
+            GUILayout.Label($"At stop: {CurrentStop() ?? "none"}.", _text);
             GUILayout.Label("Drive to", _text);
             var names = _net.StopNames();
             for (int row = 0; row < names.Count; row += 5)

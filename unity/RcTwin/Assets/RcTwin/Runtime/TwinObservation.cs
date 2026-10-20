@@ -26,6 +26,12 @@ namespace RcTwin
 
         public static int FrameSize => Fields.Length;
 
+        /// <summary>The "stop" task's frame (rc_twin_env.py): FrameSize fields,
+        /// then remaining_ratio, the distance left over RemainingScaleM (1 beyond).</summary>
+        public static int StopFrameSize => Fields.Length + 1;
+        public const double RemainingScaleM = 10.0;
+        public static int RemainingIndex => Fields.Length;
+
         public static int Index(string field)
         {
             int i = Array.IndexOf(Fields, field);
@@ -44,7 +50,7 @@ namespace RcTwin
         /// <summary>One frame: the car's state, measured along the road at arc
         /// length s with offset d (from TwinRoad.Locate).</summary>
         public static double[] Frame(TwinRoad road, in RcTwinNative.State st, in RcTwinNative.Params p,
-                                     double targetSpeed, double s, double d)
+                                     double targetSpeed, double s, double d, bool stopTask = false)
         {
             double vRef = targetSpeed;
             var (_, _, _, h) = road.Point(s);
@@ -53,7 +59,7 @@ namespace RcTwin
             if (road.Ground(st.x, st.y, out var g) && g.nz > 0.0)
                 grade = -(g.nx * Math.Cos(st.yaw) + g.ny * Math.Sin(st.yaw)) / g.nz;
             double cy = Math.Cos(st.yaw), sy = Math.Sin(st.yaw);
-            var f = new double[FrameSize];
+            var f = new double[stopTask ? StopFrameSize : FrameSize];
             double r = p.wheelRadius;
             f[0] = st.vx / vRef;
             f[1] = st.vy;
@@ -74,21 +80,26 @@ namespace RcTwin
                 f[17 + 2 * k] = -sy * dx + cy * dy;
             }
             f[22] = 1.0;
+            if (stopTask) f[23] = Math.Min(1.0, Math.Max(0.0, road.Length - s) / RemainingScaleM);
             return f;
         }
 
         // ------------------------------------------------------- history
 
-        private readonly int _history;
+        private readonly int _history, _frameSize;
         private double[] _now;
         private readonly List<(double[] frame, double steer, double throttle)> _hist =
             new List<(double[], double, double)>();
 
         /// <param name="history">Previous frames carried, each with the action
         /// taken after it, newest first (the environment's `history`).</param>
-        public TwinObservation(int history) => _history = history;
+        public TwinObservation(int history, bool stopTask = false)
+        {
+            _history = history;
+            _frameSize = stopTask ? StopFrameSize : FrameSize;
+        }
 
-        public int Size => FrameSize + _history * (FrameSize + 2);
+        public int Size => _frameSize + _history * (_frameSize + 2);
 
         /// <summary>Start of an episode: the history is this frame, repeated, with no action.</summary>
         public void Reset(double[] frame)
@@ -112,12 +123,12 @@ namespace RcTwin
         public double[] Vector()
         {
             var o = new double[Size];
-            Array.Copy(_now, o, FrameSize);
-            int k = FrameSize;
+            Array.Copy(_now, o, _frameSize);
+            int k = _frameSize;
             foreach (var (frame, steer, throttle) in _hist)
             {
-                Array.Copy(frame, 0, o, k, FrameSize);
-                k += FrameSize;
+                Array.Copy(frame, 0, o, k, _frameSize);
+                k += _frameSize;
                 o[k++] = steer;
                 o[k++] = throttle;
             }
