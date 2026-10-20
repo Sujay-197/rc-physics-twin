@@ -110,6 +110,7 @@ class TrainRL(unittest.TestCase):
                                            "--out", str(out), *TINY]), 0)
             meta = json.loads(out.with_suffix(".json").read_text(encoding="utf-8"))
             self.assertEqual(meta["config"]["car"], "unity")
+            self.assertEqual(meta["reward"], campus.envmod.reward_weights("stop"), "the weights it trained under")
 
             def env(car):
                 return campus.CampusEnv(seed=0, target_speed=4.0, history=4, lib_path=LIB, task="stop", car=car)

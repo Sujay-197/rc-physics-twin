@@ -408,6 +408,7 @@ def main(argv=None) -> int:
                          "val_trips": args.val_trips, "val_seed": VAL_SEED},
             "train_seconds": round(seconds, 1), "device": device, "envs": n_envs, "workers": args.workers,
             "config": {k: v for k, v in cfg.items() if k != "lib"},
+            "reward": _campus().envmod.reward_weights(args.task),
             "hyperparameters": {k: getattr(args, k) for k in ("net", "n_steps", "batch", "lr", "gamma", "log_std",
                                                               "utd", "buffer", "learning_starts", "target_kl",
                                                               "chunks")},

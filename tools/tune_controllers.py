@@ -9,6 +9,12 @@ policies/controllers.json. The held-out cars and the perturbation are not
 used: they are the test.
 
     python tools/tune_controllers.py --target-speed 4 --trips 60
+
+--task and --car tune for another task or car (rc_twin_env.py); --out then
+keeps those gains apart from policies/controllers.json, which the residual
+policies are built on:
+
+    python tools/tune_controllers.py --kinds pure_pursuit --task stop --car unity --out policies/controllers_unity_stop.json
 """
 
 from __future__ import annotations
@@ -56,6 +62,8 @@ def main(argv=None) -> int:
     ap.add_argument("--target-speed", type=float, default=4.0)
     ap.add_argument("--trips", type=int, default=60)
     ap.add_argument("--kinds", nargs="+", default=list(GRIDS))
+    ap.add_argument("--task", choices=("follow", "stop"), default="follow")
+    ap.add_argument("--car", choices=("bare", "unity", "both"), default="bare")
     ap.add_argument("--out", type=pathlib.Path, default=ROOT / "policies" / "controllers.json")
     ap.add_argument("--lib")
     args = ap.parse_args(argv)
@@ -67,13 +75,13 @@ def main(argv=None) -> int:
         cands = list(configs(kind))
         specs = [f"controller:{kind}:{json.dumps(c, separators=(',', ':'))}" for c in cands]
         rep = ev.evaluate(specs, trips=args.trips, conditions=("train",), lib=lib, seed=TUNE_SEED,
-                          target_speed=args.target_speed)
+                          target_speed=args.target_speed, task=args.task, car=args.car)
         scored = sorted(((rank_key(rep["policies"][sp]["train"]["summary"]), sp, c)
                          for sp, c in zip(specs, cands)), key=lambda t: t[0], reverse=True)
         (best_key, _, best), (second_key, _, _) = scored[0], scored[1]
         s = rep["policies"][scored[0][1]]["train"]["summary"]
         out[kind] = {"gains": best, "target_speed": args.target_speed,
-                     "tuning": {"trips": args.trips, "seed": TUNE_SEED, "candidates": len(cands),
+                     "tuning": {"task": args.task, "car": args.car, "trips": args.trips, "seed": TUNE_SEED, "candidates": len(cands),
                                 "condition": "train", "success": s["success"][0],
                                 "wall_contact": s["wall_contact"][0], "return": s["return"][0],
                                 "runner_up": {"success": second_key[0], "wall_contact": -second_key[1],

@@ -114,11 +114,12 @@ RANGES_HELD_OUT = {
 }
 REWARD = {"offset": 0.5, "steering": 0.1, "energy": 0.2, "wall": 5.0, "time": 0.5,
           "off_road": -10.0, "finish": 10.0}
-# The "stop" task's weights: its offset and steering terms are linear (tidiness()),
-# and heavy enough that a line 8 cm further off the centre costs about a quarter of
-# the progress it earns. Under REWARD, learned policies drove 3 to 4 times further
-# off the centreline than pure pursuit (Docs/policy-study.md).
-REWARD_STOP = {**REWARD, "offset": 2.0, "steering": 2.0}
+# The "stop" task's weights: its offset and steering terms are linear (tidiness()).
+# Under REWARD, PPO with history drove the stop task 25 cm off the centreline on
+# average. At weight 2 each it drove 3 cm off it, but at under half the target
+# speed: leaving the road is charged the offset weight for every tick it saves, so
+# failing grew 2.5 times dearer against progress (Docs/policy-study.md).
+REWARD_STOP = {**REWARD, "offset": 1.0, "steering": 1.0}
 FOOTPRINT_MARGIN = 0.0175   # half the Unity car's drawn tyre width [m]; not measured
 
 LOOKAHEAD_M = (0.5, 1.0, 2.0)
