@@ -54,7 +54,7 @@ def export(prefix: pathlib.Path, lib: str, check_ticks: int = 60) -> dict:
     import train_rl as rl
     meta = json.loads(prefix.with_suffix(".json").read_text(encoding="utf-8"))
     cfg = meta["config"]
-    model = rl._model_class(meta["algo"]).load(str(prefix.with_suffix(".zip")), device="cpu")
+    model = rl.load_model(prefix, meta["algo"])
     with open(prefix.with_suffix(".vecnormalize.pkl"), "rb") as f:
         vn = pickle.load(f)
     layers, head = layers_of(model, meta["algo"])
