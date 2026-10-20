@@ -7,6 +7,7 @@ RC_TWIN_LIB overrides the DLL path (default build/bin/rc_twin.dll).
 from __future__ import annotations
 
 import importlib.util
+import math
 import os
 import pathlib
 import unittest
@@ -199,6 +200,121 @@ class StopTask(unittest.TestCase):
         with self.assertRaises(ValueError):
             make(FLAT, task="race")
         env.close()
+
+
+class Car(unittest.TestCase):
+    """car=: the bare Core car, the Unity twin's car (TwinCar.cs), or both."""
+
+    def test_the_bare_car_is_the_default_and_unchanged(self):
+        env = make(ranges=envmod.RANGES_NOMINAL)
+        self.assertEqual(env.car, "bare")
+        _, info = env.reset(seed=0)
+        self.assertEqual(info["car"], "bare")
+        p = env.params
+        self.assertEqual((p.wheel_inertia, p.ackermann, p.wheel_rate_front, p.damping_front), (0.0, 0.0, 0.0, 0.0))
+        env.close()
+
+    def test_the_unity_car_is_twincars_defaults(self):
+        env = make(ranges=envmod.RANGES_NOMINAL, car="unity")
+        _, info = env.reset(seed=0)
+        self.assertEqual(info["car"], "unity")
+        p = env.params
+        m = make(ranges=envmod.RANGES_NOMINAL).nominal_params().mass
+        # TwinCar.DemoWheelRate(m, 3 Hz) and DemoDamping(m, k, 0.3), per wheel.
+        k = m * (2.0 * math.pi * 3.0) ** 2 / 4.0
+        self.assertAlmostEqual(p.wheel_inertia, 1e-5)
+        self.assertEqual(p.ackermann, 1.0)
+        self.assertAlmostEqual(p.wheel_rate_front, k)
+        self.assertAlmostEqual(p.wheel_rate_rear, k)
+        self.assertAlmostEqual(p.damping_front, 2.0 * 0.3 * math.sqrt(4.0 * k * m) / 4.0)
+        self.assertAlmostEqual(p.suspension_travel, 0.015)
+        env.close()
+
+    def test_the_springs_are_set_for_the_unladen_car(self):
+        # As in Unity: a payload loads the springs, it does not stiffen them.
+        env, nominal = make(car="unity"), make(car="unity", ranges=envmod.RANGES_NOMINAL)
+        nominal.reset(seed=0)
+        env.reset(seed=3)
+        self.assertGreater(env.sample["payload_kg"], 0.1)
+        self.assertAlmostEqual(env.params.wheel_rate_front, nominal.params.wheel_rate_front)
+        env.close()
+        nominal.close()
+
+    def test_both_draws_either_car_by_the_seed(self):
+        env = make(car="both")
+        cars = [env.reset(seed=s)[1]["car"] for s in range(20)]
+        self.assertEqual(set(cars), {"bare", "unity"})
+        self.assertEqual(cars, [env.reset(seed=s)[1]["car"] for s in range(20)], "the seed fixes the car")
+        for s in range(20):
+            _, info = env.reset(seed=s)
+            self.assertEqual(env.params.ackermann, 1.0 if info["car"] == "unity" else 0.0)
+        # The car is drawn after the randomisation, which stays as it was.
+        self.assertEqual(env.reset(seed=7)[1]["randomisation"], make().reset(seed=7)[1]["randomisation"])
+        env.close()
+
+    def test_an_unknown_car_is_refused(self):
+        with self.assertRaises(ValueError):
+            make(car="kart")
+
+    def test_the_unity_car_drives_the_stop_task(self):
+        env = make(FLAT, task="stop", target_speed=2.0, car="unity")
+        trace, rewards, info = rollout(env, StopTask.planner(env), seed=1)
+        self.assertEqual(info["status"], "reached_end")
+        env.close()
+
+
+class StopReward(unittest.TestCase):
+    """The stop task pays for a tidy line and smooth steering."""
+
+    def test_offset_and_steer_change_cost_linearly_on_the_stop_task(self):
+        self.assertEqual(envmod.tidiness("stop", -0.1, 0.05), (0.1, 0.05))
+        self.assertEqual(envmod.tidiness("stop", 0.0, -0.3), (0.0, 0.3))
+        # "follow" keeps its squares, so its results stay reproducible.
+        self.assertEqual(envmod.tidiness("follow", -0.1, 0.5), ((-0.1) ** 2, 0.5 ** 2))
+        self.assertEqual(envmod.reward_weights("follow"), envmod.REWARD)
+        stop = envmod.reward_weights("stop")
+        self.assertGreater(stop["offset"], envmod.REWARD["offset"])
+        self.assertGreater(stop["steering"], envmod.REWARD["steering"])
+
+    def test_dithering_steering_costs_on_the_stop_task(self):
+        def run(dither):
+            env = make(FLAT, task="stop", target_speed=2.0, ranges=envmod.RANGES_NOMINAL)
+            plan = StopTask.planner(env)
+            obs, info = env.reset(seed=1)
+            done, ret, k = False, 0.0, 0
+            while not done:
+                steer, thr = plan(obs)
+                obs, r, te, tr, info = env.step((steer + (dither if k % 2 else -dither), thr))
+                ret += r
+                k += 1
+                done = te or tr
+            env.close()
+            return ret, info["status"], k
+        clean, dithered = run(0.0), run(0.03)
+        self.assertEqual((clean[1], dithered[1]), ("reached_end", "reached_end"))
+        # Each tick's change of 0.06 is charged at the steering weight.
+        cost = envmod.reward_weights("stop")["steering"] * 0.06 * dithered[2]
+        self.assertGreater(clean[0] - dithered[0], 0.8 * cost)
+
+    def test_leaving_the_road_charges_the_stop_tasks_weights(self):
+        env = make(road=FLAT, ranges=envmod.RANGES_NOMINAL, task="stop")
+        trace, rewards, info = rollout(env, lambda o: (1.0, 0.5), seed=0)
+        self.assertEqual(info["status"], "left_road")
+        r = envmod.reward_weights("stop")
+        left = (env.max_time - info["time"]) / envmod.TICK
+        self.assertAlmostEqual(rewards[-1], r["off_road"] - (r["time"] + r["offset"]) * left, places=9)
+        env.close()
+
+    def test_driving_off_the_road_never_beats_staying_stopped(self):
+        out = {}
+        for name, policy in (("stopped", lambda o: (0.0, 0.0)), ("off", lambda o: (1.0, 1.0))):
+            env = make(HILL, task="stop", target_speed=1.5, ranges=envmod.RANGES_NOMINAL, max_time=20.0)
+            trace, rewards, info = rollout(env, policy, seed=0)
+            out[name] = (sum(rewards), info["status"])
+            env.close()
+        self.assertEqual(out["off"][1], "left_road")
+        self.assertEqual(out["stopped"][1], "timeout")
+        self.assertGreater(out["stopped"][0], out["off"][0], out)
 
 
 class History(unittest.TestCase):

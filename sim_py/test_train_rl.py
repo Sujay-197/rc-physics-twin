@@ -101,6 +101,31 @@ class TrainRL(unittest.TestCase):
                                                               lib_path=LIB))
                 env.close()
 
+    def test_the_car_is_recorded_and_checked_on_load(self):
+        import json
+        campus = self.rl._campus()
+        with tempfile.TemporaryDirectory() as tmp:
+            out = pathlib.Path(tmp) / "res-unity"
+            self.assertEqual(self.rl.main(["--algo", "ppo", "--residual", "--task", "stop", "--car", "unity",
+                                           "--out", str(out), *TINY]), 0)
+            meta = json.loads(out.with_suffix(".json").read_text(encoding="utf-8"))
+            self.assertEqual(meta["config"]["car"], "unity")
+
+            def env(car):
+                return campus.CampusEnv(seed=0, target_speed=4.0, history=4, lib_path=LIB, task="stop", car=car)
+            self.rl.load_policy(out, env("unity"))
+            with self.assertRaisesRegex(ValueError, "trained on the 'unity' car"):
+                self.rl.load_policy(out, env("bare"))
+            self.rl.load_policy(out, env("bare"), any_car=True)     # to measure the gap
+            # A "both" policy drives either car; a model from before the option trained on the bare car.
+            for trained, car, fits in (("both", "bare", True), ("both", "unity", True), ("unity", "both", False),
+                                       ("bare", "unity", False)):
+                self.assertEqual(self.rl.car_fits(trained, car), fits, (trained, car))
+            del meta["config"]["car"]
+            out.with_suffix(".json").write_text(json.dumps(meta), encoding="utf-8")
+            with self.assertRaisesRegex(ValueError, "trained on the 'bare' car"):
+                self.rl.load_policy(out, env("unity"))
+
 
 if __name__ == "__main__":
     unittest.main()
