@@ -1,0 +1,190 @@
+{
+ "name": "ppo-res-s1",
+ "algo": "ppo",
+ "seed": 1,
+ "timesteps": 20643840,
+ "selected": {
+  "steps": 1032192,
+  "val_success": 1.0,
+  "val_return": 295.4236525865693,
+  "val_trips": 30,
+  "val_seed": 40000
+ },
+ "train_seconds": 1245.5,
+ "device": "cuda",
+ "envs": 112,
+ "workers": 14,
+ "config": {
+  "target_speed": 4.0,
+  "history": 4,
+  "max_time": 30.0,
+  "residual": "pure_pursuit",
+  "residual_scale": 0.5
+ },
+ "hyperparameters": {
+  "net": [
+   256,
+   256
+  ],
+  "n_steps": 512,
+  "batch": 8192,
+  "lr": 0.0001,
+  "gamma": 0.995,
+  "log_std": -2.5,
+  "utd": 0.25,
+  "buffer": 2000000,
+  "learning_starts": 50000,
+  "target_kl": 0.02,
+  "chunks": 20
+ },
+ "versions": {
+  "stable_baselines3": "2.9.0",
+  "torch": "2.14.1+cu130",
+  "gymnasium": "1.4.0",
+  "numpy": "2.5.4"
+ },
+ "curve": [
+  {
+   "steps": 1032192,
+   "seconds": 55.6,
+   "mean_episode_return": 255.56374133,
+   "val_success": 1.0,
+   "val_return": 295.4236525865693
+  },
+  {
+   "steps": 2064384,
+   "seconds": 110.6,
+   "mean_episode_return": 289.7485831,
+   "val_success": 1.0,
+   "val_return": 292.6096314020142
+  },
+  {
+   "steps": 3096576,
+   "seconds": 166.6,
+   "mean_episode_return": 277.73426554,
+   "val_success": 1.0,
+   "val_return": 291.1953009903873
+  },
+  {
+   "steps": 4128768,
+   "seconds": 222.8,
+   "mean_episode_return": 310.80435415,
+   "val_success": 1.0,
+   "val_return": 290.43446389787636
+  },
+  {
+   "steps": 5160960,
+   "seconds": 281.0,
+   "mean_episode_return": 186.65612688000002,
+   "val_success": 1.0,
+   "val_return": 290.55815086788516
+  },
+  {
+   "steps": 6193152,
+   "seconds": 336.6,
+   "mean_episode_return": 259.41531984,
+   "val_success": 1.0,
+   "val_return": 288.78130367615955
+  },
+  {
+   "steps": 7225344,
+   "seconds": 396.4,
+   "mean_episode_return": 276.01817331999996,
+   "val_success": 1.0,
+   "val_return": 285.0832799949736
+  },
+  {
+   "steps": 8257536,
+   "seconds": 558.1,
+   "mean_episode_return": 241.56245457,
+   "val_success": 1.0,
+   "val_return": 283.0587699214118
+  },
+  {
+   "steps": 9289728,
+   "seconds": 617.9,
+   "mean_episode_return": 259.08891921,
+   "val_success": 1.0,
+   "val_return": 278.3601398819847
+  },
+  {
+   "steps": 10321920,
+   "seconds": 681.6,
+   "mean_episode_return": 269.01302515,
+   "val_success": 1.0,
+   "val_return": 286.2268357560758
+  },
+  {
+   "steps": 11354112,
+   "seconds": 749.3,
+   "mean_episode_return": 284.42163458,
+   "val_success": 1.0,
+   "val_return": 280.75964884760543
+  },
+  {
+   "steps": 12386304,
+   "seconds": 810.3,
+   "mean_episode_return": 299.91399323999997,
+   "val_success": 1.0,
+   "val_return": 277.1352633059605
+  },
+  {
+   "steps": 13418496,
+   "seconds": 874.5,
+   "mean_episode_return": 212.09900623000001,
+   "val_success": 1.0,
+   "val_return": 276.9556510422774
+  },
+  {
+   "steps": 14450688,
+   "seconds": 934.1,
+   "mean_episode_return": 277.80319781,
+   "val_success": 1.0,
+   "val_return": 271.6067488270411
+  },
+  {
+   "steps": 15482880,
+   "seconds": 991.4,
+   "mean_episode_return": 249.21270966,
+   "val_success": 1.0,
+   "val_return": 274.7637621726634
+  },
+  {
+   "steps": 16515072,
+   "seconds": 1041.9,
+   "mean_episode_return": 238.05817218,
+   "val_success": 1.0,
+   "val_return": 273.9037907251011
+  },
+  {
+   "steps": 17547264,
+   "seconds": 1092.6,
+   "mean_episode_return": 290.1067804,
+   "val_success": 1.0,
+   "val_return": 274.5581695814066
+  },
+  {
+   "steps": 18579456,
+   "seconds": 1143.4,
+   "mean_episode_return": 266.97442688,
+   "val_success": 1.0,
+   "val_return": 276.2634328638809
+  },
+  {
+   "steps": 19611648,
+   "seconds": 1193.6,
+   "mean_episode_return": 200.67509690999998,
+   "val_success": 1.0,
+   "val_return": 278.48422633741575
+  },
+  {
+   "steps": 20643840,
+   "seconds": 1245.5,
+   "mean_episode_return": 264.77152138,
+   "val_success": 1.0,
+   "val_return": 272.0077243168706
+  }
+ ],
+ "environment": "CampusEnv, walls on, RANGES_TRAIN, demand-weighted trips",
+ "car": "SlipX provisional defaults (not a measured car)"
+}

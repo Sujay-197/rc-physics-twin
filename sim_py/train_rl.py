@@ -256,6 +256,13 @@ def _model_class(algo: str):
     return {"ppo": sb3.PPO, "sac": sb3.SAC, "td3": sb3.TD3}[algo]
 
 
+def load_model(prefix: pathlib.Path, algo: str):
+    """The saved model, on the CPU, for acting: an off-policy model gets a
+    one-transition replay buffer, not the training one (gigabytes each)."""
+    extra = {"custom_objects": {"buffer_size": 1}} if algo in ("sac", "td3") else {}
+    return _model_class(algo).load(str(prefix.with_suffix(".zip")), device="cpu", **extra)
+
+
 def load_policy(prefix: pathlib.Path, env):
     """The policy saved at prefix, for this CampusEnv (which must run the
     same target speed and history as the training did)."""
@@ -265,7 +272,7 @@ def load_policy(prefix: pathlib.Path, env):
     if abs(cfg["target_speed"] - env.target_speed) > 1e-9 or cfg["history"] != env.history:
         raise ValueError(f"{prefix.name} trained at {cfg['target_speed']} m/s with history {cfg['history']}; "
                          f"the env runs {env.target_speed} m/s with history {env.history}")
-    model = _model_class(meta["algo"]).load(str(prefix.with_suffix(".zip")), device="cpu")
+    model = load_model(prefix, meta["algo"])
     with open(prefix.with_suffix(".vecnormalize.pkl"), "rb") as f:
         vn = pickle.load(f)
     base = build_base(env, cfg["residual"]) if cfg["residual"] else None

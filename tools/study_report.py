@@ -12,6 +12,13 @@ trips that finished, and a paired comparison with the tuned pure pursuit:
 every policy meets the same trip and car, so for each condition we count the
 trips a method finished that pure pursuit did not, and the reverse.
 
+Every trip is also classed by its route: "turn at start" when its first
+turn of more than 45 degrees comes within 3 m of the start. The task starts
+each episode at the target speed, so on those routes (about a quarter of
+the campus's stop pairs, whose first junction is 1.2 to 1.6 m from the
+stop) the car meets a 51 to 90 degree turn at 4 m/s almost at once; success
+is reported on the other trips too.
+
 Writes results/policy_study.json (every episode) and results/policy_study.md.
 
     .venv/Scripts/python tools/study_report.py --trips 100
@@ -21,6 +28,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import os
 import pathlib
 import re
@@ -59,6 +67,30 @@ def discover():
     return {k: methods[k] for k in sorted(methods, key=lambda k: ORDER.index(k) if k in ORDER else 99)}
 
 
+_TURN = {}
+
+
+def turn_at_start(trip, within: float = 3.0, angle: float = 45.0) -> bool:
+    """The route's first turn of more than `angle` degrees comes within
+    `within` m of the start."""
+    trip = tuple(trip)
+    if trip not in _TURN:
+        net = ev.campus().CampusNetwork.load()
+        pts = net.route_points(net.stops[trip[0]]["node"], net.stops[trip[1]]["node"])
+        s, prev, hit = 0.0, None, False
+        for a, b in zip(pts[:-1], pts[1:]):
+            L = math.hypot(b[0] - a[0], b[1] - a[1])
+            if L < 1e-9:
+                continue
+            h = math.degrees(math.atan2(b[1] - a[1], b[0] - a[0]))
+            if prev is not None and abs((h - prev + 180.0) % 360.0 - 180.0) > angle:
+                hit = s < within
+                break
+            prev, s = h, s + L
+        _TURN[trip] = hit
+    return _TURN[trip]
+
+
 def aggregate(report, methods, conditions):
     pol = report["policies"]
     out = {}
@@ -72,7 +104,11 @@ def aggregate(report, methods, conditions):
             base = {e["seed"]: e["status"] == "reached_end" for e in pol[BASELINE][cond]["episodes"]}
             better = sum(1 for e in eps if e["status"] == "reached_end" and not base[e["seed"]])
             worse = sum(1 for e in eps if e["status"] != "reached_end" and base[e["seed"]])
+            rest = [e for e in eps if not turn_at_start(e["trip"])]
+            tight = [e for e in eps if turn_at_start(e["trip"])]
             out[method][cond] = {"seeds": len(specs), "summary": summ, "seed_success": seed_success,
+                                 "success_turn_at_start": ev.wilson(sum(e["status"] == "reached_end" for e in tight), len(tight)),
+                                 "success_other_trips": ev.wilson(sum(e["status"] == "reached_end" for e in rest), len(rest)),
                                  "vs_pure_pursuit": {"finished_where_it_failed": better,
                                                      "failed_where_it_finished": worse,
                                                      "trips": len(eps)}}
@@ -106,6 +142,15 @@ def markdown(agg, report, methods) -> str:
                 f"| {q('speed_error', lambda x: f'{100 * x:.1f}')} | {q('steer_roughness', lambda x: f'{x:.4f}')} "
                 f"| {q('energy_wh_per_m', lambda x: f'{1000 * x:.3f}')} |")
         lines.append("")
+    lines += ["### Success by route: turn at the start or not", "",
+              "| method | condition | turn at start | other trips |", "|---|---|---|---|"]
+    for method in methods:
+        for cond in proto["conditions"]:
+            d = agg[method][cond]
+            f = lambda t: f"{100 * t[0]:.1f} ({100 * t[1]:.0f}-{100 * t[2]:.0f})"
+            lines.append(f"| {LABEL.get(method, method)} | {cond} | {f(d['success_turn_at_start'])} "
+                         f"| {f(d['success_other_trips'])} |")
+    lines.append("")
     return "\n".join(lines)
 
 

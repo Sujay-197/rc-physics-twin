@@ -56,3 +56,9 @@ campus/reference/
 # campus scenery from local map screenshots (tools/campus_scenery.py)
 unity/**/Generated/Campus/Local/
 unity/**/Generated/Campus/Local.meta
+
+# trained models (tens of MB): kept local; their metadata, learning curves and the released exports are committed
+policies/study/*.zip
+policies/study/*.pkl
+policies/v2/*.zip
+policies/v2/*.pkl

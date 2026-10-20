@@ -37,7 +37,15 @@ STUDY = ROOT / "policies" / "study"
 LOGS = ROOT / "results" / "study_logs"
 SPEED = "4"
 SEEDS = {"ppo": (0, 1, 2), "ppo-res": (0, 1, 2), "cem": (0, 1, 2),
-         "sac": (0,), "sac-res": (0,), "td3-res": (0,), "rppo": (0,)}
+         "sac": (0,), "sac-res": (0,),
+         # Not run (2026-10-20), to finish the study in an evening:
+         # - td3-res: TD3 and SAC are used interchangeably for residual control
+         #   on small racing cars (residual SAC on pure pursuit, arXiv 2505.07321),
+         #   and residual SAC is in the study;
+         # - rppo: recurrent model-free RL is competitive only with careful
+         #   architecture and hyperparameter tuning (Ni et al., ICML 2022); one
+         #   untuned run would not settle it. Docs/policy-study.md says so.
+         "td3-res": (), "rppo": ()}
 OFF_POLICY = ["--batch", "4096", "--utd", "0.0625", "--learning-starts", "20000"]
 
 METHODS = {
