@@ -30,6 +30,8 @@
 - [x] Suspension (spring/damper per corner). ADR 0008: opt-in at L2 from measured wheel rates and damping (L3 stays SlipX's); body heave, pitch and roll; per-wheel ground heights act; bump stop. The Unity twin runs DEMO springs (3 Hz, 0.3 damping, 15 mm travel) and has a speed breaker. Replace the demo values with bench measurements.
 - [x] Road-feature schema: elevation, banking, speed breakers, surface. `roads/road.schema.json` (0.1.0), two sample roads, and the road ground model in `native/src/rc_twin_road.cpp`.
 - [x] The campus in the twin. `RoadGraph`, stops, road tiles and buildings exported from `campus_fleet_man_unity` (b745220) and converted at 1/10 (`campus/`, `tools/campus_import.py`): 37 edges as road files (`roads/campus/`), the network in `campus/campus_network.json`, and **RcTwin > Build Campus Scene** in Unity (asphalt the car drives on, kerbs, buildings, stops; starts at S3).
+- [x] The real campus around the roads: buildings, land use and side roads from OpenStreetMap (ODbL), fitted to the fleet sim's schematic network by a similarity and a thin-plate-spline warp. Trees and ground cover come from local map screenshots. Drawn only (`campus/README.md`, `tools/campus_scenery.py`).
+- [x] Watch policies drive: the replay player (`build/replay/RcTwinReplay.exe`, `tools/record_drives.py --pairs`) shows every recorded policy on any stop-to-stop route.
 - [ ] Elevation and features in the fleet sim's `RoadGraph` itself (the campus is flat today; the polylines carry z, so grades come through the importer once the fleet sim has them).
 - [ ] Validate against gymkhana (planar) plus coast-down and skidpad tests.
 
@@ -50,7 +52,15 @@
   - **PPO with history** (`train_ppo.py`, 30M steps, 32 min across 14 CPU processes and the GPU): 100 % under training randomisation (2.26 m/s, 8 cm), but 97 % and 11 trips touching a wall under held-out randomisation. In this budget it does not beat the linear policy; history-conditioned adaptation is still to be earned (longer training, tuning, or a recurrent policy).
   - Pure pursuit still scores highest (it gets the car's wheelbase and steer limit built in).
   - Training also exposed three loopholes in the reward, now closed and tested: speeding, crawling, and leaving the road on purpose.
-- [ ] Held-out-parameter and perturbation evaluation. The tools are in place (`RANGES_HELD_OUT`, mid-episode `perturb`, `evaluate`, a pure-pursuit baseline); evaluating a trained policy waits on training.
+- [x] Held-out-parameter and perturbation evaluation: the policy study, [`policy-study.md`](policy-study.md). It compares tuned pure pursuit, Stanley and LQR with CEM, PPO and SAC with history, and residual PPO and SAC, at 4 m/s on 100 trips in each of three conditions, with seeds, validation-selected checkpoints and paired tests. The results:
+  - Learning from scratch finishes a few more trips with unfamiliar cars, but drives three to four times further off the line.
+  - Residual RL stays with pure pursuit.
+  - The tuned pure pursuit drives the twin by default.
+- [x] A stop-to-stop task (`task="stop"`): start at rest, finish stopped within 0.3 m of the destination. The study traced most held-out failures to episodes starting at 4 m/s just before a junction.
+- [x] The twin drives itself: the campus autopilot picks the route, drives it and stops at the destination, through `IDriver` (pure pursuit, or a learned policy exported by `tools/export_policy.py`). C# and Python are checked against each other in tests. The player is `build/campus/RcTwinCampus.exe`.
+- [ ] Three-point turns. A route that leaves a stop the way the car came in is started by turning the car at the stop, not by driving the turn.
+- [ ] Learned policies that keep a tidy line: a reward with heavier offset and steering terms, or a residual with a smaller scale, so robustness is not bought with line quality. Also tune the learners' hyperparameters, and give RecurrentPPO a fair, tuned run.
+- [ ] Match the RL environment's car to the Unity twin's (wheel inertia, Ackermann and suspension are on in Unity, off in training), or randomise over both.
 
 ## Phase 6: Empirical (optional)
 
