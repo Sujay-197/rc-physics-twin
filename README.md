@@ -92,6 +92,8 @@ python tools/edge_profiler.py roads/samples/*.json --out profiles/cache.json --s
 
 Open `unity/RcTwin` in Unity Hub with **6000.5.3f1**, run **RcTwin > Build Flat Ground Scene**, and press Play. W/S throttle and brake, A/D steer, R reset. **RcTwin > Build Campus Scene** builds the campus fleet sim's roads at 1/10 instead, the car at the S3 stop. The C# bindings can also be checked without Unity: `native/tests/csharp` (`dotnet run -- build/bin`).
 
+**RcTwin > Build Replay Scene** turns the campus into a replay of trained policies: every policy recorded by `tools/record_drives.py` drives the same trip and car at once, one coloured car each, with each trip's outcome per policy in a grid. **RcTwin > Build Replay Player** builds it as `build/replay/RcTwinReplay.exe`, with `results/drives.json` beside it. See `sim_py/README.md`.
+
 ## Layout
 
 ```

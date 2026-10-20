@@ -95,6 +95,42 @@ python -m venv .venv
 .venv/Scripts/python sim_py/evaluate_policies.py controller:pure_pursuit sb3:policies/study/ppo-res-s0 --target-speed 4
 ```
 
+### Watching them drive
+
+`tools/record_drives.py` drives each policy over the evaluation's own trips and cars, and records every drive at 25 Hz: position, heading, speed, steer, throttle and offset, plus where the car hit a wall and where the mid-trip change struck. The recording carries the campus geometry with it. By default it records the tuned controllers and every model in `policies/study/`; other models can be named as specs, with labels.
+
+```bash
+.venv/Scripts/python tools/record_drives.py --trips 20 --out results/drives.json
+```
+
+```bash
+.venv/Scripts/python tools/record_drives.py controller:pure_pursuit "sb3:policies/study/ppo-s0=PPO s0" --out results/drives.json
+```
+
+Unity plays the recording on the campus: **RcTwin > Build Replay Scene**, then Play, or the Windows player from **RcTwin > Build Replay Player**. The player is `build/replay/RcTwinReplay.exe`, and it reads `drives.json` from its own folder, or from `-drives <path>`.
+
+Each policy is a coloured car, and every one drives the same trip with the same car. The panel shows each car's outcome, time and mean offset. A grid shows every trip's outcome per policy:
+- green: finished;
+- amber: finished after touching a kerb;
+- red: left the road;
+- purple: timed out, usually pinned against a kerb.
+
+Controls:
+
+| Key | Action |
+|---|---|
+| Left / Right | change trip |
+| Up / Down | change condition |
+| C | cycle the camera: pack, chase, route, campus |
+| 1 to 9 | follow a policy |
+| Space | play or pause |
+| `[` and `]` | playback speed |
+| F5 | reload the file |
+
+`-screenshot <png>` with `-condition`, `-trip`, `-camera`, `-follow` and `-at` saves one frame and quits.
+
+The cars replay the Core states the harness scored; nothing is re-simulated in Unity.
+
 Tests:
 - `python -I sim_py/test_controllers.py` (ctest `sim_py.controllers`): geometry, LQR stability at every scheduled speed, tuned controllers driving at 4 m/s, the cornering limit, the statistics, and a deterministic harness.
 - `.venv/Scripts/python -I sim_py/test_train_rl.py` (ctest `sim_py.train_rl`; it uses `.venv` when it exists and skips otherwise): the SB3 env checker, a residual that starts from its controller, batched workers matching one process, and every algorithm training, saving and loading.

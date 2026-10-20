@@ -11,5 +11,8 @@ EditorBuildSettings:
   - enabled: 1
     path: Assets/Scenes/Campus.unity
     guid: c26a2a1a2ece94c4086e65d4e8ca91f7
+  - enabled: 1
+    path: Assets/Scenes/Replay.unity
+    guid: ab27176fdb00285429b994147ea0ddfb
   m_configObjects:
     com.unity.input.settings.actions: {fileID: -944628639613478452, guid: 052faaac586de48259a63d0c4782560b, type: 3}
