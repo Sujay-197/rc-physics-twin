@@ -145,6 +145,18 @@ class Env(unittest.TestCase):
         self.assertEqual(obs.shape, env.observation_space.shape)
 
 
+class History(unittest.TestCase):
+    def test_the_observation_keeps_exactly_history_frames(self):
+        for h in (0, 1, 4):
+            env = envmod.RcTwinEnv(HILL, history=h, ranges=envmod.RANGES_NOMINAL, lib_path=LIB)
+            obs, _ = env.reset(seed=0)
+            for _ in range(6):
+                self.assertEqual(len(obs), env.observation_size, h)
+                obs, *_ = env.step((0.0, 0.3))
+            self.assertEqual(len(obs), envmod.FRAME_SIZE + h * (envmod.FRAME_SIZE + envmod.ACTION_SIZE))
+            env.close()
+
+
 class RewardCap(unittest.TestCase):
     def test_speeding_earns_no_more_progress_than_the_target(self):
         # A 1 m/s target and full throttle: the car runs well past the

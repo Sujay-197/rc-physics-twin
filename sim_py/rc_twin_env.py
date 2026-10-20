@@ -263,6 +263,12 @@ class RcTwinEnv:
             status = "timeout"
         return self._obs(), reward, terminated, truncated, self._info(status)
 
+    def nominal_params(self) -> "dr.Params":
+        """The provisional car with this env's options, unrandomised: what a
+        controller is designed for. Built with this env's own bindings."""
+        args = type("A", (), {**self._car_opts, "payload": 0.0})()
+        return dr.car_params(self.lib, args)
+
     def close(self):
         if self._car:
             self.lib.rc_twin_destroy(self._car)
@@ -328,7 +334,9 @@ class RcTwinEnv:
             + ahead + [1.0])
 
     def _push(self, steer_a: float, thr_a: float) -> None:
-        self._hist = [(self._frame_now, (steer_a, thr_a))] + self._hist[: self.history - 1]
+        # Keep the newest `history` frames (none at history 0: a slice to
+        # history - 1 = -1 would keep one).
+        self._hist = ([(self._frame_now, (steer_a, thr_a))] + self._hist)[: self.history]
         self._last_action = (steer_a, thr_a)
         self._frame_now = self._frame(self.state)
 

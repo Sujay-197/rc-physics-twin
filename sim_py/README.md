@@ -62,11 +62,22 @@ python sim_py/train_cem.py --evaluate policies/campus_cem.json
 
 The report compares the policy with the pure-pursuit baseline under training and held-out randomisation, on trips the training never drew. It is a baseline learner, not a replacement for PPO or SAC: a linear policy cannot use the observation history, so it cannot adapt to the car the way a history-conditioned network trained with `make_gymnasium_env` and SB3 can. Tests: `python -I sim_py/test_train_cem.py` (ctest `sim_py.train_cem`).
 
-## `train_ppo.py`: PPO with observation history
+## Controllers, learned policies and the policy study
 
-PPO (stable-baselines3) over the full observation, the current frame plus four history frames with the actions taken after them, so the policy can infer the episode's car from how it has been responding (RMA-style). Observations and rewards are normalised (VecNormalize, saved next to the model).
+The full comparison is written up in `Docs/policy-study.md`.
 
-Needs the packages in `requirements-rl.txt`, kept out of the rest of the project in the repo's `.venv`:
+- **`controllers.py`: classical controllers**, using the observation and the nominal car only:
+  - pure pursuit;
+  - Stanley;
+  - a speed-scheduled LQR on the dynamic-bicycle error model.
+
+  All three share a speed loop with an optional cornering limit. Stanley and LQR take their heading error from the chord just ahead: the fleet sim's routes turn 90 degrees at junction nodes, tighter than the car can turn inside the road, so they need that anticipation.
+- **`tools/tune_controllers.py`** grid-searches each controller's gains on training-randomised cars, with seeds of its own, and freezes them in `policies/controllers.json`.
+- **`train_rl.py`** trains PPO, SAC, TD3 or RecurrentPPO, each from scratch or as a `--residual` correction on a tuned controller. Environments step in worker processes, several per process (`batched_vec_env.py`). On Windows a pipe round trip costs more than a simulation step, so batching is what scales: on 16 threads, one environment per process ran about 6k steps/s, eight per process 16k to 30k. Networks train on the GPU when torch has CUDA.
+- **`evaluate_policies.py`** drives every policy over the same trips and cars in three conditions: training cars, held-out cars, and a mid-trip change. It reports outcomes with Wilson intervals, plus driving quality (speed error, offset mean and 95th percentile, steering roughness, energy per metre). It uses all cores.
+- **`tools/run_study.py`** runs the training queue, three seeds per method, resumably.
+
+The RL packages are in `requirements-rl.txt`, installed into the repo's `.venv`:
 
 ```bash
 python -m venv .venv
@@ -77,13 +88,13 @@ python -m venv .venv
 ```
 
 ```bash
-.venv/Scripts/python sim_py/train_ppo.py --timesteps 30000000 --per-worker 8 --n-steps 512 --batch 8192
+.venv/Scripts/python sim_py/train_rl.py --algo ppo --residual --seed 0 --timesteps 20000000
 ```
 
 ```bash
-.venv/Scripts/python sim_py/train_ppo.py --evaluate policies/campus_ppo
+.venv/Scripts/python sim_py/evaluate_policies.py controller:pure_pursuit sb3:policies/study/ppo-res-s0 --target-speed 4
 ```
 
-**Using the machine.** The simulation steps on the CPU: `--workers` processes (default all but two logical CPUs), each stepping `--per-worker` environments per message (`batched_vec_env.py`). On Windows a pipe round trip costs more than a simulation step, so batching is what scales: on a 16-thread CPU, one environment per process ran about 6,000 steps/s, four per process about 18,000, eight about 25,000 to 30,000. The network trains on the GPU when torch has CUDA (`--device auto`; for an NVIDIA card install the CUDA build noted in `requirements-rl.txt`). With this small MLP the GPU is lightly loaded and the CPU sets the pace; stable-baselines3 says as much.
-
-Tests: `.venv/Scripts/python -I sim_py/test_train_ppo.py` (ctest `sim_py.train_ppo`, which uses `.venv` when it exists and skips otherwise): the campus env passes SB3's checker, batched workers step exactly as one process does, and a tiny run saves, loads and acts.
+Tests:
+- `python -I sim_py/test_controllers.py` (ctest `sim_py.controllers`): geometry, LQR stability at every scheduled speed, tuned controllers driving at 4 m/s, the cornering limit, the statistics, and a deterministic harness.
+- `.venv/Scripts/python -I sim_py/test_train_rl.py` (ctest `sim_py.train_rl`; it uses `.venv` when it exists and skips otherwise): the SB3 env checker, a residual that starts from its controller, batched workers matching one process, and every algorithm training, saving and loading.

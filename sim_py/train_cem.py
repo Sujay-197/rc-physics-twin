@@ -157,6 +157,7 @@ def main(argv=None) -> int:
     ap.add_argument("--eval-episodes", type=int, default=30)
     ap.add_argument("--out", type=pathlib.Path, default=ROOT / "policies" / "campus_cem.json")
     ap.add_argument("--evaluate", type=pathlib.Path, help="evaluate a saved policy instead of training")
+    ap.add_argument("--target-speed", type=float, default=2.0, help="[m/s]")
     ap.add_argument("--lib")
     args = ap.parse_args(argv)
 
@@ -164,15 +165,16 @@ def main(argv=None) -> int:
         policy = LinearPolicy.from_json(json.loads(args.evaluate.read_text(encoding="utf-8")))
     else:
         env = campus.CampusEnv(seed=args.seed, ranges=envmod.RANGES_TRAIN, max_time=args.max_time,
-                               lib_path=args.lib)
+                               lib_path=args.lib, target_speed=args.target_speed)
         t0 = time.perf_counter()
         policy, history = train(env, args.iterations, args.population, args.elite, args.episodes, args.seed)
         env.close()
         seconds = time.perf_counter() - t0
 
     # Evaluation on trips the training never drew: seeds far from its own.
+    # --eval-episodes 0 skips it (sim_py/evaluate_policies.py does the study's).
     eval_seed = 10_000 + args.seed
-    report = {
+    report = None if args.eval_episodes == 0 else {
         "trained_policy": {
             "train_ranges": evaluate(policy, args.eval_episodes, eval_seed, envmod.RANGES_TRAIN, args.lib),
             "held_out_ranges": evaluate(policy, args.eval_episodes, eval_seed, envmod.RANGES_HELD_OUT, args.lib),
@@ -184,17 +186,19 @@ def main(argv=None) -> int:
                                         envmod.RANGES_HELD_OUT, args.lib),
         },
     }
-    print(json.dumps(report, indent=1))
-    if args.evaluate:
+    if report is not None:
+        print(json.dumps(report, indent=1))
+    if args.evaluate and report is not None:
         d = json.loads(args.evaluate.read_text(encoding="utf-8"))
         d["evaluation"] = report
         args.evaluate.write_text(json.dumps(d, indent=1) + "\n", encoding="utf-8")
-    else:
+    elif not args.evaluate:
         args.out.parent.mkdir(parents=True, exist_ok=True)
         meta = {"trainer": "cross-entropy method, sim_py/train_cem.py",
                 "settings": {k: getattr(args, k) for k in
-                             ("iterations", "population", "elite", "episodes", "seed", "max_time")},
-                "environment": "CampusEnv, walls on, RANGES_TRAIN, target speed 2 m/s",
+                             ("iterations", "population", "elite", "episodes", "seed", "max_time",
+                              "target_speed")},
+                "environment": f"CampusEnv, walls on, RANGES_TRAIN, target speed {args.target_speed:g} m/s",
                 "car": "SlipX provisional defaults (not a measured car)",
                 "train_seconds": round(seconds, 1), "history": history, "evaluation": report}
         args.out.write_text(json.dumps(policy.to_json(meta), indent=1) + "\n", encoding="utf-8")

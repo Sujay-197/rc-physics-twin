@@ -1,0 +1,74 @@
+{
+ "pure_pursuit": {
+  "gains": {
+   "lookahead": 1.5,
+   "k_speed": 4.0,
+   "a_lat": 5.0
+  },
+  "target_speed": 4.0,
+  "tuning": {
+   "trips": 60,
+   "seed": 30000,
+   "candidates": 105,
+   "condition": "train",
+   "success": 1.0,
+   "wall_contact": 0.0,
+   "return": 297.53188246370695,
+   "runner_up": {
+    "success": 1.0,
+    "wall_contact": 0.0,
+    "return": 297.4856321198127
+   }
+  }
+ },
+ "stanley": {
+  "gains": {
+   "k": 12.0,
+   "k_soft": 2.0,
+   "k_damp": 0.06,
+   "a_lat": 12.0
+  },
+  "target_speed": 4.0,
+  "tuning": {
+   "trips": 60,
+   "seed": 30000,
+   "candidates": 336,
+   "condition": "train",
+   "success": 1.0,
+   "wall_contact": 0.0,
+   "return": 292.65333688168397,
+   "runner_up": {
+    "success": 1.0,
+    "wall_contact": 0.0,
+    "return": 292.5730137227851
+   }
+  }
+ },
+ "lqr": {
+  "gains": {
+   "q": [
+    30.0,
+    1.0,
+    0.3,
+    0.1
+   ],
+   "r": 30.0,
+   "a_lat": 12.0
+  },
+  "target_speed": 4.0,
+  "tuning": {
+   "trips": 60,
+   "seed": 30000,
+   "candidates": 320,
+   "condition": "train",
+   "success": 1.0,
+   "wall_contact": 0.0,
+   "return": 293.4427404096017,
+   "runner_up": {
+    "success": 1.0,
+    "wall_contact": 0.0,
+    "return": 293.3896420888393
+   }
+  }
+ }
+}

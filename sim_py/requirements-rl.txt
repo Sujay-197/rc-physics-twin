@@ -1,9 +1,11 @@
-# RL training (sim_py/train_ppo.py). Not needed for anything else: the twin,
-# the harness, the edge profiler, the environments and train_cem.py are
+# RL training (sim_py/train_rl.py). Not needed for anything else: the twin,
+# the harness, the edge profiler, the environments, the controllers, the
+# evaluation and train_cem.py are
 # standard library only. Versions as installed and tested 2026-10-20.
 numpy==2.5.4
 gymnasium==1.4.0
 stable-baselines3==2.9.0
+sb3-contrib==2.9.0
 torch==2.14.1
 # For an NVIDIA GPU, the CUDA build instead (tested: RTX 5060 Ti, driver 610):
 #   pip install torch==2.14.1+cu130 --index-url https://download.pytorch.org/whl/cu130
