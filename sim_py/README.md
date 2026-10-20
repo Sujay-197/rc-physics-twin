@@ -19,7 +19,13 @@ obs, reward, terminated, truncated, info = env.step((0.1, 0.5))   # steer, throt
 - **Action:** `[steer, throttle]` in [-1, 1], the same mapping as the keyboard car: steer to `steer_max` (positive left), throttle to `accel_max`, brake as negative throttle to `decel_max`. 100 Hz over 1 ms Core steps.
 - **Observation:** the current frame (`FRAME_FIELDS`, 23 values) followed by the previous `history` frames, each with the action taken after it, newest first. The frame has speed, lateral velocity, yaw rate, the tyres' built-up slip angles, wheel speeds, state of charge, achieved steer, grade along the heading, offset and heading error from the centreline, the centreline 0.5, 1 and 2 m ahead in the car's frame, and the target speed.
 - **Domain randomisation** per episode from a seeded generator: friction, payload, servo bandwidth, motor torque, tyre stiffness, battery resistance. `RANGES_TRAIN` for training, `RANGES_HELD_OUT` (disjoint) for evaluation, `RANGES_NOMINAL` for the provisional car unchanged. The ranges are training choices, not measurements.
-- **Reward** per tick: progress along the road normalised to about 1 at speed, minus offset, steering-change and energy terms (`REWARD`); leaving the road ends the episode with a penalty, reaching the end with a bonus; `max_time` truncates.
+- **Reward** per tick: progress along the road, normalised to 1 at the target speed and capped there, minus offset, steering-change, energy and wall terms and a constant time cost (`REWARD`). Reaching the end adds a bonus; `max_time` truncates. Leaving the road ends the episode with a penalty that also charges every remaining tick at the time cost plus the full offset cost, so ending an episode is never cheaper than staying on the road.
+- **Why it is shaped this way.** Each piece closes a loophole a trained policy actually found:
+  - Without the cap, finishing sooner always paid, and PPO drove at 3.7 m/s against a 2 m/s target.
+  - Without the time cost, every speed up to the target scored alike, and CEM crept along at 1.25 m/s.
+  - Without charging the remaining time, driving off the road was cheaper than being stuck, and CEM learnt to do it on purpose.
+  
+  Together they make the return highest at the target speed, on the road. Tests hold all three.
 - **Perturbation tests:** `reset(options={"perturb": {"at_s": 10, "friction": 0.5}})` changes the car mid-episode, keeping its state.
 - **`evaluate(env, policy, episodes, seed)`**: mean return, success rate, mean offset, energy. **`pure_pursuit_policy`** is a baseline that drives from the observation alone; it finishes the sample roads under nominal, training and held-out randomisation.
 - **`make_gymnasium_env(...)`** wraps it as a `gymnasium.Env` with `Box` spaces, if `gymnasium` and `numpy` are installed. Training with SB3 (PPO/SAC) needs those plus `stable-baselines3`; none are installed or required here.
@@ -55,3 +61,29 @@ python sim_py/train_cem.py --evaluate policies/campus_cem.json
 ```
 
 The report compares the policy with the pure-pursuit baseline under training and held-out randomisation, on trips the training never drew. It is a baseline learner, not a replacement for PPO or SAC: a linear policy cannot use the observation history, so it cannot adapt to the car the way a history-conditioned network trained with `make_gymnasium_env` and SB3 can. Tests: `python -I sim_py/test_train_cem.py` (ctest `sim_py.train_cem`).
+
+## `train_ppo.py`: PPO with observation history
+
+PPO (stable-baselines3) over the full observation, the current frame plus four history frames with the actions taken after them, so the policy can infer the episode's car from how it has been responding (RMA-style). Observations and rewards are normalised (VecNormalize, saved next to the model).
+
+Needs the packages in `requirements-rl.txt`, kept out of the rest of the project in the repo's `.venv`:
+
+```bash
+python -m venv .venv
+```
+
+```bash
+.venv/Scripts/python -m pip install -r sim_py/requirements-rl.txt
+```
+
+```bash
+.venv/Scripts/python sim_py/train_ppo.py --timesteps 30000000 --per-worker 8 --n-steps 512 --batch 8192
+```
+
+```bash
+.venv/Scripts/python sim_py/train_ppo.py --evaluate policies/campus_ppo
+```
+
+**Using the machine.** The simulation steps on the CPU: `--workers` processes (default all but two logical CPUs), each stepping `--per-worker` environments per message (`batched_vec_env.py`). On Windows a pipe round trip costs more than a simulation step, so batching is what scales: on a 16-thread CPU, one environment per process ran about 6,000 steps/s, four per process about 18,000, eight about 25,000 to 30,000. The network trains on the GPU when torch has CUDA (`--device auto`; for an NVIDIA card install the CUDA build noted in `requirements-rl.txt`). With this small MLP the GPU is lightly loaded and the CPU sets the pace; stable-baselines3 says as much.
+
+Tests: `.venv/Scripts/python -I sim_py/test_train_ppo.py` (ctest `sim_py.train_ppo`, which uses `.venv` when it exists and skips otherwise): the campus env passes SB3's checker, batched workers step exactly as one process does, and a tiny run saves, loads and acts.

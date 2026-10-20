@@ -45,7 +45,11 @@
 - [x] Gymnasium env around the Core. `sim_py/rc_twin_env.py`: road following at a target speed, standard library only, optional `gymnasium.Env` wrapper; tests in ctest (`sim_py.env`).
 - [x] Domain randomization and history-conditioned observations (friction, payload, servo lag, motor torque, tyre stiffness, battery resistance; seeded). A trained history-conditioned policy is still to do: needs gymnasium, numpy and SB3 installed.
 - [x] Train where the fleet runs. `sim_py/campus.py`: `CampusEnv` drives stop-to-stop trips on the campus network, drawn by demand weight and routed by shortest path as the fleet sim does; tests in ctest (`sim_py.campus`).
-- [x] A trained policy without extra packages. `sim_py/train_cem.py` trains a linear policy on the campus by the cross-entropy method (2 minutes). On 30 unseen trips: 100 % success under training randomisation (return 1361 vs the pure-pursuit baseline's 1371); 83 % and 4 kerb strikes under held-out randomisation, where the baseline holds 100 %. The gap is the expected one for a policy that cannot use the observation history; `policies/campus_cem.json` holds it and its full report.
+- [x] Trained policies on the campus (30 unseen trips each, target 2 m/s):
+  - **CEM, linear, standard library only** (`train_cem.py`, 3 min): 100 % success under both training and held-out randomisation, no wall contacts, 1.88 m/s, 6 cm mean offset.
+  - **PPO with history** (`train_ppo.py`, 30M steps, 32 min across 14 CPU processes and the GPU): 100 % under training randomisation (2.26 m/s, 8 cm), but 97 % and 11 trips touching a wall under held-out randomisation. In this budget it does not beat the linear policy; history-conditioned adaptation is still to be earned (longer training, tuning, or a recurrent policy).
+  - Pure pursuit still scores highest (it gets the car's wheelbase and steer limit built in).
+  - Training also exposed three loopholes in the reward, now closed and tested: speeding, crawling, and leaving the road on purpose.
 - [ ] Held-out-parameter and perturbation evaluation. The tools are in place (`RANGES_HELD_OUT`, mid-episode `perturb`, `evaluate`, a pure-pursuit baseline); evaluating a trained policy waits on training.
 
 ## Phase 6: Empirical (optional)

@@ -90,7 +90,9 @@ class Env(unittest.TestCase):
         trace, rewards, info = rollout(env, lambda o: (1.0, 0.5), seed=0)
         self.assertLess(len(trace), 20000, "the episode ended")
         self.assertEqual(info["status"], "left_road")
-        self.assertEqual(rewards[-1], envmod.REWARD["off_road"])
+        r = envmod.REWARD
+        left = (env.max_time - info["time"]) / envmod.TICK
+        self.assertAlmostEqual(rewards[-1], r["off_road"] - (r["time"] + r["offset"]) * left, places=9)
 
     def test_time_runs_out_as_truncation(self):
         env = make(road=FLAT, ranges=envmod.RANGES_NOMINAL, max_time=0.5)
@@ -141,6 +143,69 @@ class Env(unittest.TestCase):
         env = envmod.make_gymnasium_env(HILL, lib_path=LIB)
         obs, _ = env.reset(seed=0)
         self.assertEqual(obs.shape, env.observation_space.shape)
+
+
+class RewardCap(unittest.TestCase):
+    def test_speeding_earns_no_more_progress_than_the_target(self):
+        # A 1 m/s target and full throttle: the car runs well past the
+        # target, but no tick pays more than the target speed's progress.
+        env = envmod.RcTwinEnv(HILL, target_speed=1.0, ranges=envmod.RANGES_NOMINAL, lib_path=LIB)
+        env.reset(seed=0, options={"start_speed": 1.0})
+        best = -1e9
+        for _ in range(100):
+            obs, r, te, tr, info = env.step((0.0, 1.0))
+            best = max(best, r)
+            if te or tr:
+                break
+        self.assertGreater(env.state.vx, 1.5, "it is speeding")
+        self.assertLessEqual(best, 1.0 + 1e-12, "progress is capped at the target speed")
+
+    def test_the_return_is_highest_at_the_target_speed(self):
+        # Pure pursuit steering on the sample road, holding half the target,
+        # the target, or full throttle: holding the target scores best.
+        def holding(ratio):
+            def policy(obs):
+                steer, _ = envmod.pure_pursuit_policy(obs)
+                v = obs[envmod.FRAME_FIELDS.index("speed_ratio")]
+                return steer, (1.0 if ratio is None else max(-1.0, min(1.0, 3.0 * (ratio - v))))
+            return policy
+        returns = {}
+        for name, ratio in (("half", 0.5), ("target", 1.0), ("full", None)):
+            env = envmod.RcTwinEnv(HILL, target_speed=1.5, ranges=envmod.RANGES_NOMINAL, lib_path=LIB,
+                                   max_time=120.0)
+            obs, info = env.reset(seed=0, options={"start_speed": 1.5})
+            done, ret = False, 0.0
+            while not done:
+                obs, r, te, tr, info = env.step(holding(ratio)(obs))
+                ret += r
+                done = te or tr
+            returns[name] = ret
+            env.close()
+        self.assertGreater(returns["target"], returns["half"], returns)
+        self.assertGreater(returns["target"], returns["full"], returns)
+
+    def test_driving_off_the_road_never_beats_staying_stopped(self):
+        # Stopped on the road until the timeout against steering off it at
+        # once: with a time cost, the early exit must still cost more.
+        # Brake only while rolling forward: held at a standstill, the brake
+        # drives the car backwards.
+        speed = envmod.FRAME_FIELDS.index("speed_ratio")
+        stop = lambda o: (0.0, -1.0 if o[speed] > 0.01 else 0.0)
+        out = {}
+        for name, policy in (("stopped", stop), ("off", lambda o: (1.0, 1.0))):
+            env = envmod.RcTwinEnv(HILL, target_speed=1.5, ranges=envmod.RANGES_NOMINAL, lib_path=LIB,
+                                   max_time=20.0)
+            obs, info = env.reset(seed=0, options={"start_speed": 1.5})
+            done, ret = False, 0.0
+            while not done:
+                obs, rew, te, tr, info = env.step(policy(obs))
+                ret += rew
+                done = te or tr
+            out[name] = (ret, info["status"])
+            env.close()
+        self.assertEqual(out["off"][1], "left_road")
+        self.assertEqual(out["stopped"][1], "timeout")
+        self.assertGreater(out["stopped"][0], out["off"][0], out)
 
 
 if __name__ == "__main__":

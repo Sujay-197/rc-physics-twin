@@ -1,0 +1,79 @@
+{
+ "trainer": "PPO (stable-baselines3), sim_py/train_ppo.py",
+ "observation": "current frame + 4 history frames with actions, VecNormalize",
+ "settings": {
+  "n_steps": 512,
+  "batch_size": 8192,
+  "n_epochs": 10,
+  "gamma": 0.995,
+  "gae_lambda": 0.95,
+  "learning_rate": 0.0003,
+  "clip_range": 0.2,
+  "ent_coef": 0.0,
+  "net_arch": [
+   256,
+   256
+  ],
+  "log_std_init": -1.5,
+  "timesteps": 30000000,
+  "envs": 112,
+  "device": "cuda",
+  "seed": 0,
+  "max_time": 45.0
+ },
+ "versions": {
+  "stable_baselines3": "2.9.0",
+  "torch": "2.14.1+cu130",
+  "gymnasium": "1.4.0",
+  "numpy": "2.5.4"
+ },
+ "environment": "CampusEnv, walls on, RANGES_TRAIN, target speed 2 m/s",
+ "car": "SlipX provisional defaults (not a measured car)",
+ "train_seconds": 1914.3,
+ "evaluation": {
+  "trained_policy": {
+   "train_ranges": {
+    "episodes": 30,
+    "mean_return": 581.091829122121,
+    "success_rate": 1.0,
+    "episodes_touching_a_wall": 0,
+    "mean_speed_mps": 2.264270134906185,
+    "max_speed_mps": 3.3809884862078157,
+    "target_speed_mps": 2.0,
+    "mean_abs_offset_m": 0.07730434846805227
+   },
+   "held_out_ranges": {
+    "episodes": 30,
+    "mean_return": 196.44782162300828,
+    "success_rate": 0.9666666666666667,
+    "episodes_touching_a_wall": 11,
+    "mean_speed_mps": 2.1881057012059744,
+    "max_speed_mps": 3.2590732288848745,
+    "target_speed_mps": 2.0,
+    "mean_abs_offset_m": 0.11321705076358483
+   }
+  },
+  "pure_pursuit_baseline": {
+   "train_ranges": {
+    "episodes": 30,
+    "mean_return": 667.8739648884917,
+    "success_rate": 1.0,
+    "episodes_touching_a_wall": 0,
+    "mean_speed_mps": 1.9857679024845472,
+    "max_speed_mps": 1.9983967031039718,
+    "target_speed_mps": 2.0,
+    "mean_abs_offset_m": 0.010366636932257199
+   },
+   "held_out_ranges": {
+    "episodes": 30,
+    "mean_return": 669.5636029800036,
+    "success_rate": 1.0,
+    "episodes_touching_a_wall": 0,
+    "mean_speed_mps": 1.9857158583648828,
+    "max_speed_mps": 1.9984209444508514,
+    "target_speed_mps": 2.0,
+    "mean_abs_offset_m": 0.00992417576032938
+   }
+  }
+ }
+}

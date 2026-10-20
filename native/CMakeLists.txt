@@ -57,7 +57,16 @@ if(BUILD_TESTING)
              COMMAND ${Python3_EXECUTABLE} -I ${PROJECT_SOURCE_DIR}/sim_py/test_campus.py)
     add_test(NAME sim_py.train_cem
              COMMAND ${Python3_EXECUTABLE} -I ${PROJECT_SOURCE_DIR}/sim_py/test_train_cem.py)
-    set_tests_properties(tools.drive_road tools.edge_profiler sim_py.env sim_py.campus sim_py.train_cem PROPERTIES
+    # PPO needs numpy, gymnasium, stable-baselines3 and torch: the repo's .venv
+    # when it exists (sim_py/requirements-rl.txt), else the test skips itself.
+    set(RC_TWIN_RL_PYTHON "${Python3_EXECUTABLE}")
+    if(EXISTS "${PROJECT_SOURCE_DIR}/.venv/Scripts/python.exe")
+      set(RC_TWIN_RL_PYTHON "${PROJECT_SOURCE_DIR}/.venv/Scripts/python.exe")
+    endif()
+    add_test(NAME sim_py.train_ppo
+             COMMAND ${RC_TWIN_RL_PYTHON} -I ${PROJECT_SOURCE_DIR}/sim_py/test_train_ppo.py)
+    set_tests_properties(tools.drive_road tools.edge_profiler sim_py.env sim_py.campus sim_py.train_cem
+                         sim_py.train_ppo PROPERTIES
       ENVIRONMENT "RC_TWIN_LIB=$<TARGET_FILE:rc_twin>")
   endif()
 

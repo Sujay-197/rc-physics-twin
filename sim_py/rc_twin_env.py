@@ -26,13 +26,28 @@ is the provisional car unchanged. The ranges are this environment's training
 choices, not measurements; the car is SlipX's provisional defaults.
 
 Reward per control tick (weights in REWARD):
-    progress along the road / (target speed x tick)       about 1 at speed
+    progress along the road / (target speed x tick)       1 at the target speed,
+                                                          capped there
   - offset   x (lateral offset / half width)^2
   - steering x (change in steer action)^2
   - energy   x battery energy this tick / (m g x target speed x tick)
   - wall     x wall impulse this tick / (m x target speed)  (speed lost to walls)
+  - time                                                  a constant per tick
 Leaving the road ends the episode with the `off_road` reward; reaching the
 end ends it with `finish`; `max_time` truncates it.
+
+The cap and the time cost together make the target speed the task. Over a
+road of length L finished at a steady speed v, the return is about
+(L / tick) x (1/v_t - time/v) below the target and (1 - time) L / (v tick)
+above it: highest exactly at v = v_t. Without the cap the fastest car wins (a
+PPO policy found that, averaging 3.7 m/s against 2); without the time cost
+every speed up to the target scores alike (a CEM policy settled at 1.25).
+
+Leaving the road also pays for the time it saves: `off_road` plus (`time` +
+`offset`) for every tick left to `max_time`, the most a car still on the road
+can be charged per tick short of hitting a wall. Without that, a time cost
+makes ending the episode cheaper than being stuck (a CEM policy learnt to
+drive off the road on purpose).
 
 Walls (ADR 0009): RcTwinEnv(..., walls=[{"points": [[x, y], ...], "closed":
 bool}, ...]) gives the car walls it bounces off, such as kerbs, instead of
@@ -72,8 +87,8 @@ RANGES_HELD_OUT = {
     "friction": (0.5, 0.8), "payload_kg": (1.0, 2.0), "servo_bandwidth": (0.4, 0.7),
     "torque": (0.6, 0.8), "tyre_stiffness": (0.6, 0.8), "battery_resistance": (2.0, 4.0),
 }
-REWARD = {"offset": 0.5, "steering": 0.1, "energy": 0.2, "wall": 5.0, "off_road": -10.0,
-          "finish": 10.0}
+REWARD = {"offset": 0.5, "steering": 0.1, "energy": 0.2, "wall": 5.0, "time": 0.5,
+          "off_road": -10.0, "finish": 10.0}
 FOOTPRINT_MARGIN = 0.0175   # half the Unity car's drawn tyre width [m]; not measured
 
 LOOKAHEAD_M = (0.5, 1.0, 2.0)
@@ -214,7 +229,9 @@ class RcTwinEnv:
         r = REWARD
         if rc == dr.E_GROUND:
             self._push(steer_a, thr_a)
-            return self._obs(), r["off_road"], True, False, self._info("left_road")
+            left = max(0.0, self.max_time - self.t) / TICK
+            penalty = r["off_road"] - (r["time"] + r["offset"]) * left
+            return self._obs(), penalty, True, False, self._info("left_road")
         if rc != dr.OK:
             raise RuntimeError(f"rc_twin_step failed with {rc}")
         cur = self._get_state()
@@ -228,13 +245,13 @@ class RcTwinEnv:
         self.s, self.d = self._locate(cur)
         self.state = cur
 
-        progress = (self.s - s_prev) / (self.target_speed * TICK)
+        progress = min(self.s - s_prev, self.target_speed * TICK) / (self.target_speed * TICK)
         offset = (self.d / self._half_width) ** 2
         dsteer = (steer_a - self._last_action[0]) ** 2
         energy = de * 3600.0 / (p.mass * 9.81 * self.target_speed * TICK)
         wall = hit.impulse / (p.mass * self.target_speed)
         reward = (progress - r["offset"] * offset - r["steering"] * dsteer - r["energy"] * energy
-                  - r["wall"] * wall)
+                  - r["wall"] * wall - r["time"])
 
         self._push(steer_a, thr_a)
         terminated = self.s >= self._length - p.lf
@@ -361,9 +378,10 @@ def evaluate(env: RcTwinEnv, policy, episodes: int = 5, seed: int = 0, options=N
             "mean_energy_wh": sum(energy) / episodes}
 
 
-def make_gymnasium_env(*args, **kwargs):
+def make_gymnasium_env(*args, env_cls=None, **kwargs):
     """The same environment as a gymnasium.Env with Box spaces. Needs
-    gymnasium and numpy installed."""
+    gymnasium and numpy installed. env_cls (default RcTwinEnv) picks the
+    environment, e.g. campus.CampusEnv; args and kwargs go to it."""
     import gymnasium
     import numpy as np
 
@@ -371,7 +389,7 @@ def make_gymnasium_env(*args, **kwargs):
         metadata = {"render_modes": []}
 
         def __init__(self):
-            self.inner = RcTwinEnv(*args, **kwargs)
+            self.inner = (env_cls or RcTwinEnv)(*args, **kwargs)
             n = self.inner.observation_size
             self.observation_space = gymnasium.spaces.Box(-np.inf, np.inf, (n,), np.float64)
             self.action_space = gymnasium.spaces.Box(-1.0, 1.0, (ACTION_SIZE,), np.float64)

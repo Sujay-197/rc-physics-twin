@@ -123,17 +123,27 @@ def train(env, iterations: int, population: int, elite: int, episodes: int, seed
 
 
 def evaluate(policy, episodes: int, seed: int, ranges, lib=None) -> dict:
+    """Success, wall strikes, and how it drove: speed and offset over every
+    tick (the task is the target speed on the centreline, so both matter)."""
     env = campus.CampusEnv(seed=seed, ranges=ranges, lib_path=lib)
-    total, success, hits, offsets = 0.0, 0, 0, []
+    total, success, hits, ticks, v_sum, v_max, off_sum = 0.0, 0, 0, 0, 0.0, 0.0, 0.0
     for k in range(episodes):
-        ret, info = episode(env, policy, seed + k)
-        total += ret
+        obs, info = env.reset(seed=seed + k)
+        done = False
+        while not done:
+            obs, r, te, tr, info = env.step(policy(obs))
+            total += r
+            ticks += 1
+            v_sum += env.state.vx
+            v_max = max(v_max, env.state.vx)
+            off_sum += abs(info["offset"])
+            done = te or tr
         success += info["status"] == "reached_end"
         hits += info["wall_contacts"] > 0
-        offsets.append(abs(info["offset"]))
     env.close()
     return {"episodes": episodes, "mean_return": total / episodes, "success_rate": success / episodes,
-            "episodes_touching_a_wall": hits, "mean_final_abs_offset_m": sum(offsets) / episodes}
+            "episodes_touching_a_wall": hits, "mean_speed_mps": v_sum / ticks, "max_speed_mps": v_max,
+            "target_speed_mps": env.target_speed, "mean_abs_offset_m": off_sum / ticks}
 
 
 def main(argv=None) -> int:
@@ -175,7 +185,11 @@ def main(argv=None) -> int:
         },
     }
     print(json.dumps(report, indent=1))
-    if not args.evaluate:
+    if args.evaluate:
+        d = json.loads(args.evaluate.read_text(encoding="utf-8"))
+        d["evaluation"] = report
+        args.evaluate.write_text(json.dumps(d, indent=1) + "\n", encoding="utf-8")
+    else:
         args.out.parent.mkdir(parents=True, exist_ok=True)
         meta = {"trainer": "cross-entropy method, sim_py/train_cem.py",
                 "settings": {k: getattr(args, k) for k in
