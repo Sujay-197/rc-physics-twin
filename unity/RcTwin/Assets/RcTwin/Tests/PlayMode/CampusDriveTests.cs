@@ -65,6 +65,29 @@ namespace RcTwin.Tests
         }
 
         [UnityTest]
+        public IEnumerator ARouteThatLeavesBehindTheCarTurnsItRoundFirst()
+        {
+            // At S3 the car faces down edge 22; the route to AB2 leaves the
+            // other way. It is turned at the stop, then drives there cleanly.
+            yield return Load();
+            var pilot = _car.GetComponent<TwinAutopilot>();
+            pilot.targetSpeed = 3.0;
+            Assert.IsTrue(pilot.Go("AB2"), pilot.Message);
+            StringAssert.Contains("Turned round", pilot.Message);
+            float scale = Time.timeScale;
+            Time.timeScale = 5f;
+            try
+            {
+                float t0 = Time.time;
+                while (pilot.State == TwinAutopilot.Status.Driving && Time.time - t0 < 60f) yield return null;
+            }
+            finally { Time.timeScale = scale; }
+            Assert.AreEqual(TwinAutopilot.Status.Arrived, pilot.State, pilot.Message);
+            Assert.AreEqual("AB2", pilot.CurrentStop());
+            Assert.AreEqual(0, pilot.TripWallContacts, "no kerb strikes");
+        }
+
+        [UnityTest]
         public IEnumerator HoldingAKeyTakesTheCarBack()
         {
             yield return Load();

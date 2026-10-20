@@ -15,7 +15,7 @@
 // switches between them. A new controller is a new IDriver.
 //
 // Keys: P stops or resumes the trip. The panel picks the destination and speed.
-// Command line (the player): -goto <stop> [-speed <m/s>] starts a trip;
+// Command line (the player): -goto <stop> [-speed <m/s>] [-driver learned|pure_pursuit] starts a trip;
 // -screenshot <png> [-at <s>] saves a frame that long after the start and quits.
 using System;
 using System.Collections.Generic;
@@ -59,6 +59,8 @@ namespace RcTwin
 
         public const double ControlTick = 0.01;   // [s], sim_py/rc_twin_env.py TICK
         public const double StopTolerance = 0.3, StopSpeed = 0.1;   // rc_twin_env.py STOP_TOLERANCE_M, STOP_SPEED
+        /// <summary>Facing further than this from the route's way out of the stop, the car is turned round.</summary>
+        public const double TurnAroundRad = 1.0471975511965976;   // 60 degrees
 
         private TwinCar _car;
         private CampusRoutes _net;
@@ -126,6 +128,7 @@ namespace RcTwin
             }
             var inv = System.Globalization.CultureInfo.InvariantCulture;
             if (double.TryParse(Arg("-speed"), System.Globalization.NumberStyles.Float, inv, out double v) && v > 0) targetSpeed = v;
+            if (Arg("-driver") is string drv) useLearned = drv == "learned";
             if (Arg("-goto") is string dest) StartCoroutine(GoSoon(dest));
             if (Arg("-screenshot") is string png)
             {
@@ -176,6 +179,18 @@ namespace RcTwin
             if (_net.Stops[origin].node == _net.Stops[destination].node) { Message = $"Already at {destination}."; return false; }
             _road?.Dispose();
             _road = new TwinRoad(_net.Route(origin, destination), _net.RoadWidth);
+            // A route can leave the stop the way the car came in. The twin does
+            // not drive three-point turns yet, so the car is turned at the stop,
+            // as a bus turns at a terminus, and set where the RL environment
+            // starts its episodes: on the centreline, just past the stop.
+            string turned = "";
+            var (sx, sy, _, sh) = _road.Point(_car.Params.lr + 0.05);
+            if (Math.Abs(TwinObservation.Wrap(_car.State.yaw - sh)) > TurnAroundRad)
+            {
+                if (Math.Abs(_car.State.vx) > StopSpeed) { Message = "Stop first: the route leaves the other way."; return false; }
+                _car.ResetTo(sx, sy, sh);
+                turned = " Turned round at the stop (not driven).";
+            }
             Driver = ChooseDriver();
             Driver.Reset();
             _obs = new TwinObservation(Driver.History, stopTask: true);
@@ -185,7 +200,7 @@ namespace RcTwin
             TripTime = 0.0;
             _wallsAtStart = _car.WallContacts;
             State = Status.Driving;
-            Message = $"{origin} to {destination}, {_road.Length:0.0} m.";
+            Message = $"{origin} to {destination}, {_road.Length:0.0} m.{turned}";
             DrawRoute();
             return true;
         }
