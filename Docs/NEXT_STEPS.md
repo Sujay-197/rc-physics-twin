@@ -59,8 +59,9 @@
 - [x] A stop-to-stop task (`task="stop"`): start at rest, finish stopped within 0.3 m of the destination. The study traced most held-out failures to episodes starting at 4 m/s just before a junction.
 - [x] The twin drives itself: the campus autopilot picks the route, drives it and stops at the destination, through `IDriver` (pure pursuit, or a learned policy exported by `tools/export_policy.py`). C# and Python are checked against each other in tests. The player is `build/campus/RcTwinCampus.exe`.
 - [ ] Three-point turns. A route that leaves a stop the way the car came in is started by turning the car at the stop, not by driving the turn.
-- [ ] Learned policies that keep a tidy line: a reward with heavier offset and steering terms, or a residual with a smaller scale, so robustness is not bought with line quality. Also tune the learners' hyperparameters, and give RecurrentPPO a fair, tuned run.
-- [ ] Match the RL environment's car to the Unity twin's (wheel inertia, Ackermann and suspension are on in Unity, off in training), or randomise over both.
+- [x] Match the RL environment's car to the Unity twin's: `car="unity"` (wheel inertia, Ackermann, DEMO suspension) or `"both"`, recorded with each model and checked on load. On the Unity car the stop task is much harder: the tuned pure pursuit finishes 59 % of held-out trips, against 92 % on the bare car. [`policy-study.md`](policy-study.md#closing-the-gap-to-the-unity-car).
+- [ ] The Unity autopilot on the Unity car: pure pursuit gains tuned for it (`policies/controllers_unity_stop.json`: 99 / 71 / 66 % against 91 / 59 / 69 %), and backing off a kerb when pinned, the cause of most of its failures there.
+- [ ] Learned policies that keep a tidy line without losing robustness. A linear offset and steering reward on the stop task (`REWARD_STOP`) bought the line but cost speed or held-out success: the centreline turns 90 degrees at junctions, and cutting those corners is what saves low-grip cars. Next: measure offset from a drivable, corner-cutting path; charge kerb contact per tick; validate on cars outside the training ranges; tune the learners' hyperparameters, and give RecurrentPPO a fair, tuned run.
 
 ## Phase 6: Empirical (optional)
 

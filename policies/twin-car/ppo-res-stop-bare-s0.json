@@ -1,0 +1,192 @@
+{
+ "name": "ppo-res-s0",
+ "algo": "ppo",
+ "seed": 0,
+ "timesteps": 20643840,
+ "selected": {
+  "steps": 15482880,
+  "val_success": 1.0,
+  "val_return": 178.64510466518686,
+  "val_trips": 30,
+  "val_seed": 40000
+ },
+ "train_seconds": 858.8,
+ "device": "cuda",
+ "envs": 112,
+ "workers": 14,
+ "config": {
+  "task": "stop",
+  "car": "bare",
+  "target_speed": 4.0,
+  "history": 4,
+  "max_time": 30.0,
+  "residual": "pure_pursuit",
+  "residual_scale": 0.5
+ },
+ "hyperparameters": {
+  "net": [
+   256,
+   256
+  ],
+  "n_steps": 512,
+  "batch": 8192,
+  "lr": 0.0001,
+  "gamma": 0.995,
+  "log_std": -2.5,
+  "utd": 0.25,
+  "buffer": 2000000,
+  "learning_starts": 50000,
+  "target_kl": 0.02,
+  "chunks": 20
+ },
+ "versions": {
+  "stable_baselines3": "2.9.0",
+  "torch": "2.14.1+cu130",
+  "gymnasium": "1.4.0",
+  "numpy": "2.5.4"
+ },
+ "curve": [
+  {
+   "steps": 1032192,
+   "seconds": 42.8,
+   "mean_episode_return": 76.00853354,
+   "val_success": 1.0,
+   "val_return": 153.4791580575964
+  },
+  {
+   "steps": 2064384,
+   "seconds": 86.7,
+   "mean_episode_return": 21.01324036,
+   "val_success": 1.0,
+   "val_return": 154.88497450834421
+  },
+  {
+   "steps": 3096576,
+   "seconds": 133.9,
+   "mean_episode_return": 31.67742123,
+   "val_success": 1.0,
+   "val_return": 157.595401546466
+  },
+  {
+   "steps": 4128768,
+   "seconds": 180.0,
+   "mean_episode_return": 34.84944258,
+   "val_success": 1.0,
+   "val_return": 161.690576481463
+  },
+  {
+   "steps": 5160960,
+   "seconds": 228.9,
+   "mean_episode_return": 26.88036016,
+   "val_success": 1.0,
+   "val_return": 163.27434802503652
+  },
+  {
+   "steps": 6193152,
+   "seconds": 270.8,
+   "mean_episode_return": 106.37159763,
+   "val_success": 1.0,
+   "val_return": 167.79124396034518
+  },
+  {
+   "steps": 7225344,
+   "seconds": 312.9,
+   "mean_episode_return": -29.9817911,
+   "val_success": 1.0,
+   "val_return": 171.55145316750006
+  },
+  {
+   "steps": 8257536,
+   "seconds": 354.6,
+   "mean_episode_return": -118.46457091,
+   "val_success": 1.0,
+   "val_return": 174.39039985906305
+  },
+  {
+   "steps": 9289728,
+   "seconds": 396.4,
+   "mean_episode_return": -35.28587287,
+   "val_success": 1.0,
+   "val_return": 175.84808936286794
+  },
+  {
+   "steps": 10321920,
+   "seconds": 438.1,
+   "mean_episode_return": 70.4988903,
+   "val_success": 1.0,
+   "val_return": 176.38046580038994
+  },
+  {
+   "steps": 11354112,
+   "seconds": 480.1,
+   "mean_episode_return": 71.09235594,
+   "val_success": 1.0,
+   "val_return": 177.35843768937943
+  },
+  {
+   "steps": 12386304,
+   "seconds": 521.9,
+   "mean_episode_return": 73.2355522,
+   "val_success": 1.0,
+   "val_return": 177.3207010182161
+  },
+  {
+   "steps": 13418496,
+   "seconds": 564.1,
+   "mean_episode_return": -239.13598749000002,
+   "val_success": 1.0,
+   "val_return": 175.9140297420873
+  },
+  {
+   "steps": 14450688,
+   "seconds": 606.4,
+   "mean_episode_return": 74.60528922,
+   "val_success": 1.0,
+   "val_return": 177.0019359683691
+  },
+  {
+   "steps": 15482880,
+   "seconds": 648.3,
+   "mean_episode_return": 74.47518984999999,
+   "val_success": 1.0,
+   "val_return": 178.64510466518686
+  },
+  {
+   "steps": 16515072,
+   "seconds": 690.5,
+   "mean_episode_return": 65.21034092,
+   "val_success": 1.0,
+   "val_return": 177.62721550101242
+  },
+  {
+   "steps": 17547264,
+   "seconds": 732.8,
+   "mean_episode_return": 139.35418018000001,
+   "val_success": 1.0,
+   "val_return": 175.83597959434528
+  },
+  {
+   "steps": 18579456,
+   "seconds": 774.8,
+   "mean_episode_return": 60.15512437,
+   "val_success": 1.0,
+   "val_return": 178.61020173727672
+  },
+  {
+   "steps": 19611648,
+   "seconds": 816.7,
+   "mean_episode_return": -26.58722711,
+   "val_success": 1.0,
+   "val_return": 177.10407252803404
+  },
+  {
+   "steps": 20643840,
+   "seconds": 858.8,
+   "mean_episode_return": 84.82996536,
+   "val_success": 1.0,
+   "val_return": 178.03447063594965
+  }
+ ],
+ "environment": "CampusEnv, walls on, RANGES_TRAIN, demand-weighted trips",
+ "car": "SlipX provisional defaults (not a measured car), bare (rc_twin_env.py: wheel inertia, Ackermann and suspension)"
+}
