@@ -1,6 +1,6 @@
 # ADR 0003: Build the twin in Unity (not Isaac Sim)
 
-**Status:** Proposed, needs explicit sign-off  **Date:** 2026-10-19
+**Status:** Accepted (signed off by the project owner, 2026-10-19)  **Date:** 2026-10-19
 
 ## Context
 

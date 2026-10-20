@@ -2,25 +2,28 @@
 
 ## Decisions needed before Phase 1
 
-- [ ] Sign off ADR 0003 (Unity instead of Isaac Sim for the twin).
-- [ ] Choose the target car: generic 1/10 electric Ackermann (provisional) or a specific kit.
-- [ ] Fork `ibrahimsel/slipx` on GitHub and decide: vendor into `core/` or git submodule.
-- [ ] Verify upstream `LICENSE` files (SlipX, Gym-Khana) and fill `THIRD_PARTY.md`.
+- [x] Sign off ADR 0003 (Unity instead of Isaac Sim for the twin). Accepted 2026-10-19.
+- [x] Choose the target car: generic 1/10 electric Ackermann, `provisional`, until real numbers come from `hardware-bom.md`.
+- [x] Fork `ibrahimsel/slipx` on GitHub and decide: vendor into `core/` or git submodule. Forked ([Sujay-197/slipx](https://github.com/Sujay-197/slipx)); **vendored** into `core/` at `ebdbf3f`.
+- [ ] Verify upstream `LICENSE` files (SlipX, Gym-Khana) and fill `THIRD_PARTY.md`. SlipX done 2026-10-19; Gym-Khana still open.
 - [ ] Confirm Unity version and whether it can load a C++ native plugin on the dev machine (Windows).
 - [ ] Open `rc_transit/docs/hardware-bom.md` in the fleet repo; extract any real mass, wheelbase, motor, battery numbers.
 
 ## Phase 1: Foundation
 
-- [ ] Fork SlipX; pin a commit; build `slipx_core` standalone; run `slipx-conformance`.
-- [ ] Wrap Core in a C ABI (`step`, `reset`, `set_params`, `get_state`, ground-query callback).
-- [ ] Unity: load the plugin, drive the reference car on flat ground with keyboard input.
+- [x] Fork SlipX; pin a commit; build `slipx_core` standalone; run `slipx-conformance`. Pinned `ebdbf3f`; built and run with zig/Clang 21, see [`slipx-windows-build.md`](slipx-windows-build.md).
+- [ ] Repeat that build with MSVC once the Windows SDK is installed, including the Python bindings and the `slipx-conformance` console script.
+- [x] Wrap Core in a C ABI (`step`, `reset`, `set_params`, `get_state`). `native/`: `rc_twin.dll`, tested bit-identical against the Core. The ground-query callback moves to Phase 2, where the Core change that consumes it lands.
+- [x] Unity: load the plugin, drive the reference car on flat ground with keyboard input. `unity/RcTwin`, scene `Assets/Scenes/FlatGround.unity`. Verified in Unity 6000.5.3f1 batch mode on 2026-10-19: 5/5 Edit Mode tests (plugin load, defaults, driving, frame mapping) and 2/2 Play Mode tests (simulated W then A drives forward then turns left on the real transform; R resets to rest).
 - [ ] Headless harness implementing the same ground query (for CI and the profiler).
 
 ## Phase 2: Vehicle
 
-- [ ] Ackermann steering geometry.
-- [ ] Per-wheel spin state (lock-up and wheelspin representable).
-- [ ] Per-patch ground query (height, normal, friction scale).
+- [x] Per-patch ground query (height, normal, friction scale). ADR 0005: the host samples the ground under each wheel per step and the Core takes the samples as arguments (`VehicleModel::step_on`), so `step` stays pure. L2 feels grade, banking and per-wheel grip; L0/L1 refuse anything but level ground. Level ground is bit-identical to before (216 SlipX core tests, 6 conformance hashes unchanged).
+- [x] Ground-query callback in the C ABI (`rc_twin_set_ground_query`, ABI v2), and `RaycastGround` + `GroundSurface` in Unity. The FlatGround scene has a hill, a banked strip and an ice patch; Play Mode tests drive all three.
+- [ ] Ackermann steering geometry. SlipX documents parallel steer as deliberate: it has no identifiable Ackermann parameter (its ADR-0009). Needs a parameter we can measure on the real car (steering linkage geometry) before it is worth adding.
+- [ ] Per-wheel spin state (lock-up and wheelspin representable). SlipX ADR-0027 closes the longitudinal loop without wheel inertia on purpose; adding it is a new state per wheel and a stiff fast mode at 1 kHz, so it needs its own ADR.
+- [ ] Per-wheel height differences (twist, kerbs) and speed breakers need suspension: Phase 3 / L3.
 
 ## Phase 3: Road
 

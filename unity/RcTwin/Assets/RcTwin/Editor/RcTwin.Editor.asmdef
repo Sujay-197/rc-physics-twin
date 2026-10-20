@@ -1,0 +1,8 @@
+{
+    "name": "RcTwin.Editor",
+    "rootNamespace": "RcTwin.EditorTools",
+    "references": ["RcTwin.Runtime"],
+    "includePlatforms": ["Editor"],
+    "excludePlatforms": [],
+    "autoReferenced": true
+}

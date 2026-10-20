@@ -1,0 +1,374 @@
+# SlipX CI.
+#
+# Four things are checked here that a test suite alone would not establish,
+# and each corresponds to a requirement that is otherwise only a promise in a
+# document:
+#
+#   dependency-lint    NFR-06. slipx_core must not acquire a dependency on any
+#                      layer above it. This will be broken by accident, not on
+#                      purpose, and a build that breaks is the only reliable
+#                      way to notice.
+#   licence            NFR-01. Apache-2.0 throughout, no copyleft anywhere.
+#   determinism        NFR-02. The canonical run's trajectory hash, compared
+#                      against the published reference for this exact build.
+#   version            NFR-09. The version is written in four places and they
+#                      have to agree, and the schema version is a separate
+#                      number that must not be quietly coupled to them.
+#   core-only          CORE-01. The core builds and passes its full test suite
+#                      with every layer above it absent, including
+#                      slipx_schema. Asserted by configuring with them off,
+#                      because the claim is otherwise unfalsifiable.
+#
+# The cross-architecture job is NFR-03: bit-identity across platforms is not
+# promised, and the job exists to show what the difference actually is rather
+# than to assert it away.
+
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # ---------------------------------------------------------------- policy
+  #
+  # Cheap, fast, and they fail for reasons a compiler never would. Run first
+  # so that a pull request breaking the architecture hears about it in under a
+  # minute rather than after a matrix build.
+  policy:
+    name: Architecture and licence
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Dependency direction (NFR-06)
+        run: python3 tools/dep_lint.py
+
+      - name: Licence scan (NFR-01)
+        run: python3 tools/licence_scan.py
+
+      # Run on every commit rather than only at release time. The failure it
+      # catches is a version written in three places out of four, and the
+      # moment to find that is while the commit that did it is still on
+      # screen, not while a tag is being cut.
+      - name: Version agreement (NFR-09)
+        run: python3 tools/version_check.py
+
+      # Here for the same reason as the version check: the wheel job's pinned
+      # hash is a second copy of a published number, and the failure it catches
+      # is a reference row moved in the TSV and the CHANGELOG but not here.
+      # That failure costs a wheel build to discover in the job that uses it,
+      # and two file reads to discover in this one.
+      - name: The wheel job's pinned hash is the published one
+        run: python3 tools/check_conformance.py --pin-only
+
+  # ------------------------------------------------------------- core only
+  core-only:
+    name: slipx_core alone (CORE-01)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install GoogleTest
+        # The only dependency this job is allowed, and it is test-only: it
+        # never appears in slipx_core's link line, which tools/dep_lint.py
+        # checks separately.
+        run: sudo apt-get update && sudo apt-get install -y libgtest-dev
+
+      - name: Configure with every layer above the core switched off
+        # SLIPX_CORE_ONLY drops slipx_sim, the bindings and everything else
+        # from the build. slipx_schema is a Python package and is simply not
+        # installed in this job. If the core needs any of them, this fails.
+        run: cmake -S . -B build -DSLIPX_CORE_ONLY=ON -DSLIPX_WERROR=ON
+             -DCMAKE_BUILD_TYPE=RelWithDebInfo
+
+      - name: Build
+        run: cmake --build build -j"$(nproc)"
+
+      - name: Full core test suite, with slipx_schema absent
+        run: ctest --test-dir build --output-on-failure
+
+  # ------------------------------------------------------------------ build
+  build:
+    name: ${{ matrix.compiler }} / ${{ matrix.build_type }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        compiler: [gcc, clang]
+        build_type: [Debug, RelWithDebInfo]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libgtest-dev
+          python3 -m pip install --upgrade pip
+          python3 -m pip install pybind11 pyyaml jsonschema pytest
+
+      - name: Configure
+        env:
+          CXX: ${{ matrix.compiler == 'gcc' && 'g++' || 'clang++' }}
+        run: cmake -S . -B build
+             -DCMAKE_BUILD_TYPE=${{ matrix.build_type }}
+             -DSLIPX_BUILD_PYTHON=ON
+             -DSLIPX_WERROR=ON
+
+      - name: Build
+        run: cmake --build build -j"$(nproc)"
+
+      - name: C++ tests
+        run: ctest --test-dir build --output-on-failure -j"$(nproc)"
+
+      - name: Python tests
+        run: python3 -m pytest -q
+
+      # The two bindings are the same code compiled twice. If they disagree,
+      # every published reference hash becomes ambiguous about which one it
+      # referred to.
+      - name: C++ and Python agree on the conformance hash
+        run: |
+          from_cpp="$(build/src/orchestration/slipx_sim/slipx_conformance --quiet | tail -1)"
+          from_py="$(python3 -m slipx.conformance --quiet | tail -1)"
+          echo "C++    $from_cpp"
+          echo "Python $from_py"
+          test "$from_cpp" = "$from_py"
+        env:
+          PYTHONPATH: src/bindings/slipx:src/core/slipx_schema
+
+  # ------------------------------------------------------------------ wheel
+  #
+  # The P0 exit gate, run as written: "a third party can pip install the
+  # package, load a car directory, integrate a step-steer manoeuvre and get the
+  # same trajectory hash as CI."
+  #
+  # This is the only job that exercises pyproject.toml. Every other job builds
+  # through CMake directly and puts the extension next to the package sources,
+  # which is convenient in a checkout and is not what an outside user does. A
+  # wheel built by scikit-build-core is a different code path, and until it is
+  # run in CI the exit gate is a claim rather than a fact.
+  #
+  # The run step deliberately works from an empty directory with PYTHONPATH
+  # cleared. Testing an install from the repository root proves nothing: Python
+  # puts the working directory on sys.path, so the checkout would satisfy the
+  # imports whether the wheel contained anything or not.
+  # Pinned for the same reason the determinism job is: this job compares
+  # against a published hash, so it must run on a build that has one.
+  wheel:
+    name: pip install and exit gate (P0)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Build and install the wheel
+        run: python3 -m pip install --upgrade pip && python3 -m pip install .
+
+      # Copied out of the checkout and run from elsewhere. The script is the
+      # gate; the copy is what stops the checkout from satisfying the imports.
+      - name: The exit gate, run outside the checkout
+        env:
+          PYTHONPATH: ""
+        run: |
+          mkdir -p "${RUNNER_TEMP}/elsewhere"
+          cp tools/exit_gate.py "${RUNNER_TEMP}/elsewhere/"
+          cd "${RUNNER_TEMP}/elsewhere"
+          python3 exit_gate.py --expect "$EXPECTED_HASH"
+
+      # The console script by name, because the gate is about what a person
+      # types and `slipx-conformance` is the thing they are told to type.
+      - name: The console script agrees
+        env:
+          PYTHONPATH: ""
+        run: |
+          cd "${RUNNER_TEMP}"
+          hash="$(slipx-conformance --quiet | tail -1)"
+          echo "installed wheel: $hash"
+          test "$hash" = "$EXPECTED_HASH"
+    env:
+      # The L1/rk4 row from conformance/reference_hashes.tsv. Pinned literally
+      # rather than read from the file, because this job is asserting that an
+      # independently built artefact agrees with the published number, and
+      # reading the number from the repository the artefact was built from
+      # would make the check circular.
+      #
+      # This literal moves in the same commit as the row it copies. The policy
+      # job checks that it has (tools/check_conformance.py --pin-only), because
+      # once it was left behind and the failure surfaced here, a wheel build
+      # later, looking like a determinism bug in something already correct.
+      #
+      # The comparison is valid only because the job pins ubuntu-24.04, which
+      # pins glibc. The hash tracks libm, and this same wheel produces a
+      # different hash on a different glibc: one wheel, two hashes, measured on
+      # 2.28 and 2.39 (ADR-0033). A runner image with another C library would
+      # fail here for a reason that has nothing to do with the wheel, so the
+      # published row this literal copies names glibc 2.39 and moving the image
+      # means recording a new row first.
+      EXPECTED_HASH: 0d8f69a1e3b58038
+
+  # ------------------------------------------------------------- the sinks
+  #
+  # The optional path, run with the optional things installed (SINK-03).
+  #
+  # Every other job runs the suite with neither SDK present, which is the case
+  # that must keep working and is checked by default. That leaves the sinks
+  # themselves covered by skipped tests, and an optional path with no CI is an
+  # optional path that is broken: nothing would notice an SDK release that
+  # renamed a call until somebody with the extra installed hit it (ADR-0028).
+  sinks:
+    name: Sink extras (SINK-02, SINK-03)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install build dependencies and both sink extras
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libgtest-dev
+          python3 -m pip install --upgrade pip
+          python3 -m pip install pybind11 pyyaml jsonschema pytest
+          python3 -m pip install mcap rerun-sdk
+
+      - name: Configure and build
+        run: |
+          cmake -S . -B build -DSLIPX_BUILD_PYTHON=ON -DSLIPX_WERROR=ON
+          cmake --build build -j"$(nproc)"
+
+      - name: Python tests, with the extras present
+        run: python3 -m pytest -q
+
+      # The check that matters most here and that the test suite cannot make
+      # about itself: with the SDKs installed and importable, importing slipx
+      # must still not import them (SINK-03).
+      - name: Importing slipx imports no encoder
+        env:
+          PYTHONPATH: src/bindings/slipx:src/core/slipx_schema
+        run: |
+          python3 -c "
+          import sys, slipx, slipx.sinks
+          bad = [m for m in ('mcap', 'rerun') if m in sys.modules]
+          print('imported:', bad)
+          sys.exit(1 if bad else 0)
+          "
+
+  # ------------------------------------------------------------ determinism
+  #
+  # The job the leaderboard and replay claims rest on. It runs on a fixed
+  # build, because that is the only scope in which bit-identity is promised
+  # (NFR-02), and compares against the published reference for that build.
+  #
+  # The image and the compiler are pinned deliberately, and ubuntu-latest is
+  # wrong here specifically. This job runs with --require-row, which means a
+  # build with no published reference row fails. Under ubuntu-latest, GitHub
+  # rotating the image changes the default compiler, which changes the key the
+  # reference file is looked up by, and the job then fails for a reason that
+  # has nothing to do with determinism. That already happened once, when the
+  # image moved from GCC 11 to GCC 13.
+  #
+  # Moving these pins is a deliberate act: it needs new reference rows recorded
+  # in the same commit. That is the intended cost. Every other job stays on
+  # ubuntu-latest, so a new toolchain is still exercised, just not by the job
+  # whose whole purpose is to hold one build fixed.
+  determinism:
+    name: Determinism conformance (NFR-02)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libgtest-dev g++-13
+
+      - name: Configure
+        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=RelWithDebInfo
+             -DCMAKE_CXX_COMPILER=g++-13
+
+      - name: Build
+        run: cmake --build build -j"$(nproc)"
+
+      # --require-row: this is a designated reference runner, so a build with
+      # no published row is a failure here even though it is merely
+      # unremarkable elsewhere.
+      - name: Compare against the published reference hashes
+        run: python3 tools/check_conformance.py --require-row
+
+      - name: The same build, run twice, must agree bit for bit
+        run: |
+          first="$(build/src/orchestration/slipx_sim/slipx_conformance --quiet | tail -1)"
+          second="$(build/src/orchestration/slipx_sim/slipx_conformance --quiet | tail -1)"
+          echo "$first"
+          test "$first" = "$second"
+
+      - name: Publish the manifest
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: run-manifests
+          path: build/src/orchestration/slipx_sim/*.manifest.json
+
+  # ------------------------------------------------------- cross-architecture
+  #
+  # NFR-03: cross-platform bit-identity is explicitly NOT guaranteed, and the
+  # conformance suite asserts agreement within a stated tolerance instead.
+  #
+  # This job is deliberately non-blocking and deliberately verbose. Its output
+  # is the evidence behind the documented limitation: if the aarch64 hash
+  # matches x86-64, that is worth knowing and is still not promised; if it
+  # differs, the trajectory comparison below says by how much, and that number
+  # is what the tolerance should be set from.
+  #
+  # Native aarch64 hardware, not emulation. This ran under qemu until the
+  # host's qemu rotated with the runner image and cc1plus began taking SIGSEGV
+  # at startup on an arbitrary translation unit each run, including files that
+  # had not changed since the job was last green. That is a failure of the
+  # emulator and it says nothing about aarch64, which is the one thing this job
+  # exists to say something about. It is also the better evidence: the hash
+  # difference this job measures comes from libm, and libm on real hardware is
+  # what an aarch64 user actually runs.
+  cross-arch:
+    name: aarch64 agreement (NFR-03)
+    runs-on: ubuntu-24.04-arm
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install build dependencies
+        run: sudo apt-get update && sudo apt-get install -y cmake g++
+
+      - name: Configure and build
+        run: |
+          cmake -S . -B build -DCMAKE_BUILD_TYPE=RelWithDebInfo \
+                              -DSLIPX_BUILD_TESTS=OFF
+          cmake --build build -j"$(nproc)"
+
+      - name: Conformance, and what it is evidence of
+        run: |
+          echo "--- aarch64 conformance ---"
+          build/src/orchestration/slipx_sim/slipx_conformance
+          echo
+          echo "Compare the trajectory hash and the final state above with"
+          echo "the x86-64 reference. NFR-03 promises agreement to a stated"
+          echo "tolerance, not bit-identity; a differing hash here is the"
+          echo "documented behaviour and not a bug."

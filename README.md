@@ -2,7 +2,7 @@
 
 High-fidelity, physics-first digital twin of a 1/10-scale electric Ackermann RC car, built to plug into a fleet-management simulation.
 
-> **Status:** Phase 0 (docs and scaffolding). No code yet. See [`Docs/NEXT_STEPS.md`](Docs/NEXT_STEPS.md).
+> **Status:** Phase 1 (foundation). SlipX is vendored in `core/`, the `rc_twin` C ABI builds and passes its tests, and the Unity project drives the car on flat ground (Edit and Play Mode tests pass in the editor). See [`Docs/NEXT_STEPS.md`](Docs/NEXT_STEPS.md).
 
 ## Why
 
@@ -40,11 +40,40 @@ What it models (target):
                     +--------------------------+
 ```
 
-## Layout (planned)
+## Build and run (Windows)
+
+No admin rights or MSVC needed: the bootstrap puts Zig (Clang 21), CMake and Ninja in `.toolchain/`.
+
+```bash
+python tools/bootstrap_toolchain.py
+```
+
+```bash
+.toolchain/venv/Scripts/cmake -S . -B build -G Ninja -DCMAKE_TOOLCHAIN_FILE=.toolchain/zig-toolchain.cmake
+```
+
+```bash
+.toolchain/venv/Scripts/cmake --build build
+```
+
+```bash
+.toolchain/venv/Scripts/ctest --test-dir build --output-on-failure
+```
+
+Then copy the plugin into Unity (close the editor first; it keeps native plugins loaded):
+
+```bash
+.toolchain/venv/Scripts/cmake --build build --target unity_plugin
+```
+
+Open `unity/RcTwin` in Unity Hub with **6000.5.3f1**, run **RcTwin > Build Flat Ground Scene**, and press Play. W/S throttle and brake, A/D steer, R reset. The C# bindings can also be checked without Unity: `native/tests/csharp` (`dotnet run -- build/bin`).
+
+## Layout
 
 ```
-core/            forked SlipX dynamics core (C++17) + our extensions
-unity/           Unity package: native plugin binding, ground provider, manual control
+core/            SlipX vendored at ebdbf3f (C++17); our changes listed in THIRD_PARTY.md
+native/          rc_twin: C ABI over the Core (rc_twin.dll), with C, C++ and C# tests
+unity/RcTwin/    Unity 6 project: P/Invoke bindings, keyboard car, flat-ground scene builder
 sim_py/          Python bindings, gymkhana cross-validation, SB3 training
 cars/            versioned car directories (YAML), every set labeled measured|identified|provisional
 roads/           road-feature schema and sample data (grade, speed breakers, friction)
@@ -61,7 +90,7 @@ third_party/     vendored/forked upstream code with licenses preserved
 | [ApexSim](https://github.com/pzimbrod/apexsim) | Apache-2.0 | Reference only (track CSV with elevation and banking) |
 | [TLabVehiclePhysics](https://github.com/tlabaltoh/tlabvehiclephysics) | MIT (per directory listing) | Reference only |
 
-License facts came from PyPI metadata and GitHub badges, not from the upstream `LICENSE` files. **Verify each `LICENSE` before vendoring code.** See [`THIRD_PARTY.md`](THIRD_PARTY.md).
+SlipX's licence was checked against its `LICENSE` and `NOTICE` files at the pinned commit. The others still come from PyPI metadata and GitHub badges: **verify each `LICENSE` before vendoring code.** See [`THIRD_PARTY.md`](THIRD_PARTY.md).
 
 ## License
 
