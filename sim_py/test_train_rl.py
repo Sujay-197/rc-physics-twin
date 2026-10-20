@@ -20,7 +20,7 @@ ROOT = HERE.parent
 sys.path.insert(0, str(HERE))
 HAVE = all(importlib.util.find_spec(m) for m in ("numpy", "gymnasium", "stable_baselines3", "sb3_contrib", "torch"))
 LIB = os.environ.get("RC_TWIN_LIB") or str(ROOT / "build" / "bin" / "rc_twin.dll")
-TINY = ["--timesteps", "1024", "--workers", "1", "--per-worker", "2", "--n-steps", "256", "--batch", "256",
+TINY = ["--timesteps", "1024", "--chunks", "2", "--val-trips", "2", "--workers", "1", "--per-worker", "2", "--n-steps", "256", "--batch", "256",
         "--net", "32", "32", "--learning-starts", "256", "--buffer", "10000", "--device", "cpu",
         "--max-time", "5", "--lib", LIB]
 

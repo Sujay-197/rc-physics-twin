@@ -1,10 +1,14 @@
 #!/usr/bin/env python3
 """Run the policy study's training queue (Docs/policy-study.md), resumably.
 
-Every method trains with three seeds. The queue runs seed 0 of every method
-first, so a complete first comparison exists early, then seeds 1 and 2. A run
-whose model already exists is skipped, so the queue can be stopped and
-restarted. Each run logs to results/study_logs/<name>.log.
+The cheap methods (PPO, residual PPO, CEM: minutes per run) train with
+three seeds; the slow ones (SAC, residual SAC, residual TD3, RecurrentPPO:
+about an hour per run) with one, which keeps the study near five hours
+instead of twelve. Every run keeps its best checkpoint on validation trips
+(train_rl.py), so the methods are compared on the same model-selection rule. The queue runs seed 0 of every method first, so a complete
+first comparison exists early. A run whose model already exists is skipped,
+so the queue can be stopped and restarted. Each run logs to
+results/study_logs/<name>.log.
 
 Budgets are set per method from measured throughput on the development
 machine (16 threads, RTX 5060 Ti), aiming at comparable wall-clock per run:
@@ -32,7 +36,8 @@ PY = str(ROOT / ".venv" / "Scripts" / "python.exe")
 STUDY = ROOT / "policies" / "study"
 LOGS = ROOT / "results" / "study_logs"
 SPEED = "4"
-SEEDS = (0, 1, 2)
+SEEDS = {"ppo": (0, 1, 2), "ppo-res": (0, 1, 2), "cem": (0, 1, 2),
+         "sac": (0,), "sac-res": (0,), "td3-res": (0,), "rppo": (0,)}
 OFF_POLICY = ["--batch", "4096", "--utd", "0.0625", "--learning-starts", "20000"]
 
 METHODS = {
@@ -62,7 +67,7 @@ def main(argv=None) -> int:
     ap.add_argument("--only", nargs="+", choices=list(METHODS))
     args = ap.parse_args(argv)
     methods = args.only or list(METHODS)
-    queue = [(m, s) for s in SEEDS for m in methods]
+    queue = [(m, s) for s in (0, 1, 2) for m in methods if s in SEEDS[m]]
     LOGS.mkdir(parents=True, exist_ok=True)
     for method, seed in queue:
         cmd, done_marker = command(method, seed)

@@ -22,6 +22,15 @@ available). Observations and rewards are normalised (VecNormalize); its
 statistics and the run's settings are saved with the model:
 <out>.zip, <out>.vecnormalize.pkl, <out>.json. load_policy() turns them back
 into a policy for sim_py/evaluate_policies.py.
+
+Model selection: training runs in --chunks pieces; after each, the current
+policy drives --val-trips validation trips (training randomisation, seeds
+from VAL_SEED, disjoint from tuning and test) and the best checkpoint so far
+is kept, ranked by success then mean return. <out> is that checkpoint;
+<out>.final.* is where training ended. PPO-family runs decay the learning
+rate linearly to zero across the chunks and stop each update at --target-kl,
+because unchecked PPO drifts: an early residual PPO run beat its controller
+at 3M steps and had fallen well below it by 20M.
 """
 
 from __future__ import annotations
@@ -43,6 +52,7 @@ if str(HERE) not in sys.path:
     sys.path.insert(0, str(HERE))
 
 ALGOS = ("ppo", "sac", "td3", "rppo")
+VAL_SEED = 40_000
 
 
 def _load(name, path):
@@ -151,12 +161,13 @@ def build_model(algo: str, venv, args, device: str):
         from stable_baselines3 import PPO
         return PPO("MlpPolicy", venv, n_steps=args.n_steps, batch_size=args.batch, n_epochs=10, gamma=args.gamma,
                    gae_lambda=0.95, learning_rate=args.lr, clip_range=0.2, ent_coef=0.0, seed=args.seed,
+                   target_kl=args.target_kl,
                    device=device, policy_kwargs=dict(net_arch=net, log_std_init=args.log_std), verbose=0)
     if algo == "rppo":
         from sb3_contrib import RecurrentPPO
         return RecurrentPPO("MlpLstmPolicy", venv, n_steps=args.n_steps, batch_size=args.batch, n_epochs=10,
                             gamma=args.gamma, gae_lambda=0.95, learning_rate=args.lr, clip_range=0.2,
-                            ent_coef=0.0, seed=args.seed, device=device,
+                            ent_coef=0.0, seed=args.seed, device=device, target_kl=args.target_kl,
                             policy_kwargs=dict(net_arch=net, log_std_init=args.log_std, lstm_hidden_size=128,
                                                enable_critic_lstm=True), verbose=0)
     grad = max(1, int(round(venv.num_envs * args.utd)))
@@ -210,6 +221,33 @@ class LoadedPolicy:
         return float(a[0]), float(a[1])
 
 
+class Validator:
+    """Scores the current model on fixed validation trips (training
+    randomisation, VAL_SEED onward), deterministically, in this process."""
+
+    def __init__(self, cfg: dict, algo: str, trips: int):
+        c = _campus()
+        self.env = c.CampusEnv(seed=VAL_SEED, ranges=c.envmod.RANGES_TRAIN, lib_path=cfg["lib"],
+                               target_speed=cfg["target_speed"], history=cfg["history"], max_time=60.0)
+        self.base = build_base(self.env, cfg["residual"]) if cfg["residual"] else None
+        self.meta = {"algo": algo, "residual_scale": cfg["residual_scale"]}
+        self.trips = trips
+
+    def score(self, model, vn) -> tuple[float, float]:
+        policy = LoadedPolicy(model, self.meta, vn.obs_rms, vn.clip_obs, vn.epsilon, self.base)
+        ok, total = 0, 0.0
+        for k in range(self.trips):
+            obs, info = self.env.reset(seed=VAL_SEED + k)
+            policy.reset()
+            done = False
+            while not done:
+                obs, r, te, tr, info = self.env.step(policy(obs))
+                total += r
+                done = te or tr
+            ok += info["status"] == "reached_end"
+        return ok / self.trips, total / self.trips
+
+
 def _model_class(algo: str):
     if algo == "rppo":
         from sb3_contrib import RecurrentPPO
@@ -238,6 +276,8 @@ def load_policy(prefix: pathlib.Path, env):
 DEFAULTS = {
     # on-policy: many environments, long rollouts, big batches
     "ppo": dict(per_worker=8, n_steps=512, batch=8192, lr=3e-4, net=[256, 256]),
+    # a residual starts from a good controller: fine-tune gently
+    "ppo-res": dict(per_worker=8, n_steps=512, batch=8192, lr=1e-4, net=[256, 256]),
     "rppo": dict(per_worker=4, n_steps=256, batch=4096, lr=3e-4, net=[128, 128]),
     # off-policy: fewer environments, gradient steps per environment step
     "sac": dict(per_worker=2, n_steps=0, batch=1024, lr=3e-4, net=[256, 256]),
@@ -268,11 +308,14 @@ def main(argv=None) -> int:
     ap.add_argument("--utd", type=float, default=0.25, help="off-policy gradient steps per env step")
     ap.add_argument("--buffer", type=int, default=2_000_000)
     ap.add_argument("--learning-starts", type=int, default=50_000)
+    ap.add_argument("--target-kl", type=float, default=0.02, help="PPO-family: stop an update past this KL")
+    ap.add_argument("--chunks", type=int, default=20, help="validation points across the run")
+    ap.add_argument("--val-trips", type=int, default=30)
     ap.add_argument("--out", type=pathlib.Path)
     ap.add_argument("--lib")
     args = ap.parse_args(argv)
 
-    d = DEFAULTS[args.algo]
+    d = DEFAULTS["ppo-res" if args.algo == "ppo" and args.residual else args.algo]
     for k in ("per_worker", "n_steps", "batch", "lr", "net"):
         if getattr(args, k) is None:
             setattr(args, k, d[k])
@@ -297,22 +340,35 @@ def main(argv=None) -> int:
     print(f"{name}: {args.algo}, residual {args.residual}, {n_envs} envs in {args.workers} processes, "
           f"{device}, {args.timesteps} steps", flush=True)
 
+    from stable_baselines3.common.utils import get_schedule_fn
+    out.parent.mkdir(parents=True, exist_ok=True)
+    val = Validator(cfg, args.algo, args.val_trips)
     t0 = time.perf_counter()
-    chunk = max(n_envs, args.timesteps // 20)
-    done, curve = 0, []
+    chunk = max(n_envs, args.timesteps // args.chunks)
+    done, curve, best, best_at = 0, [], None, None
     while done < args.timesteps:
+        if args.algo in ("ppo", "rppo"):
+            # Linear decay to zero over the run, set per chunk (SB3's own
+            # schedule restarts with every learn() call).
+            model.lr_schedule = get_schedule_fn(args.lr * max(0.05, 1.0 - done / args.timesteps))
         model.learn(total_timesteps=chunk, reset_num_timesteps=False)
         done = model.num_timesteps
         eps = list(model.ep_info_buffer)
         mean_r = sum(e["r"] for e in eps) / max(1, len(eps))
+        vs, vr = val.score(model, venv)
         curve.append({"steps": int(done), "seconds": round(time.perf_counter() - t0, 1),
-                      "mean_episode_return": mean_r})
-        print(f"{done:10d} steps {time.perf_counter() - t0:8.1f} s  mean episode return {mean_r:9.1f}", flush=True)
+                      "mean_episode_return": mean_r, "val_success": vs, "val_return": vr})
+        mark = ""
+        if best is None or (vs, vr) > best:
+            best, best_at = (vs, vr), int(done)
+            model.save(str(out.with_suffix(".zip")))
+            venv.save(str(out.with_suffix(".vecnormalize.pkl")))
+            mark = "  * best"
+        print(f"{done:10d} steps {time.perf_counter() - t0:8.1f} s  train return {mean_r:8.1f}  "
+              f"validation {100 * vs:5.1f} % {vr:8.1f}{mark}", flush=True)
     seconds = time.perf_counter() - t0
-
-    out.parent.mkdir(parents=True, exist_ok=True)
-    model.save(str(out.with_suffix(".zip")))
-    venv.save(str(out.with_suffix(".vecnormalize.pkl")))
+    model.save(str(out.with_suffix(".final.zip")))
+    venv.save(str(out.with_suffix(".final.vecnormalize.pkl")))
     venv.close()
     import gymnasium
     import stable_baselines3
@@ -322,10 +378,13 @@ def main(argv=None) -> int:
         import sb3_contrib
         vers["sb3_contrib"] = sb3_contrib.__version__
     meta = {"name": name, "algo": args.algo, "seed": args.seed, "timesteps": int(done),
+            "selected": {"steps": best_at, "val_success": best[0], "val_return": best[1],
+                         "val_trips": args.val_trips, "val_seed": VAL_SEED},
             "train_seconds": round(seconds, 1), "device": device, "envs": n_envs, "workers": args.workers,
             "config": {k: v for k, v in cfg.items() if k != "lib"},
             "hyperparameters": {k: getattr(args, k) for k in ("net", "n_steps", "batch", "lr", "gamma", "log_std",
-                                                              "utd", "buffer", "learning_starts")},
+                                                              "utd", "buffer", "learning_starts", "target_kl",
+                                                              "chunks")},
             "versions": vers, "curve": curve,
             "environment": "CampusEnv, walls on, RANGES_TRAIN, demand-weighted trips",
             "car": "SlipX provisional defaults (not a measured car)"}
