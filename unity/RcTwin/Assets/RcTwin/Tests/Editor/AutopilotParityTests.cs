@@ -1,8 +1,9 @@
 // Edit Mode: the Unity autopilot computes what Python does. The fixture
-// (Fixtures/autopilot_parity.json, tools/make_autopilot_fixture.py) holds a
-// drive recorded in sim_py: the Core state per control tick, where the car
-// was along the route, the RL environment's frame and observation, and the
-// tuned pure pursuit's action; and campus routes from sim_py/campus.py.
+// (Fixtures/autopilot_parity.json, tools/make_autopilot_fixture.py) holds
+// drives recorded in sim_py, one per RL task ("follow" and "stop"): the Core
+// state per control tick, where the car was along the route, the RL
+// environment's frame and observation, and the tuned pure pursuit's action;
+// and campus routes from sim_py/campus.py.
 using System;
 using System.Collections.Generic;
 using System.Globalization;
@@ -34,9 +35,18 @@ namespace RcTwin.Tests
             return a;
         }
 
-        private TwinRoad Road()
+        private List<Dictionary<string, object>> Episodes()
         {
-            var road = (Dictionary<string, object>)_fx["road"];
+            var o = new List<Dictionary<string, object>>();
+            foreach (Dictionary<string, object> e in (List<object>)_fx["episodes"]) o.Add(e);
+            return o;
+        }
+
+        private static bool Stop(Dictionary<string, object> ep) => (string)ep["task"] == "stop";
+
+        private static TwinRoad Road(Dictionary<string, object> ep)
+        {
+            var road = (Dictionary<string, object>)ep["road"];
             var xyz = new List<double>();
             foreach (List<object> q in (List<object>)road["xyz"]) { xyz.Add(D(q[0])); xyz.Add(D(q[1])); xyz.Add(D(q[2])); }
             return new TwinRoad(xyz.ToArray(), D(road["width"]));
@@ -64,11 +74,24 @@ namespace RcTwin.Tests
             alphaLagFL = v[24], alphaLagFR = v[25], alphaLagRL = v[26], alphaLagRR = v[27],
         };
 
-        private List<Dictionary<string, object>> Ticks()
+        private static List<Dictionary<string, object>> Ticks(Dictionary<string, object> ep)
         {
             var o = new List<Dictionary<string, object>>();
-            foreach (Dictionary<string, object> t in (List<object>)_fx["ticks"]) o.Add(t);
+            foreach (Dictionary<string, object> t in (List<object>)ep["ticks"]) o.Add(t);
             return o;
+        }
+
+        [Test]
+        public void BothTasksAreRecorded()
+        {
+            var eps = Episodes();
+            Assert.AreEqual(new[] { "follow", "stop" }, new[] { (string)eps[0]["task"], (string)eps[1]["task"] });
+            Assert.AreEqual("reached_end", (string)eps[1]["status"], "the stop episode stopped");
+            Assert.AreEqual(TwinObservation.RemainingScaleM, D(_fx["remaining_scale_m"]));
+            var fields = (List<object>)eps[1]["frame_fields"];
+            Assert.AreEqual(TwinObservation.StopFrameSize, fields.Count);
+            Assert.AreEqual("remaining_ratio", fields[TwinObservation.RemainingIndex]);
+            for (int i = 0; i < TwinObservation.FrameSize; i++) Assert.AreEqual(TwinObservation.Fields[i], fields[i]);
         }
 
         private static void Near(double[] want, double[] got, string what)
@@ -90,29 +113,35 @@ namespace RcTwin.Tests
         [Test]
         public void FramesMatchPython()
         {
-            using var road = Road();
             var car = Car();
             double v = D(_fx["target_speed"]);
-            int k = 0;
-            foreach (var t in Ticks())
+            foreach (var ep in Episodes())
             {
-                var st = State(Arr(t["state"]));
-                var (s, d) = road.Locate(st.x, st.y);
-                Assert.AreEqual(D(t["s"]), s, Tol, $"tick {k}: s");
-                Assert.AreEqual(D(t["d"]), d, Tol, $"tick {k}: d");
-                Near(Arr(t["frame"]), TwinObservation.Frame(road, st, car, v, s, d), $"tick {k} frame");
-                k++;
+                using var road = Road(ep);
+                int k = 0;
+                foreach (var t in Ticks(ep))
+                {
+                    var st = State(Arr(t["state"]));
+                    var (s, d) = road.Locate(st.x, st.y);
+                    string at = $"{ep["task"]} tick {t["tick"]}";
+                    Assert.AreEqual(D(t["s"]), s, Tol, $"{at}: s");
+                    Assert.AreEqual(D(t["d"]), d, Tol, $"{at}: d");
+                    Near(Arr(t["frame"]), TwinObservation.Frame(road, st, car, v, s, d, Stop(ep)), $"{at} frame");
+                    k++;
+                }
+                Assert.Greater(k, 50);
             }
-            Assert.Greater(k, 50);
         }
 
         [Test]
         public void ObservationHistoryMatchesPython()
         {
             int history = (int)D(_fx["history"]);
-            var obs = new TwinObservation(history);
-            var ticks = Ticks();
-            for (int k = 0; k < ticks.Count; k++)
+            foreach (var ep in Episodes())
+            {
+            var obs = new TwinObservation(history, Stop(ep));
+            var ticks = Ticks(ep);
+            for (int k = 0; k < ticks.Count && (int)D(ticks[k]["tick"]) == k; k++)   // the every-tick stretch
             {
                 var frame = Arr(ticks[k]["frame"]);
                 if (k == 0) obs.Reset(frame);
@@ -121,7 +150,8 @@ namespace RcTwin.Tests
                     var a = Arr(ticks[k - 1]["action"]);
                     obs.Push(a[0], a[1], frame);
                 }
-                Near(Arr(ticks[k]["obs"]), obs.Vector(), $"tick {k} observation");
+                Near(Arr(ticks[k]["obs"]), obs.Vector(), $"{ep["task"]} tick {k} observation");
+            }
             }
         }
 
@@ -129,17 +159,23 @@ namespace RcTwin.Tests
         public void TunedPurePursuitMatchesPython()
         {
             var gains = (Dictionary<string, object>)_fx["pure_pursuit"];
-            var drv = PurePursuitDriver.Tuned(Car(), D(_fx["target_speed"]), D(gains["lookahead"]), D(gains["k_speed"]), D(gains["a_lat"]));
-            bool turned = false;
-            foreach (var t in Ticks())
+            foreach (var ep in Episodes())
             {
-                var want = Arr(t["action"]);
-                var (steer, throttle) = drv.Act(new DriveContext { Observation = Arr(t["obs"]), Remaining = double.NaN });
-                Assert.AreEqual(want[0], steer, Tol, "steer");
-                Assert.AreEqual(want[1], throttle, Tol, "throttle");
-                turned |= Math.Abs(steer) > 0.05;
+                var drv = PurePursuitDriver.Tuned(Car(), D(_fx["target_speed"]), D(gains["lookahead"]), D(gains["k_speed"]),
+                                                  D(gains["a_lat"]), stopTask: Stop(ep));
+                bool turned = false, braked = false;
+                foreach (var t in Ticks(ep))
+                {
+                    var want = Arr(t["action"]);
+                    var (steer, throttle) = drv.Act(new DriveContext { Observation = Arr(t["obs"]) });
+                    Assert.AreEqual(want[0], steer, Tol, $"{ep["task"]} tick {t["tick"]} steer");
+                    Assert.AreEqual(want[1], throttle, Tol, $"{ep["task"]} tick {t["tick"]} throttle");
+                    turned |= Math.Abs(steer) > 0.05;
+                    braked |= throttle < -0.05;
+                }
+                Assert.IsTrue(turned, "the fixture's drive turns");
+                if (Stop(ep)) Assert.IsTrue(braked, "and brakes for the stop");
             }
-            Assert.IsTrue(turned, "the fixture's drive turns");
         }
 
         [Test]
@@ -159,18 +195,22 @@ namespace RcTwin.Tests
         [Test]
         public void ItStopsAtTheEndWithoutReversing()
         {
-            var drv = PurePursuitDriver.Tuned(Car(), 4.0);
-            var obs = Arr(Ticks()[10]["obs"]);
+            var drv = PurePursuitDriver.Tuned(Car(), 4.0, stopTask: true);
+            var obs = Arr(Ticks(Episodes()[1])[10]["obs"]);
             obs[0] = 1.0;                                 // at the target speed
             double[] straight = { 0.5, 0.0, 1.0, 0.0, 2.0, 0.0 };
             Array.Copy(straight, 0, obs, 16, 6);          // on a straight road
-            var (_, far) = drv.Act(new DriveContext { Observation = obs, Remaining = 30.0 });
-            var (_, near) = drv.Act(new DriveContext { Observation = obs, Remaining = 0.5 });
+            int rem = TwinObservation.RemainingIndex;
+            obs[rem] = 1.0;                               // the stop is far
+            var (_, far) = drv.Act(new DriveContext { Observation = obs });
+            obs[rem] = 0.05;                              // 0.5 m to go
+            var (_, near) = drv.Act(new DriveContext { Observation = obs });
             Assert.Greater(far, near);
             Assert.Less(near, 0.0, "brakes for a stop close ahead");
             var still = (double[])obs.Clone();
             still[0] = 0.0;                               // at rest
-            var (_, atRest) = drv.Act(new DriveContext { Observation = still, Remaining = 0.0 });
+            still[rem] = 0.0;
+            var (_, atRest) = drv.Act(new DriveContext { Observation = still });
             Assert.AreEqual(0.0, atRest, "no brake at rest: it would reverse");
         }
 

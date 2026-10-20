@@ -26,12 +26,24 @@ class AutopilotFixture(unittest.TestCase):
             self.assertEqual(committed[key], fresh[key],
                              f"{key} changed: rerun tools/make_autopilot_fixture.py and the Unity Edit Mode tests")
 
+    def test_the_synthetic_policies_are_current(self):
+        doc = json.loads(fx.FIXTURE.read_text(encoding="utf-8"))
+        for name, fresh in fx.make_policies(doc).items():
+            committed = json.loads((fx.FIXTURES / name).read_text(encoding="utf-8"))
+            self.assertEqual(committed, fresh, f"{name}: rerun tools/make_autopilot_fixture.py")
+            self.assertEqual(len(committed["checks"]), 40)
+
     def test_it_covers_a_real_drive(self):
         doc = json.loads(fx.FIXTURE.read_text(encoding="utf-8"))
-        self.assertEqual(len(doc["ticks"]), fx.TICKS)
-        steers = [t["action"][0] for t in doc["ticks"]]
+        follow, stop = doc["episodes"]
+        self.assertEqual((follow["task"], stop["task"]), ("follow", "stop"))
+        self.assertEqual(len(follow["ticks"]), fx.TICKS)
+        steers = [t["action"][0] for t in follow["ticks"]]
         self.assertGreater(max(abs(s) for s in steers), 0.05, "the drive turns")
-        self.assertEqual(len(doc["ticks"][0]["obs"]), 23 + 4 * 25)
+        self.assertEqual(len(follow["ticks"][0]["obs"]), 23 + 4 * 25)
+        self.assertEqual(len(stop["ticks"][0]["obs"]), 24 + 4 * 26)
+        self.assertEqual(stop["status"], "reached_end", "the stop episode stops at the end")
+        self.assertLess(min(t["action"][1] for t in stop["ticks"]), -0.05, "and brakes for it")
 
 
 if __name__ == "__main__":

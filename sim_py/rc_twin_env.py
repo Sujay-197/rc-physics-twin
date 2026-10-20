@@ -36,6 +36,20 @@ Reward per control tick (weights in REWARD):
 Leaving the road ends the episode with the `off_road` reward; reaching the
 end ends it with `finish`; `max_time` truncates it.
 
+Two tasks (`task`):
+  "follow"  the road at the target speed, from the target speed: the episode
+            starts rolling and ends when the car passes the end. The policy
+            study (Docs/policy-study.md) trained and scored on this.
+  "stop"    stop to stop, as a bus drives: the car starts at rest and must
+            stop at the end, within STOP_TOLERANCE_M of it at under
+            STOP_SPEED, for `finish`. Running more than STOP_TOLERANCE_M
+            past the end ends it as `overshot`, charged as leaving the road. The
+            frame gains `remaining_ratio`, the distance left over
+            REMAINING_SCALE_M (1 when further), so a policy can plan the
+            stop. The study found that starting at speed is what made 22 of
+            the 90 campus routes hard: their first junction comes 1.2 to 1.6 m
+            after the stop.
+
 The cap and the time cost together make the target speed the task. Over a
 road of length L finished at a steady speed v, the return is about
 (L / tick) x (1/v_t - time/v) below the target and (1 - time) L / (v tick)
@@ -102,6 +116,16 @@ FRAME_FIELDS = (
 )
 FRAME_SIZE = len(FRAME_FIELDS)
 ACTION_SIZE = 2
+TASKS = ("follow", "stop")
+STOP_FIELDS = FRAME_FIELDS + ["remaining_ratio"]   # the "stop" task's frame
+REMAINING_SCALE_M = 10.0    # remaining_ratio's scale: from 4 m/s at 1.2 m/s^2 a stop takes 6.7 m;
+                            # the held-out cars brake at about 1.7 m/s^2 at most (weaker motor, payload)
+STOP_TOLERANCE_M = 0.3      # a stop counts this close to the end [m] ...
+STOP_SPEED = 0.1            # ... at under this speed [m/s]
+
+
+def frame_fields(task: str) -> list:
+    return list(STOP_FIELDS if task == "stop" else FRAME_FIELDS)
 SUBSTEPS, DT = 10, 0.001
 TICK = SUBSTEPS * DT
 
@@ -133,9 +157,14 @@ class RcTwinEnv:
                  ranges: dict | None = None, max_time: float = 60.0, lib_path=None,
                  wheel_inertia: float = 0.0, ackermann: float = 0.0, wheel_rate: float = 0.0,
                  damping: float = 0.0, travel: float = 0.015, walls=None,
-                 footprint_margin: float = FOOTPRINT_MARGIN):
+                 footprint_margin: float = FOOTPRINT_MARGIN, task: str = "follow"):
         if isinstance(road, (str, pathlib.Path)):
             road = json.loads(pathlib.Path(road).read_text(encoding="utf-8"))
+        if task not in TASKS:
+            raise ValueError(f"task {task!r}: one of {TASKS}")
+        self.task = task
+        self.frame_fields = frame_fields(task)
+        self.frame_size = len(self.frame_fields)
         self.target_speed = float(target_speed)
         self.history = int(history)
         self.ranges = dict(RANGES_TRAIN if ranges is None else ranges)
@@ -146,7 +175,7 @@ class RcTwinEnv:
                               wheel_rate=wheel_rate, damping=damping, travel=travel)
         self.walls = list(walls or [])
         self.footprint_margin = float(footprint_margin)
-        self.observation_size = FRAME_SIZE + self.history * (FRAME_SIZE + ACTION_SIZE)
+        self.observation_size = self.frame_size + self.history * (self.frame_size + ACTION_SIZE)
         self._road = None
         self._set_road(road)
         self._car = None
@@ -196,7 +225,7 @@ class RcTwinEnv:
         self._s0 = p.lr + 0.05
         self.lib.rc_twin_road_point(self._road, self._s0, ctypes.byref(x), ctypes.byref(y),
                                     ctypes.byref(z), ctypes.byref(h))
-        v0 = float(options.get("start_speed", self.target_speed))
+        v0 = float(options.get("start_speed", 0.0 if self.task == "stop" else self.target_speed))
         w0 = v0 / p.wheel_radius
         st = dr.State(x=x.value, y=y.value, z=z.value, yaw=h.value, vx=v0, soc=0.8, pack_v=11.1,
                       w_fl=w0, w_fr=w0, w_rl=w0, w_rr=w0)
@@ -244,6 +273,12 @@ class RcTwinEnv:
         s_prev = self.s
         self.s, self.d = self._locate(cur)
         self.state = cur
+        if self.task == "stop" and self._past_end(cur) > STOP_TOLERANCE_M:
+            # Ran through the stop: as final as leaving the road, and charged the same.
+            self._push(steer_a, thr_a)
+            left = max(0.0, self.max_time - self.t) / TICK
+            penalty = r["off_road"] - (r["time"] + r["offset"]) * left
+            return self._obs(), penalty, True, False, self._info("overshot")
 
         progress = min(self.s - s_prev, self.target_speed * TICK) / (self.target_speed * TICK)
         offset = (self.d / self._half_width) ** 2
@@ -254,7 +289,10 @@ class RcTwinEnv:
                   - r["wall"] * wall - r["time"])
 
         self._push(steer_a, thr_a)
-        terminated = self.s >= self._length - p.lf
+        if self.task == "stop":
+            terminated = (self._length - self.s <= STOP_TOLERANCE_M and abs(cur.vx) <= STOP_SPEED)
+        else:
+            terminated = self.s >= self._length - p.lf
         status = "reached_end" if terminated else "running"
         if terminated:
             reward += r["finish"]
@@ -301,6 +339,14 @@ class RcTwinEnv:
         self.lib.rc_twin_get_state(self._car, ctypes.byref(st))
         return st
 
+    def _past_end(self, st) -> float:
+        """How far the car is beyond the end of the road, along its last
+        heading [m]; negative before it."""
+        x, y, z, h = (ctypes.c_double() for _ in range(4))
+        self.lib.rc_twin_road_point(self._road, self._length, ctypes.byref(x), ctypes.byref(y),
+                                    ctypes.byref(z), ctypes.byref(h))
+        return (st.x - x.value) * math.cos(h.value) + (st.y - y.value) * math.sin(h.value)
+
     def _locate(self, st) -> tuple[float, float]:
         s, d = ctypes.c_double(), ctypes.c_double()
         self.lib.rc_twin_road_locate(self._road, st.x, st.y, ctypes.byref(s), ctypes.byref(d))
@@ -331,7 +377,8 @@ class RcTwinEnv:
             [st.vx / v_ref, st.vy, st.yaw_rate, st.lag_fl, st.lag_fr, st.lag_rl, st.lag_rr,
              st.w_fl * r / v_ref, st.w_fr * r / v_ref, st.w_rl * r / v_ref, st.w_rr * r / v_ref,
              st.soc, st.steer / p.steer_max, grade, self.d / self._half_width, heading_error]
-            + ahead + [1.0])
+            + ahead + [1.0]
+            + ([min(1.0, max(0.0, self._length - self.s) / REMAINING_SCALE_M)] if self.task == "stop" else []))
 
     def _push(self, steer_a: float, thr_a: float) -> None:
         # Keep the newest `history` frames (none at history 0: a slice to

@@ -145,6 +145,62 @@ class Env(unittest.TestCase):
         self.assertEqual(obs.shape, env.observation_space.shape)
 
 
+class StopTask(unittest.TestCase):
+    """task="stop": from rest at the start to a stop at the end."""
+
+    @staticmethod
+    def planner(env):
+        # The baseline's steering, with a speed plan that stops at the end:
+        # the remaining distance comes from the frame alone.
+        i_rem = env.frame_fields.index("remaining_ratio")
+
+        def policy(obs):
+            steer, _ = envmod.pure_pursuit_policy(obs)
+            rem = obs[i_rem] * envmod.REMAINING_SCALE_M if obs[i_rem] < 1.0 else 1e9
+            goal = min(1.0, (2.0 * 1.5 * max(0.0, rem - 0.05)) ** 0.5 / env.target_speed)
+            v = obs[0]
+            thr = max(-1.0, min(1.0, 3.0 * (goal - v)))
+            if thr < 0.0 and v <= 0.01:
+                thr = 0.0
+            return steer, thr
+        return policy
+
+    def test_it_starts_at_rest_and_reports_the_distance_left(self):
+        env = make(FLAT, task="stop", target_speed=2.0, history=2)
+        obs, _ = env.reset(seed=0)
+        self.assertEqual(env.frame_fields[-1], "remaining_ratio")
+        self.assertEqual(len(obs), env.frame_size + 2 * (env.frame_size + 2))
+        self.assertEqual(env.frame_size, envmod.FRAME_SIZE + 1)
+        self.assertAlmostEqual(obs[0], 0.0, places=9, msg="at rest")
+        self.assertEqual(obs[env.frame_size - 1], 1.0, "far from the end: the ratio saturates")
+        env.close()
+
+    def test_arriving_means_stopping_at_the_end(self):
+        env = make(FLAT, task="stop", target_speed=2.0)
+        trace, rewards, info = rollout(env, self.planner(env), seed=1)
+        self.assertEqual(info["status"], "reached_end")
+        self.assertLessEqual(env._length - env.s, envmod.STOP_TOLERANCE_M)
+        self.assertLessEqual(abs(env.state.vx), envmod.STOP_SPEED)
+        self.assertEqual(rewards[-1] > 5.0, True, "the finish bonus")
+        env.close()
+
+    def test_running_through_the_end_is_not_arriving(self):
+        env = make(FLAT, task="stop", target_speed=2.0)
+        trace, rewards, info = rollout(env, envmod.pure_pursuit_policy, seed=1)   # never brakes for the end
+        self.assertEqual(info["status"], "overshot")
+        env.close()
+
+    def test_the_follow_task_is_unchanged(self):
+        env = make(FLAT, target_speed=2.0)
+        self.assertEqual(env.task, "follow")
+        self.assertEqual(env.frame_size, envmod.FRAME_SIZE)
+        obs, _ = env.reset(seed=0)
+        self.assertAlmostEqual(obs[0], 1.0, places=6, msg="starts at the target speed")
+        with self.assertRaises(ValueError):
+            make(FLAT, task="race")
+        env.close()
+
+
 class History(unittest.TestCase):
     def test_the_observation_keeps_exactly_history_frames(self):
         for h in (0, 1, 4):
