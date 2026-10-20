@@ -14,6 +14,8 @@
 //   - the grass beyond, 1 mm below the asphalt: driveable here, but leaving
 //     the asphalt ends an RL episode;
 //   - each bus stop as a stop line across its node and a post at the kerb;
+//   - the real campus around it, drawn only: buildings, ground and trees
+//     (CampusScenery, tools/campus_scenery.py);
 //   - the car at the hub stop, S3, facing along its first edge (R returns it).
 // Unity coordinates: ISO (x, y, z) is Unity (-y, z, x).
 using System;
@@ -188,6 +190,9 @@ namespace RcTwin.EditorTools
                 text.color = Color.white;
                 label.GetComponent<MeshRenderer>().sharedMaterial = font.material;
             }
+
+            // The real campus around the roads, drawn only (CampusScenery).
+            CampusScenery.Build(grass, buildingParent.transform);
 
             // The car at the hub, facing along its node's first edge.
             var car = FlatGroundSceneBuilder.BuildCar(RcTwinNative.DefaultParams());

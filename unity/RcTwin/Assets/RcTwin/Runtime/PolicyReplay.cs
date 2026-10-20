@@ -119,6 +119,7 @@ namespace RcTwin
             _shot = Arg("-screenshot");
             if (_shot != null)
             {
+                Application.runInBackground = true;   // a player out of focus would pause and never shoot
                 _auto = false;
                 _shotAt = float.TryParse(Arg("-at"), System.Globalization.NumberStyles.Float, inv, out float at) ? at : 2f;
                 StartCoroutine(Shoot());
@@ -133,6 +134,7 @@ namespace RcTwin
             _t = Mathf.Min(_shotAt, Duration);
             for (float w = 0f; w < 2.5f; w += Time.deltaTime) yield return null;
             yield return new WaitForEndOfFrame();
+            Debug.Log($"screenshot at {_t:0.00} s, camera {_mode} at {_cam?.transform.position}, campus bounds {_campusBounds}");
             ScreenCapture.CaptureScreenshot(_shot);
             yield return null;
             yield return null;

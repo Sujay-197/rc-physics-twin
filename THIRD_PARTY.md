@@ -8,6 +8,7 @@ Status of each upstream. **SlipX is vendored in `core/`**; nothing else is. Befo
 | Gym-Khana (TeoIlie/Gym-Khana) | MIT | PyPI metadata | Dependency or fork under `sim_py/`; keep copyright notice | No |
 | ApexSim (pzimbrod/apexsim) | Apache-2.0 | GitHub README | Reference only | No |
 | TLabVehiclePhysics (TLabAltoh) | MIT | Third-party directory listing | Reference only | No |
+| OpenStreetMap data (campus extract) | ODbL 1.0 | [openstreetmap.org/copyright](https://www.openstreetmap.org/copyright) | **Included**: `campus/osm/amrita.osm.json` and what `tools/campus_scenery.py` derives from it (`campus/scenery.json`, the campus scenery meshes); attribution in the files and below | Yes, 2026-10-20 |
 
 ## SlipX: pinned commit and what its license files say
 
@@ -51,3 +52,10 @@ Upstream lineage note: Gym-Khana says it is based on the UPenn `f1tenth_gym`. Ch
 ## MIT obligations (Gym-Khana)
 
 - Keep the copyright and permission notice in copies or substantial portions.
+
+## OpenStreetMap (campus scenery)
+
+`campus/osm/amrita.osm.json` is an OpenStreetMap extract of the Amrita Vishwa Vidyapeetham campus, Coimbatore (Overpass API, 2026-10-20). `campus/scenery.json` and the scenery meshes in `unity/RcTwin/Assets/RcTwin/Generated/Campus/` are derived from it. Map data (c) OpenStreetMap contributors, available under the Open Database License (ODbL) 1.0, https://www.openstreetmap.org/copyright. A derived database shared publicly must stay under the ODbL.
+
+Map screenshots used as references for tree cover and bare ground are third-party imagery. They and everything made from them (`campus/reference/`, `Generated/Campus/Local/`) stay local and out of git.
+

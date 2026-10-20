@@ -46,3 +46,33 @@ The tests (`sim_py/test_campus.py`, ctest `sim_py.campus`) check that the commit
 ```bash
 python tools/edge_profiler.py roads/campus/edge_*.json --out profiles/campus_edges.json --speeds 1 2 3 --payloads 0 1 --soc 0.8 0.4
 ```
+
+## The real campus around the roads
+
+The fleet sim's map is a simplified version of the real campus, Amrita Vishwa Vidyapeetham, Coimbatore. It is drawn at about 0.57 of real size, its roads are mostly within 16 m of the real ones, and a few of its roads do not exist (S1 to S2 and S5 to S4 run across the playground). Those roads stay as they are: the fleet sim, the RL environment and the policy study all drive them. `tools/campus_scenery.py` fits the real campus around them, drawn only:
+
+1. **Fit.** A similarity takes OpenStreetMap to the fleet sim frame: it starts from the three academic blocks both maps name, then is refined on the roads. It finds the fleet sim at 1/1.75 of real size, turned 112 degrees.
+2. **Warp.** A thin-plate-spline warp then carries each real road onto the fleet sim road it stands for: about 110 of 205 road points are matched, near and parallel. Every building, lawn and path moves with the warp.
+3. **Cull.** Anything that lands on a road or its kerbs is handled:
+   - a building moves clear, up to 2.5 m, shrinking toward its centre (down to 0.55) when moving alone is not enough;
+   - real roads that duplicate a fleet sim road are dropped;
+   - side roads are clipped at the kerb.
+
+   Academic Blocks 1 and 2 stand where the fleet sim's AB1 and AB2 boxes are. The boxes stop being drawn, but their walls stay.
+
+`campus/scenery.json` holds the result in the twin's frame: buildings, land use, and side roads and paths. It comes from the OpenStreetMap extract `campus/osm/amrita.osm.json`, under the ODbL (`THIRD_PARTY.md`).
+
+**Trees and ground cover** come from map screenshots in `campus/reference/`, kept out of git. Each screenshot is pinned to the real map: a similarity from tie points on named buildings (`campus/reference/images.json`), refined by fitting the screenshot's road overlay to the real roads (to within 4 to 7 m). Each pixel is then sorted into grass, bare earth, tree cover or built. The result is about 5,000 trees and the ground texture in `unity/RcTwin/Assets/RcTwin/Generated/Campus/Local/`, also kept out of git. Without the screenshots, the campus keeps its plain grass and has no trees.
+
+**RcTwin > Build Campus Scene** adds it all: extruded buildings, the ground texture laid over the grass, and low-poly trees. Nothing new has a collider, so physics and training are unchanged. The replay scene is built from the campus scene, so it shows the same scenery.
+
+```bash
+python tools/campus_scenery.py fetch
+```
+
+```bash
+python tools/campus_scenery.py build --images campus/reference/images.json
+```
+
+The tool needs numpy and Pillow. `tools/test_campus_scenery.py` (ctest `tools.campus_scenery`) checks that no building, and no side road, comes within the kerb clearance of a fleet sim road, and that no two buildings overlap.
+

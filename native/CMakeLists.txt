@@ -51,6 +51,8 @@ if(BUILD_TESTING)
              COMMAND ${Python3_EXECUTABLE} -I ${PROJECT_SOURCE_DIR}/tools/test_drive_road.py)
     add_test(NAME tools.edge_profiler
              COMMAND ${Python3_EXECUTABLE} -I ${PROJECT_SOURCE_DIR}/tools/test_edge_profiler.py)
+    add_test(NAME tools.campus_scenery
+             COMMAND ${Python3_EXECUTABLE} -I ${PROJECT_SOURCE_DIR}/tools/test_campus_scenery.py)
     add_test(NAME tools.record_drives
              COMMAND ${Python3_EXECUTABLE} -I ${PROJECT_SOURCE_DIR}/tools/test_record_drives.py)
     add_test(NAME sim_py.env

@@ -50,3 +50,9 @@ obj/
 unity/**/Assets/Plugins/
 unity/**/Assets/Plugins.meta
 unity/**/*.slnx
+
+# map screenshots used as references (third-party imagery: not redistributed)
+campus/reference/
+# campus scenery from local map screenshots (tools/campus_scenery.py)
+unity/**/Generated/Campus/Local/
+unity/**/Generated/Campus/Local.meta
