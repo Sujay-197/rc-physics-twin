@@ -94,7 +94,12 @@ Open `unity/RcTwin` in Unity Hub with **6000.5.3f1**, run **RcTwin > Build Flat 
 
 **Autopilot.** In the campus scene, the panel at the top right drives the car to any stop you pick. It starts from rest at the stop it is at and stops at the destination, on the twin's own physics, along the route the fleet sim and the RL environment use. Holding a drive key takes the car back. **RcTwin > Build Campus Player** builds the campus scene as `build/campus/RcTwinCampus.exe`; `-goto AB1 -speed 3` starts a trip from the command line.
 
-The autopilot's driver is an `IDriver` (`unity/RcTwin/Assets/RcTwin/Runtime/Drivers.cs`). Each control tick it gets the RL environment's own observation, computed in C# by `TwinObservation` on the native road, plus the distance left to the stop. The default driver is the tuned pure pursuit. To use a new controller or a learned policy, write another `IDriver` and set it as `TwinAutopilot.Driver`. Edit Mode tests check, against a drive recorded in Python (`tools/make_autopilot_fixture.py`), that the C# observation, the pure pursuit and the campus routes match Python to 1e-9.
+The autopilot's driver is an `IDriver` (`unity/RcTwin/Assets/RcTwin/Runtime/Drivers.cs`). Each control tick, the driver gets the RL environment's own `"stop"`-task observation (`sim_py/README.md`), computed in C# by `TwinObservation` on the native road. A trip ends as that task's episodes do: stopped within 0.3 m of the destination, or failed. Two drivers come with it, and the panel switches between them:
+
+- the tuned pure pursuit, with its stop plan;
+- a learned policy (`PolicyDriver`), loaded from a `tools/export_policy.py` export.
+
+To add a controller, write another `IDriver`. Edit Mode tests check the C# side against drives recorded in Python (`tools/make_autopilot_fixture.py`): the observation, the pure pursuit and the campus routes match to 1e-9 in both RL tasks. A learned policy's actions match its recorded checks to 1e-4.
 
 **RcTwin > Build Replay Scene** turns the campus into a replay of trained policies: pick any two stops, and every policy recorded by `tools/record_drives.py` drives that route with the same car at once, one coloured car each, with every route's outcome per policy in a grid. **RcTwin > Build Replay Player** builds it as `build/replay/RcTwinReplay.exe`, with `results/drives.json` beside it. See `sim_py/README.md`.
 

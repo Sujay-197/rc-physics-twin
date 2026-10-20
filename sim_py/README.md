@@ -27,6 +27,11 @@ obs, reward, terminated, truncated, info = env.step((0.1, 0.5))   # steer, throt
   
   Together they make the return highest at the target speed, on the road. Tests hold all three.
 - **Perturbation tests:** `reset(options={"perturb": {"at_s": 10, "friction": 0.5}})` changes the car mid-episode, keeping its state.
+- **Two tasks** (`task=`):
+  - `"follow"` (the default) starts each episode at the target speed and finishes when the car passes the end of the road. The policy study trained and scored on it.
+  - `"stop"` drives stop to stop, as a bus does. The car starts at rest. The episode finishes only when it is stopped within 0.3 m of the end at under 0.1 m/s. Running 0.3 m past the end is `overshot`, charged as leaving the road. The frame gains `remaining_ratio`: the distance left over 10 m, 1 beyond that.
+
+  The study showed why `"stop"` exists. On 22 of the 90 campus routes, the first junction comes 1.2 to 1.6 m after the stop, and a car arriving there at 4 m/s often cannot make the turn. The `"follow"` task also let a car run straight through its destination. The tuned controllers plan their stop from `remaining_ratio`: braking at 1.2 m/s², aimed 0.1 m short. The held-out cars brake at about 1.7 m/s² at most, so a 2 m/s² plan overshot every one of them.
 - **`evaluate(env, policy, episodes, seed)`**: mean return, success rate, mean offset, energy. **`pure_pursuit_policy`** is a baseline that drives from the observation alone; it finishes the sample roads under nominal, training and held-out randomisation.
 - **`make_gymnasium_env(...)`** wraps it as a `gymnasium.Env` with `Box` spaces, if `gymnasium` and `numpy` are installed. Training with SB3 (PPO/SAC) needs those plus `stable-baselines3`; none are installed or required here.
 
@@ -131,6 +136,16 @@ Controls:
 The player also takes `-from <stop> -to <stop>`. Add `-screenshot <png>`, with `-condition`, `-trip`, `-camera`, `-follow` and `-at` as needed, and it saves one frame and quits.
 
 The cars replay the Core states the harness scored; nothing is re-simulated in Unity.
+
+### Into the Unity twin
+
+`tools/export_policy.py` writes a trained policy (PPO or SAC, plain or residual on pure pursuit) as one JSON file. The file holds the training normalisation, the actor's layers and the output head. It also holds a check set: observations and actions recorded while the policy drives in Python.
+
+```bash
+.venv/Scripts/python tools/export_policy.py policies/study/ppo-res-s0 --out policies/release/ppo-res.json
+```
+
+Unity's `PolicyDriver` runs the file in float32, as the network trained, with no ML runtime. Its Edit Mode tests replay each release's check set. The campus autopilot drives with a learned policy when its `policy` field holds a `"stop"`-task export.
 
 Tests:
 - `python -I sim_py/test_controllers.py` (ctest `sim_py.controllers`): geometry, LQR stability at every scheduled speed, tuned controllers driving at 4 m/s, the cornering limit, the statistics, and a deterministic harness.
