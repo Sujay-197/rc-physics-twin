@@ -26,7 +26,11 @@ into a policy for sim_py/evaluate_policies.py.
 Model selection: training runs in --chunks pieces; after each, the current
 policy drives --val-trips validation trips (training randomisation, seeds
 from VAL_SEED, disjoint from tuning and test) and the best checkpoint so far
-is kept, ranked by success then mean return. <out> is that checkpoint;
+is kept, ranked by success then mean return. With --val-edge it also
+drives as many trips with the hardest training cars (RANGES_TRAIN_EDGE, seeds
+from VAL_EDGE_SEED), and the ranking is on both sets' mean: validation on
+ordinary training cars alone kept each residual's earliest checkpoint, which
+its controller already drives. <out> is that checkpoint;
 <out>.final.* is where training ended. PPO-family runs decay the learning
 rate linearly to zero across the chunks and stop each update at --target-kl,
 because unchecked PPO drifts: an early residual PPO run beat its controller
@@ -53,6 +57,7 @@ if str(HERE) not in sys.path:
 
 ALGOS = ("ppo", "sac", "td3", "rppo")
 VAL_SEED = 40_000
+VAL_EDGE_SEED = 45_000
 
 
 def _load(name, path):
@@ -231,11 +236,13 @@ class LoadedPolicy:
 
 class Validator:
     """Scores the current model on fixed validation trips (training
-    randomisation, VAL_SEED onward), deterministically, in this process."""
+    randomisation, VAL_SEED onward), deterministically, in this process.
+    ranges and seed pick another set (--val-edge)."""
 
-    def __init__(self, cfg: dict, algo: str, trips: int):
+    def __init__(self, cfg: dict, algo: str, trips: int, ranges=None, seed: int = VAL_SEED):
         c = _campus()
-        self.env = c.CampusEnv(seed=VAL_SEED, ranges=c.envmod.RANGES_TRAIN, lib_path=cfg["lib"],
+        self.seed = seed
+        self.env = c.CampusEnv(seed=seed, ranges=ranges or c.envmod.RANGES_TRAIN, lib_path=cfg["lib"],
                                target_speed=cfg["target_speed"], history=cfg["history"], max_time=60.0,
                                task=cfg.get("task", "follow"), car=cfg.get("car", "bare"))
         self.base = build_base(self.env, cfg["residual"], cfg.get("residual_gains")) if cfg["residual"] else None
@@ -246,7 +253,7 @@ class Validator:
         policy = LoadedPolicy(model, self.meta, vn.obs_rms, vn.clip_obs, vn.epsilon, self.base)
         ok, total = 0, 0.0
         for k in range(self.trips):
-            obs, info = self.env.reset(seed=VAL_SEED + k)
+            obs, info = self.env.reset(seed=self.seed + k)
             policy.reset()
             done = False
             while not done:
@@ -346,6 +353,8 @@ def main(argv=None) -> int:
     ap.add_argument("--target-kl", type=float, default=0.02, help="PPO-family: stop an update past this KL")
     ap.add_argument("--chunks", type=int, default=20, help="validation points across the run")
     ap.add_argument("--val-trips", type=int, default=30)
+    ap.add_argument("--val-edge", action="store_true",
+                    help="also validate on the hardest training cars (RANGES_TRAIN_EDGE); rank on both")
     ap.add_argument("--out", type=pathlib.Path)
     ap.add_argument("--lib")
     args = ap.parse_args(argv)
@@ -379,6 +388,8 @@ def main(argv=None) -> int:
     from stable_baselines3.common.utils import get_schedule_fn
     out.parent.mkdir(parents=True, exist_ok=True)
     val = Validator(cfg, args.algo, args.val_trips)
+    edge = (Validator(cfg, args.algo, args.val_trips, _campus().envmod.RANGES_TRAIN_EDGE, VAL_EDGE_SEED)
+            if args.val_edge else None)
     t0 = time.perf_counter()
     chunk = max(n_envs, args.timesteps // args.chunks)
     done, curve, best, best_at = 0, [], None, None
@@ -392,16 +403,23 @@ def main(argv=None) -> int:
         eps = list(model.ep_info_buffer)
         mean_r = sum(e["r"] for e in eps) / max(1, len(eps))
         vs, vr = val.score(model, venv)
-        curve.append({"steps": int(done), "seconds": round(time.perf_counter() - t0, 1),
-                      "mean_episode_return": mean_r, "val_success": vs, "val_return": vr})
+        point = {"steps": int(done), "seconds": round(time.perf_counter() - t0, 1),
+                 "mean_episode_return": mean_r, "val_success": vs, "val_return": vr}
+        key = (vs, vr)
+        if edge:
+            es, er = edge.score(model, venv)
+            point.update(edge_success=es, edge_return=er)
+            key = (0.5 * (vs + es), 0.5 * (vr + er))
+        curve.append(point)
         mark = ""
-        if best is None or (vs, vr) > best:
-            best, best_at = (vs, vr), int(done)
+        if best is None or key > best:
+            best, best_at, best_point = key, int(done), point
             model.save(str(out.with_suffix(".zip")))
             venv.save(str(out.with_suffix(".vecnormalize.pkl")))
             mark = "  * best"
+        hard = f"  edge {100 * point['edge_success']:5.1f} % {point['edge_return']:8.1f}" if edge else ""
         print(f"{done:10d} steps {time.perf_counter() - t0:8.1f} s  train return {mean_r:8.1f}  "
-              f"validation {100 * vs:5.1f} % {vr:8.1f}{mark}", flush=True)
+              f"validation {100 * vs:5.1f} % {vr:8.1f}{hard}{mark}", flush=True)
     seconds = time.perf_counter() - t0
     model.save(str(out.with_suffix(".final.zip")))
     venv.save(str(out.with_suffix(".final.vecnormalize.pkl")))
@@ -414,14 +432,16 @@ def main(argv=None) -> int:
         import sb3_contrib
         vers["sb3_contrib"] = sb3_contrib.__version__
     meta = {"name": name, "algo": args.algo, "seed": args.seed, "timesteps": int(done),
-            "selected": {"steps": best_at, "val_success": best[0], "val_return": best[1],
-                         "val_trips": args.val_trips, "val_seed": VAL_SEED},
+            "selected": {"steps": best_at, "val_success": best_point["val_success"],
+                         "val_return": best_point["val_return"], "val_trips": args.val_trips, "val_seed": VAL_SEED,
+                         **({"edge_success": best_point["edge_success"], "edge_return": best_point["edge_return"],
+                             "edge_seed": VAL_EDGE_SEED} if edge else {})},
             "train_seconds": round(seconds, 1), "device": device, "envs": n_envs, "workers": args.workers,
             "config": {k: v for k, v in cfg.items() if k != "lib"},
             "reward": _campus().envmod.reward_weights(args.task),
             "hyperparameters": {k: getattr(args, k) for k in ("net", "n_steps", "batch", "lr", "gamma", "log_std",
                                                               "utd", "buffer", "learning_starts", "target_kl",
-                                                              "chunks")},
+                                                              "chunks", "val_edge")},
             "versions": vers, "curve": curve,
             "environment": "CampusEnv, walls on, RANGES_TRAIN, demand-weighted trips",
             "car": (f"SlipX provisional defaults (not a measured car), {args.car} "

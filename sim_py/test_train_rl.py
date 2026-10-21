@@ -128,6 +128,21 @@ class TrainRL(unittest.TestCase):
                 self.rl.load_policy(out, env("unity"))
 
 
+    def test_edge_validation_ranks_on_both_sets(self):
+        import json
+        with tempfile.TemporaryDirectory() as tmp:
+            out = pathlib.Path(tmp) / "edge"
+            self.assertEqual(self.rl.main(["--algo", "ppo", "--residual", "--task", "stop", "--val-edge",
+                                           "--out", str(out), *TINY]), 0)
+            meta = json.loads(out.with_suffix(".json").read_text(encoding="utf-8"))
+            self.assertTrue(meta["hyperparameters"]["val_edge"])
+            self.assertEqual(meta["selected"]["edge_seed"], self.rl.VAL_EDGE_SEED)
+            pts = meta["curve"]
+            self.assertTrue(all("edge_success" in p for p in pts))
+            key = lambda p: (p["val_success"] + p["edge_success"], p["val_return"] + p["edge_return"])
+            best = max(pts, key=key)
+            self.assertEqual(meta["selected"]["steps"], best["steps"])
+
     def test_a_residual_builds_on_the_tuning_it_names(self):
         import json
         campus = self.rl._campus()
