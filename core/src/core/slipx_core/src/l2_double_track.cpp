@@ -1,6 +1,6 @@
 // Copyright 2026 The SlipX Authors
 // SPDX-License-Identifier: Apache-2.0
-// Modified 2026-10-19 by the rc-physics-twin project: see THIRD_PARTY.md.
+// Modified 2026-10-19 and 2026-10-21 by the rc-physics-twin project: see THIRD_PARTY.md.
 //
 // L2: double-track with load transfer, MF-lite tyres, relaxation, and the
 // drivetrain: differential, ESC, battery and steering servo (ADR-0031).
@@ -100,7 +100,9 @@
 // and the derivative stays a pure function.
 //
 // Validity: forward motion, as at L1, with params.v_eps flooring the speed in
-// every slip denominator. Below roughly v_eps, use L0.
+// every slip denominator. Below roughly v_eps, use L0. Reversing slowly is
+// valid too (rc-physics-twin ADR 0010): the slip angle is then measured from
+// the wheel's backward direction; above v_eps it yaws as the geometry says.
 //
 // ============================================================================
 // Ground (rc-physics-twin ADR 0005)
@@ -261,6 +263,9 @@ struct StepConstants {
   // damping); anywhere else the torque is the step's constant budget.
   double esc_a = 0.0;                                          //    [N m]
   double esc_b = 0.0;                                          // [N m s]
+  // The ESC is driving the motor backwards (rc-physics-twin ADR 0010): a
+  // negative torque is drive, not the motor brake.
+  bool reverse = false;
 
   // Suspension (ADR 0008): on, per-wheel ground heights, static sags, and
   // the loads and budgets the springs give at the step's start.
@@ -485,6 +490,13 @@ class DoubleTrackL2 final : public VehicleModel {
     }
 
     const double t_cmd = params_.mass * accel * params_.wheel_radius;
+    // In reverse (rc-physics-twin ADR 0010, wheel dynamics only) the ESC runs
+    // the motor backwards on its own curve: the budget is the forward one
+    // mirrored, at the driven wheels' speed backwards.
+    const bool reverse = c.wheels && u.reverse && t_cmd < 0.0;
+    const double sense = reverse ? -1.0 : 1.0;
+    const double omega_esc = sense * omega_mean;
+    const double t_esc = sense * t_cmd;
     const double soc_entry = clamp(s.soc, 0.0, 1.0);
     const double ocv =
         params_.pack_v_empty +
@@ -495,13 +507,13 @@ class DoubleTrackL2 final : public VehicleModel {
     const auto esc_budget = [&](double v_pack) {
       const double scale = v_pack / params_.pack_nominal_v;
       double curve = params_.torque_stall * scale *
-                     (1.0 - omega_mean / (params_.omega_free * scale));
+                     (1.0 - omega_esc / (params_.omega_free * scale));
       if (curve < 0.0) curve = 0.0;
       const double drive_cap =
           std::fmin(curve, params_.torque_per_amp * params_.current_max);
       const double regen_cap =
           params_.torque_per_amp * params_.regen_current_max;
-      return clamp(t_cmd, -regen_cap, drive_cap);
+      return sense * clamp(t_esc, -regen_cap, drive_cap);
     };
     // Battery-terminal electrical power for a wheel torque. Efficiency loses
     // power in both directions: it divides on discharge and multiplies on
@@ -530,15 +542,17 @@ class DoubleTrackL2 final : public VehicleModel {
 
     c.fx_demand = t_budget / params_.wheel_radius;
     c.esc_a = t_budget;
+    c.reverse = reverse;
     if (c.wheels) {
       // Is the torque the curve's? The same expression as esc_budget, so the
-      // comparison is exact.
+      // comparison is exact. In reverse the curve is mirrored:
+      // -(A - B (-omega)) = -A - B omega, the same slope.
       const double scale = v_pack / params_.pack_nominal_v;
       const double curve = params_.torque_stall * scale *
-                           (1.0 - omega_mean / (params_.omega_free * scale));
+                           (1.0 - omega_esc / (params_.omega_free * scale));
       const double cap = params_.torque_per_amp * params_.current_max;
-      if (t_budget > 0.0 && t_budget == curve && curve < cap) {
-        c.esc_a = params_.torque_stall * scale;
+      if (sense * t_budget > 0.0 && sense * t_budget == curve && curve < cap) {
+        c.esc_a = sense * params_.torque_stall * scale;
         c.esc_b = params_.torque_stall / params_.omega_free;
       }
     }
@@ -1061,7 +1075,7 @@ class DoubleTrackL2 final : public VehicleModel {
     // wheel's rotation whichever way it turns, and stops it rather than
     // reversing it. The direction is the one the tyre alone would turn it
     // this step; a wheel the tyre would not turn at all stays where it is.
-    const bool braking = (c.esc_b == 0.0 && c.esc_a < 0.0);
+    const bool braking = (c.esc_b == 0.0 && c.esc_a < 0.0 && !c.reverse);
     std::array<double, kWheelCount> free = *w;
     if (braking) {
       StepConstants no_torque = c;
@@ -1248,7 +1262,13 @@ class DoubleTrackL2 final : public VehicleModel {
 
       const MfLite& tyre = front ? c.tyre_front : c.tyre_rear;
 
-      kin.wheel[i].alpha = std::atan2(vyw, vx_safe) - steer_i;
+      // Rolling backwards the travel is measured from the wheel's backward
+      // direction (rc-physics-twin ADR 0010): atan2 from the forward one
+      // would put the slip angle near pi, far past the tyre's peak, and the
+      // car would not steer in reverse. Either way the force opposes the
+      // contact's lateral sliding, (vy - vx delta) / |vx|.
+      kin.wheel[i].alpha = (vxw >= 0.0) ? std::atan2(vyw, vx_safe) - steer_i
+                                        : std::atan2(vyw, -vx_safe) + steer_i;
       // The shape term uses the LAGGED slip angle, which is the state, while
       // the load below is the instantaneous one. That asymmetry is the point
       // of ADR-0026: the force is inside the current friction budget however
