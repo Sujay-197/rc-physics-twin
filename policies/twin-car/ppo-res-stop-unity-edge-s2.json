@@ -1,0 +1,247 @@
+{
+ "name": "ppo-res-s2",
+ "algo": "ppo",
+ "seed": 2,
+ "timesteps": 20643840,
+ "selected": {
+  "steps": 3096576,
+  "val_success": 1.0,
+  "val_return": 167.84914136656187,
+  "val_trips": 40,
+  "val_seed": 40000,
+  "edge_success": 1.0,
+  "edge_return": 153.37456766807136,
+  "edge_seed": 45000
+ },
+ "train_seconds": 1286.7,
+ "device": "cuda",
+ "envs": 112,
+ "workers": 14,
+ "config": {
+  "task": "stop",
+  "car": "unity",
+  "target_speed": 4.0,
+  "history": 4,
+  "max_time": 30.0,
+  "residual": "pure_pursuit",
+  "residual_scale": 0.5,
+  "residual_gains": "policies/controllers_unity_stop.json"
+ },
+ "reward": {
+  "offset": 1.0,
+  "steering": 1.0,
+  "energy": 0.2,
+  "wall": 5.0,
+  "time": 0.5,
+  "off_road": -10.0,
+  "finish": 10.0,
+  "contact": 0.5
+ },
+ "hyperparameters": {
+  "net": [
+   256,
+   256
+  ],
+  "n_steps": 512,
+  "batch": 8192,
+  "lr": 0.0001,
+  "gamma": 0.995,
+  "log_std": -2.5,
+  "utd": 0.25,
+  "buffer": 2000000,
+  "learning_starts": 50000,
+  "target_kl": 0.02,
+  "chunks": 20,
+  "val_edge": true
+ },
+ "versions": {
+  "stable_baselines3": "2.9.0",
+  "torch": "2.14.1+cu130",
+  "gymnasium": "1.4.0",
+  "numpy": "2.5.4"
+ },
+ "curve": [
+  {
+   "steps": 1032192,
+   "seconds": 59.2,
+   "mean_episode_return": -6.27760074,
+   "val_success": 1.0,
+   "val_return": 160.55984640725018,
+   "edge_success": 1.0,
+   "edge_return": 146.95661840040538
+  },
+  {
+   "steps": 2064384,
+   "seconds": 131.2,
+   "mean_episode_return": -77.84306207,
+   "val_success": 1.0,
+   "val_return": 165.89064504655894,
+   "edge_success": 1.0,
+   "edge_return": 151.31195592243657
+  },
+  {
+   "steps": 3096576,
+   "seconds": 192.2,
+   "mean_episode_return": -30.497356519999997,
+   "val_success": 1.0,
+   "val_return": 167.84914136656187,
+   "edge_success": 1.0,
+   "edge_return": 153.37456766807136
+  },
+  {
+   "steps": 4128768,
+   "seconds": 253.2,
+   "mean_episode_return": 46.7521679,
+   "val_success": 1.0,
+   "val_return": 160.81587012895537,
+   "edge_success": 1.0,
+   "edge_return": 145.65092761578936
+  },
+  {
+   "steps": 5160960,
+   "seconds": 314.2,
+   "mean_episode_return": -206.25775936000002,
+   "val_success": 1.0,
+   "val_return": 157.88738145619956,
+   "edge_success": 1.0,
+   "edge_return": 142.21411182775708
+  },
+  {
+   "steps": 6193152,
+   "seconds": 374.8,
+   "mean_episode_return": -211.86814366,
+   "val_success": 1.0,
+   "val_return": 148.7910634421698,
+   "edge_success": 0.975,
+   "edge_return": -65.664942617062
+  },
+  {
+   "steps": 7225344,
+   "seconds": 435.5,
+   "mean_episode_return": 28.04408111,
+   "val_success": 1.0,
+   "val_return": 143.8092558440431,
+   "edge_success": 1.0,
+   "edge_return": 129.93395763374355
+  },
+  {
+   "steps": 8257536,
+   "seconds": 498.0,
+   "mean_episode_return": -358.43339366,
+   "val_success": 1.0,
+   "val_return": 127.50841259325134,
+   "edge_success": 0.95,
+   "edge_return": -284.46183544913276
+  },
+  {
+   "steps": 9289728,
+   "seconds": 562.7,
+   "mean_episode_return": -128.90316324,
+   "val_success": 1.0,
+   "val_return": 111.47922342172845,
+   "edge_success": 0.95,
+   "edge_return": -298.4044345613479
+  },
+  {
+   "steps": 10321920,
+   "seconds": 624.5,
+   "mean_episode_return": -98.63776660000002,
+   "val_success": 1.0,
+   "val_return": 109.12958891259575,
+   "edge_success": 0.95,
+   "edge_return": -298.9135900843314
+  },
+  {
+   "steps": 11354112,
+   "seconds": 689.5,
+   "mean_episode_return": -114.27991746,
+   "val_success": 1.0,
+   "val_return": 109.51826405703034,
+   "edge_success": 0.95,
+   "edge_return": -297.031151904635
+  },
+  {
+   "steps": 12386304,
+   "seconds": 752.1,
+   "mean_episode_return": 5.469535100000001,
+   "val_success": 0.975,
+   "val_return": -85.12373785478333,
+   "edge_success": 0.95,
+   "edge_return": -286.19723096493215
+  },
+  {
+   "steps": 13418496,
+   "seconds": 813.9,
+   "mean_episode_return": -255.53780794,
+   "val_success": 1.0,
+   "val_return": 99.04095027758547,
+   "edge_success": 0.95,
+   "edge_return": -316.5053919284616
+  },
+  {
+   "steps": 14450688,
+   "seconds": 877.9,
+   "mean_episode_return": 43.66430378,
+   "val_success": 0.925,
+   "val_return": -395.96571853420556,
+   "edge_success": 0.85,
+   "edge_return": -626.6959585283056
+  },
+  {
+   "steps": 15482880,
+   "seconds": 949.4,
+   "mean_episode_return": -83.67967122,
+   "val_success": 0.875,
+   "val_return": -910.6747741940829,
+   "edge_success": 0.9,
+   "edge_return": -698.6901985073927
+  },
+  {
+   "steps": 16515072,
+   "seconds": 1011.8,
+   "mean_episode_return": -152.39877423,
+   "val_success": 0.85,
+   "val_return": -1016.8333476567068,
+   "edge_success": 0.925,
+   "edge_return": -489.06408088193695
+  },
+  {
+   "steps": 17547264,
+   "seconds": 1074.3,
+   "mean_episode_return": -108.01295725,
+   "val_success": 0.85,
+   "val_return": -1032.3026910188646,
+   "edge_success": 0.925,
+   "edge_return": -486.44928095728073
+  },
+  {
+   "steps": 18579456,
+   "seconds": 1134.1,
+   "mean_episode_return": -239.02993805000003,
+   "val_success": 0.875,
+   "val_return": -886.5035014359179,
+   "edge_success": 0.875,
+   "edge_return": -893.2678614205795
+  },
+  {
+   "steps": 19611648,
+   "seconds": 1193.8,
+   "mean_episode_return": -366.28119451,
+   "val_success": 0.85,
+   "val_return": -1090.8155467194333,
+   "edge_success": 0.875,
+   "edge_return": -895.6110761713489
+  },
+  {
+   "steps": 20643840,
+   "seconds": 1257.7,
+   "mean_episode_return": -709.83519711,
+   "val_success": 0.75,
+   "val_return": -2063.7393248845774,
+   "edge_success": 0.5,
+   "edge_return": -4281.3312392399985
+  }
+ ],
+ "environment": "CampusEnv, walls on, RANGES_TRAIN, demand-weighted trips",
+ "car": "SlipX provisional defaults (not a measured car), unity (rc_twin_env.py: wheel inertia, Ackermann and suspension)"
+}
