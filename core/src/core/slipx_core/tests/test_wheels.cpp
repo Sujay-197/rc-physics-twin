@@ -1,6 +1,7 @@
 // Copyright 2026 The SlipX Authors
 // SPDX-License-Identifier: Apache-2.0
 // Added 2026-10-19 by the rc-physics-twin project: see THIRD_PARTY.md.
+// Reverse (ADR 0010) added 2026-10-21.
 //
 // Wheel rotational dynamics at L2 (params.wheel_inertia > 0, rc-physics-twin
 // ADR 0006): stable at 1 kHz for any inertia, the closed-form coast-down
@@ -422,6 +423,127 @@ TEST(WheelsInvariant, TheSameRunTwiceIsTheSameRun) {
     ASSERT_TRUE(m->step_on(b, scripted(k), grip(0.4), kDt));
   }
   EXPECT_EQ(std::memcmp(&a, &b, sizeof a), 0);
+}
+
+// ------------------------------------------------------------- reverse
+// rc-physics-twin ADR 0010: DriveInput::reverse, and steering in reverse.
+
+DriveInput reverse_input(double steer, double accel) {
+  DriveInput u{steer, accel};
+  u.reverse = true;
+  return u;
+}
+
+TEST(WheelsReverse, WithoutReverseANegativeDemandAtRestHoldsTheCar) {
+  const VehicleParams p = with_wheels(1e-5);
+  auto m = l2(p);
+  VehicleState s = slipx_test::at_rest();
+  run(*m, s, DriveInput{0.0, -2.0}, 1000);
+  EXPECT_EQ(s.vel_body.x, 0.0);
+  for (double w : s.omega_w) EXPECT_EQ(w, 0.0);
+}
+
+TEST(WheelsReverse, InReverseANegativeDemandDrivesBackwards) {
+  const VehicleParams p = with_wheels(1e-5);
+  auto m = l2(p);
+  VehicleState s = slipx_test::at_rest();
+  run(*m, s, reverse_input(0.0, -2.0), 1000);
+  // 2 m/s^2 for a second, less rolling resistance and drag.
+  EXPECT_LT(s.vel_body.x, -1.5);
+  EXPECT_GT(s.vel_body.x, -2.0);
+  EXPECT_LT(s.pos.x, 0.0);
+  // Rolling backwards, not spinning.
+  EXPECT_NEAR(s.omega_w[kRearLeft] * p.wheel_radius, s.vel_body.x,
+              0.05 * std::fabs(s.vel_body.x));
+}
+
+TEST(WheelsReverse, ReverseIsTheMotorCurveMirrored) {
+  // From rest the ESC's torque is the forward one with the sign turned, at
+  // full demand (current-capped), at a light one, and at speed on the
+  // torque-speed curve. At a demand the tyres
+  // carry, the car then reaches the forward speed, backwards. A hard reverse
+  // does not: braking-like load transfer unloads the driven rear axle and its
+  // wheels spin, which is real and why only a light demand is compared.
+  const VehicleParams p = with_wheels(1e-5);
+  auto m = l2(p);
+  for (double a : {8.0, 2.0}) {
+    VehicleState fwd = slipx_test::at_rest();
+    VehicleState rev = fwd;
+    const StepDiagnostics df = run(*m, fwd, DriveInput{0.0, a}, 1);
+    const StepDiagnostics dr = run(*m, rev, reverse_input(0.0, -a), 1);
+    EXPECT_GT(df.drive_torque, 0.0) << a;
+    EXPECT_EQ(dr.drive_torque, -df.drive_torque) << a;
+  }
+  {
+    // Rolling at 12 m/s the curve, not the current cap, sets the torque:
+    // backwards too, at the wheels' speed backwards.
+    VehicleState fwd = rolling(p, 12.0);
+    VehicleState rev = rolling(p, -12.0);
+    const StepDiagnostics df = run(*m, fwd, DriveInput{0.0, 8.0}, 1);
+    const StepDiagnostics dr = run(*m, rev, reverse_input(0.0, -8.0), 1);
+    EXPECT_LT(df.drive_torque, p.torque_per_amp * p.current_max);
+    EXPECT_EQ(dr.drive_torque, -df.drive_torque);
+  }
+  VehicleState fwd = slipx_test::at_rest();
+  VehicleState rev = fwd;
+  run(*m, fwd, DriveInput{0.0, 2.0}, 1000);
+  run(*m, rev, reverse_input(0.0, -2.0), 1000);
+  EXPECT_NEAR(rev.vel_body.x, -fwd.vel_body.x, 0.01 * fwd.vel_body.x);
+}
+
+TEST(WheelsReverse, APositiveDemandInReverseSlowsTheCarAndDrivesOn) {
+  const VehicleParams p = with_wheels(1e-5);
+  auto m = l2(p);
+  VehicleState s = slipx_test::at_rest();
+  run(*m, s, reverse_input(0.0, -2.0), 500);
+  ASSERT_LT(s.vel_body.x, -0.5);
+  run(*m, s, reverse_input(0.0, 2.0), 1500);
+  EXPECT_GT(s.vel_body.x, 0.5);
+}
+
+TEST(WheelsReverse, ReverseIsIgnoredWithoutWheelDynamics) {
+  // Quasi-static wheels: a negative demand is a signed force either way, so
+  // the flag changes nothing, bit for bit.
+  const VehicleParams p = slipx_test::reference_params();
+  auto m = l2(p);
+  VehicleState a = slipx_test::at_rest();
+  VehicleState b = a;
+  run(*m, a, DriveInput{0.2, -2.0}, 1500);
+  run(*m, b, reverse_input(0.2, -2.0), 1500);
+  EXPECT_LT(a.vel_body.x, -1.0);
+  EXPECT_EQ(std::memcmp(&a, &b, sizeof a), 0);
+}
+
+// Holding a steady speed v (negative: reversing) with the wheels turned: the
+// yaw rate after the transient, as a fraction of the kinematic v tan(delta) / L.
+double steady_yaw_ratio(const VehicleParams& p, double v, double delta) {
+  auto m = l2(p);
+  VehicleState s = slipx_test::travelling(v);
+  for (auto& w : s.omega_w) w = v / p.wheel_radius;
+  for (int k = 0; k < 3000; ++k) {
+    DriveInput u{delta, slipx_test::hold_speed(s, v)};
+    u.reverse = v < 0.0;
+    if (!m->step_on(s, u, GroundContact{}, kDt)) {
+      ADD_FAILURE() << "refused at step " << k;
+      break;
+    }
+  }
+  EXPECT_NEAR(s.vel_body.x, v, 0.06);  // the proportional hold settles a little short
+  return s.yaw_rate() / (v * std::tan(delta) / (p.lf + p.lr));
+}
+
+TEST(Reverse, TheCarSteersInReverseAsItDoesForwards) {
+  // Before ADR 0010 the slip angle in reverse was measured from the wheel's
+  // forward direction, near pi, past the tyre's peak: the wheels turned and
+  // the car went straight back. Now reversing yaws as the geometry says,
+  // and as driving forwards does, with and without wheel dynamics.
+  for (double inertia : {0.0, 1e-5}) {
+    const VehicleParams p = with_wheels(inertia);
+    const double back = steady_yaw_ratio(p, -1.0, 0.2);
+    const double ahead = steady_yaw_ratio(p, 1.0, 0.2);
+    EXPECT_NEAR(back, 1.0, 0.15) << "inertia " << inertia;
+    EXPECT_NEAR(back, ahead, 0.1) << "inertia " << inertia;
+  }
 }
 
 }  // namespace

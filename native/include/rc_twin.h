@@ -199,7 +199,12 @@ RC_TWIN_API rc_twin_status rc_twin_set_ground_query(rc_twin_vehicle* v,
  * commanded road wheel angle [rad, + left]; accel_cmd the longitudinal
  * acceleration demand [m/s^2, + forward]. dt must be finite and > 0, n >= 1.
  * Exactly equivalent to n calls with n = 1. On any failure no step is kept:
- * the state is as it was before the call. */
+ * the state is as it was before the call.
+ *
+ * Reverse (ADR 0010): a negative demand brakes; held with the car stopped it
+ * puts the ESC in reverse, and the car drives backwards until it next rolls
+ * forward. rc_twin_reset leaves reverse. With wheel_inertia 0 the Core's
+ * negative demand reverses from rest anyway, and nothing changes. */
 RC_TWIN_API rc_twin_status rc_twin_step(rc_twin_vehicle* v, double steer_cmd,
                                         double accel_cmd, double dt,
                                         uint32_t n);

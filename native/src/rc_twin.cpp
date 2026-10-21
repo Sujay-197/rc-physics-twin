@@ -50,12 +50,34 @@ struct rc_twin_vehicle {
   rc_twin_contact contact{};
   std::vector<rc_twin_segment> walls;
   rc_twin_wall_report report{};
+  bool reverse = false;  // the ESC's reverse latch (ADR 0010)
 };
 
 namespace {
 
 void set_reason(const char** reason, const char* why) {
   if (reason != nullptr) *reason = why;
+}
+
+// The ESC's reverse (ADR 0010), as a hobby forward/brake/reverse ESC has it:
+// a negative demand is the brake; held with the car stopped it engages
+// reverse, which holds until the car rolls forward again. A car that is
+// rolling backwards without having stopped (after a spin) is braked. The Core
+// only uses this with wheel dynamics; without them a negative demand already
+// reverses from rest.
+constexpr double kRestSpeed = 0.01;  // [m/s], car and driven wheels
+
+bool latch_reverse(rc_twin_vehicle& v, const slipx::VehicleState& s,
+                   double accel_cmd) {
+  if (s.vel_body.x > kRestSpeed) {
+    v.reverse = false;
+  } else if (accel_cmd < 0.0 && !v.reverse && s.vel_body.x >= -kRestSpeed) {
+    const double r = v.model->params().wheel_radius;
+    bool rest = true;
+    for (double w : s.omega_w) rest = rest && std::fabs(w) * r <= kRestSpeed;
+    v.reverse = rest;
+  }
+  return v.reverse;
 }
 
 void to_core(const rc_twin_tyre& c, slipx::TyreCoefficients& t) {
@@ -432,6 +454,7 @@ RC_TWIN_API rc_twin_status rc_twin_reset(rc_twin_vehicle* v,
   if (v == nullptr) return RC_TWIN_E_NULL;
   v->state = slipx::VehicleState{};
   if (initial != nullptr) to_core(*initial, v->state);
+  v->reverse = false;
   return RC_TWIN_OK;
 }
 
@@ -450,25 +473,31 @@ RC_TWIN_API rc_twin_status rc_twin_step(rc_twin_vehicle* v, double steer_cmd,
       !std::isfinite(accel_cmd)) {
     return RC_TWIN_E_INVALID;
   }
-  const slipx::DriveInput input{steer_cmd, accel_cmd};
+  slipx::DriveInput input{steer_cmd, accel_cmd};
   // Step a copy so a failure leaves the published state untouched.
   slipx::VehicleState s = v->state;
+  const bool reverse_entry = v->reverse;
   rc_twin_wall_report report{};
   try {
     if (v->ground_fn == nullptr) {
       for (uint32_t k = 0; k < n; ++k) {
+        input.reverse = latch_reverse(*v, s, accel_cmd);
         v->model->step(s, input, dt);
         resolve_walls(*v, s, report);
       }
     } else {
       for (uint32_t k = 0; k < n; ++k) {
         slipx::GroundContact g;
-        if (!sample_ground(*v, s, &g)) return RC_TWIN_E_GROUND;
-        if (!v->model->step_on(s, input, g, dt)) return RC_TWIN_E_GROUND;
+        input.reverse = latch_reverse(*v, s, accel_cmd);
+        if (!sample_ground(*v, s, &g) || !v->model->step_on(s, input, g, dt)) {
+          v->reverse = reverse_entry;
+          return RC_TWIN_E_GROUND;
+        }
         resolve_walls(*v, s, report);
       }
     }
   } catch (...) {
+    v->reverse = reverse_entry;
     return RC_TWIN_E_INTERNAL;
   }
   v->state = s;
