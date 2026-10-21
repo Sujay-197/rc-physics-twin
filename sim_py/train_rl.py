@@ -101,7 +101,7 @@ def make_env(cfg: dict, seed: int):
     env = c.envmod.make_gymnasium_env(env_cls=c.CampusEnv, seed=seed, lib_path=cfg["lib"],
                                       ranges=c.envmod.RANGES_TRAIN, target_speed=cfg["target_speed"],
                                       history=cfg["history"], max_time=cfg["max_time"],
-                                      task=cfg.get("task", "follow"))
+                                      task=cfg.get("task", "follow"), car=cfg.get("car", "bare"))
     if cfg["residual"]:
         env = ResidualWrapper(env, cfg["residual"], cfg["residual_scale"])
     env.reset(seed=seed)
@@ -230,7 +230,7 @@ class Validator:
         c = _campus()
         self.env = c.CampusEnv(seed=VAL_SEED, ranges=c.envmod.RANGES_TRAIN, lib_path=cfg["lib"],
                                target_speed=cfg["target_speed"], history=cfg["history"], max_time=60.0,
-                               task=cfg.get("task", "follow"))
+                               task=cfg.get("task", "follow"), car=cfg.get("car", "bare"))
         self.base = build_base(self.env, cfg["residual"]) if cfg["residual"] else None
         self.meta = {"algo": algo, "residual_scale": cfg["residual_scale"]}
         self.trips = trips
@@ -265,14 +265,24 @@ def load_model(prefix: pathlib.Path, algo: str):
     return _model_class(algo).load(str(prefix.with_suffix(".zip")), device="cpu", **extra)
 
 
-def load_policy(prefix: pathlib.Path, env):
+def car_fits(trained: str, car: str) -> bool:
+    """A policy trained on car `trained` drives `car`: the same one, or either
+    of the two a "both" policy trained on."""
+    return trained == car or (trained == "both" and car in ("bare", "unity"))
+
+
+def load_policy(prefix: pathlib.Path, env, any_car: bool = False):
     """The policy saved at prefix, for this CampusEnv (which must run the
-    same target speed and history as the training did)."""
+    same task, target speed, history and, unless any_car, car as the
+    training did)."""
     import pickle
     meta = json.loads(prefix.with_suffix(".json").read_text(encoding="utf-8"))
     cfg = meta["config"]
     if cfg.get("task", "follow") != env.task:
         raise ValueError(f"{prefix.name} trained on the {cfg.get('task', 'follow')!r} task; the env runs {env.task!r}")
+    trained_car = cfg.get("car", "bare")      # before the option, every run trained on the bare car
+    if not any_car and not car_fits(trained_car, env.car):
+        raise ValueError(f"{prefix.name} trained on the {trained_car!r} car; the env runs {env.car!r}")
     if abs(cfg["target_speed"] - env.target_speed) > 1e-9 or cfg["history"] != env.history:
         raise ValueError(f"{prefix.name} trained at {cfg['target_speed']} m/s with history {cfg['history']}; "
                          f"the env runs {env.target_speed} m/s with history {env.history}")
@@ -309,6 +319,9 @@ def main(argv=None) -> int:
     ap.add_argument("--max-time", type=float, default=30.0)
     ap.add_argument("--task", choices=("follow", "stop"), default="follow",
                     help="follow: from the target speed past the end; stop: from rest to a stop (rc_twin_env.py)")
+    ap.add_argument("--car", choices=("bare", "unity", "both"), default="bare",
+                    help="bare: the Core car as the policy study trained; unity: the Unity twin's car; "
+                         "both: either, drawn per episode (rc_twin_env.py)")
     ap.add_argument("--workers", type=int, default=max(1, (os.cpu_count() or 4) - 2))
     ap.add_argument("--per-worker", type=int)
     ap.add_argument("--device", default="auto")
@@ -344,13 +357,13 @@ def main(argv=None) -> int:
     from stable_baselines3.common.vec_env import VecNormalize
     device = args.device if args.device != "auto" else ("cuda" if torch.cuda.is_available() else "cpu")
     torch.set_num_threads(2)
-    cfg = {"task": args.task, "target_speed": args.target_speed, "history": args.history, "max_time": args.max_time,
+    cfg = {"task": args.task, "car": args.car, "target_speed": args.target_speed, "history": args.history, "max_time": args.max_time,
            "residual": args.residual, "residual_scale": args.residual_scale, "lib": lib}
     n_envs = args.workers * args.per_worker
     venv = VecNormalize(make_vec(cfg, n_envs, args.workers, args.seed * 100_000),
                         norm_obs=True, norm_reward=True, clip_obs=10.0, gamma=args.gamma)
     model = build_model(args.algo, venv, args, device)
-    print(f"{name}: {args.algo}, residual {args.residual}, {n_envs} envs in {args.workers} processes, "
+    print(f"{name}: {args.algo}, residual {args.residual}, {args.task} task, {args.car} car, {n_envs} envs in {args.workers} processes, "
           f"{device}, {args.timesteps} steps", flush=True)
 
     from stable_baselines3.common.utils import get_schedule_fn
@@ -395,12 +408,14 @@ def main(argv=None) -> int:
                          "val_trips": args.val_trips, "val_seed": VAL_SEED},
             "train_seconds": round(seconds, 1), "device": device, "envs": n_envs, "workers": args.workers,
             "config": {k: v for k, v in cfg.items() if k != "lib"},
+            "reward": _campus().envmod.reward_weights(args.task),
             "hyperparameters": {k: getattr(args, k) for k in ("net", "n_steps", "batch", "lr", "gamma", "log_std",
                                                               "utd", "buffer", "learning_starts", "target_kl",
                                                               "chunks")},
             "versions": vers, "curve": curve,
             "environment": "CampusEnv, walls on, RANGES_TRAIN, demand-weighted trips",
-            "car": "SlipX provisional defaults (not a measured car)"}
+            "car": (f"SlipX provisional defaults (not a measured car), {args.car} "
+                    "(rc_twin_env.py: wheel inertia, Ackermann and suspension)")}
     out.with_suffix(".json").write_text(json.dumps(meta, indent=1) + "\n", encoding="utf-8")
     print(f"wrote {out}.zip, .vecnormalize.pkl, .json in {seconds:.0f} s", flush=True)
     return 0

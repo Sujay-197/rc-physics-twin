@@ -5,6 +5,7 @@
 // PurePursuitDriver is sim_py/controllers.py's PurePursuit, line for line,
 // stop plan included (tests/Editor/AutopilotParityTests.cs checks it
 // against Python in both RL tasks). PolicyDriver runs a trained network.
+// KerbRecovery wraps either and backs the car off a kerb it is pinned against.
 //
 // Free of UnityEngine, like RcTwinNative.
 using System;
@@ -85,6 +86,13 @@ namespace RcTwin
                 RemainingIndex = stopTask ? TwinObservation.RemainingIndex : -1,
             };
 
+        /// <summary>Pure pursuit tuned for the Unity twin's car on the "stop" task
+        /// (policies/controllers_unity_stop.json): what the autopilot drives with.
+        /// Tuned's defaults are the study's bare-car gains, which the residual
+        /// policies are built on.</summary>
+        public static PurePursuitDriver TunedForTwin(in RcTwinNative.Params nominal, double targetSpeed) =>
+            Tuned(nominal, targetSpeed, lookahead: 1.5, kSpeed: 2.0, aLat: 12.0, stopTask: true);
+
         public (double steer, double throttle) Act(in DriveContext c)
         {
             var o = c.Observation;
@@ -123,6 +131,85 @@ namespace RcTwin
             double throttle = DriverMath.Clip(KSpeed * (goal - vRatio));
             if (!double.IsNaN(remaining) && throttle < 0.0 && vRatio <= 0.01) throttle = 0.0;   // braking at rest would reverse
             return (DriverMath.Clip(delta / SteerMax), throttle);
+        }
+    }
+
+    /// <summary>Backs off a kerb the car is pinned against, then lets the
+    /// driver it wraps retry: sim_py/controllers.py's KerbRecovery, line for line.</summary>
+    /// <remarks>
+    /// On the Unity twin's car a car that strikes a kerb at a junction nose
+    /// first stays pinned against it at full throttle (Docs/policy-study.md,
+    /// "Closing the gap to the Unity car"). The driver cannot tell: the
+    /// observation has no wall contact. Pinned, the car is not still: it
+    /// bounces off the kerb and back. So when the driver has asked for
+    /// throttle above MinThrottle for StallTime and the car has moved less
+    /// than StallDistance in that time (its speed, integrated), it reverses
+    /// with the steering on the other lock, which swings the nose toward the
+    /// way the driver was steering, for BackDistance or at most BackTime.
+    /// </remarks>
+    public sealed class KerbRecovery : IDriver
+    {
+        public double StallDistance = 0.05, StallTime = 0.5;   // [m], [s]
+        public double MinThrottle = 0.3, BackThrottle = -0.6;
+        public double BackDistance = 0.3, BackTime = 1.5;      // [m], [s]
+        public double Tick = 0.01;                             // [s], the control tick (TwinAutopilot.ControlTick)
+
+        public IDriver Inner { get; }
+        /// <summary>The speed the observation is scaled by [m/s].</summary>
+        public double TargetSpeed { get; }
+        /// <summary>Back-offs this trip.</summary>
+        public int BackOffs { get; private set; }
+        public bool Backing => _backing;
+
+        private double _stalled, _moved;   // how long the driver has asked for throttle, how far the car went in that time
+        private bool _backing;
+        private double _backSteer, _backT, _backS;
+
+        public KerbRecovery(IDriver inner, double targetSpeed)
+        {
+            Inner = inner;
+            TargetSpeed = targetSpeed;
+        }
+
+        public string Name => Inner.Name;
+        public int History => Inner.History;
+
+        public void Reset()
+        {
+            _stalled = _moved = 0.0;
+            _backing = false;
+            BackOffs = 0;
+            Inner.Reset();
+        }
+
+        public (double steer, double throttle) Act(in DriveContext c)
+        {
+            var (steer, throttle) = Inner.Act(c);   // every tick, so a driver with memory keeps it
+            double v = c.Observation[0] * TargetSpeed;
+            if (_backing)
+            {
+                _backT += Tick;
+                _backS += Math.Max(0.0, -v) * Tick;
+                if (_backT < BackTime && _backS < BackDistance) return (_backSteer, BackThrottle);
+                _backing = false;
+            }
+            if (throttle > MinThrottle)
+            {
+                _stalled += Tick;
+                _moved += v * Tick;
+                if (Math.Abs(_moved) > StallDistance) _stalled = _moved = 0.0;
+            }
+            else _stalled = _moved = 0.0;
+            if (_stalled >= StallTime)
+            {
+                _stalled = _moved = 0.0;
+                BackOffs++;
+                _backSteer = Math.Abs(steer) < 0.05 ? 0.0 : steer > 0.0 ? -1.0 : 1.0;
+                _backing = true;
+                _backT = _backS = 0.0;
+                return (_backSteer, BackThrottle);
+            }
+            return (steer, throttle);
         }
     }
 }

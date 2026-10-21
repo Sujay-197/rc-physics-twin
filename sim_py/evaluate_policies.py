@@ -23,6 +23,9 @@ Policy specs (strings, so worker processes can build them):
   controller:<kind>            tuned gains from policies/controllers.json
   controller:<kind>:default    the untuned defaults
   controller:<kind>:{json}     explicit gains, as tools/tune_controllers.py uses
+  controller:<kind>:<file.json>  tuned gains from another tuning, e.g.
+                               policies/controllers_unity_stop.json
+  recover:<spec>               <spec> with the kerb recovery (controllers.KerbRecovery)
   cem:<path.json>              sim_py/train_cem.py
   sb3:<prefix>                 sim_py/train_rl.py output (needs the .venv)
 
@@ -79,16 +82,23 @@ def options_for(condition: str):
 
 # ------------------------------------------------------------------ policies
 
-def build_policy(spec: str, env):
-    """A policy from its spec, for this env (its nominal car, target speed)."""
+def build_policy(spec: str, env, any_car: bool = False):
+    """A policy from its spec, for this env (its nominal car, target speed).
+    any_car lets a learned policy drive a car it did not train on."""
     envmod = campus().envmod
     kind, _, rest = spec.partition(":")
+    if kind == "recover":
+        ctl = _load("controllers", HERE / "controllers.py")
+        return ctl.KerbRecovery(build_policy(rest, env, any_car), envmod, env.target_speed)
     if kind == "controller":
         ctl = _load("controllers", HERE / "controllers.py")
         name, _, variant = rest.partition(":")
         gains = {}
         if variant.startswith("{"):
             gains = json.loads(variant)          # explicit gains (tuning)
+        elif variant.endswith(".json"):
+            tuned = json.loads((ROOT / variant).read_text(encoding="utf-8"))
+            gains = tuned[name]["gains"]
         elif variant != "default":
             tuned = json.loads((ROOT / "policies" / "controllers.json").read_text(encoding="utf-8"))
             gains = tuned[name]["gains"]
@@ -99,7 +109,7 @@ def build_policy(spec: str, env):
         return cem.LinearPolicy.from_json(json.loads(pathlib.Path(rest).read_text(encoding="utf-8")))
     if kind == "sb3":
         rl = _load("train_rl", HERE / "train_rl.py")
-        return rl.load_policy(pathlib.Path(rest), env)
+        return rl.load_policy(pathlib.Path(rest), env, any_car=any_car)
     raise ValueError(f"unknown policy spec {spec!r}")
 
 
@@ -133,21 +143,23 @@ def run_episode(env, policy, seed: int, options=None) -> dict:
             "wall": info["wall_contacts"] > 0, "return": ret, "ticks": ticks,
             "speed_error": v_err / ticks, "offset_mean": off / ticks,
             "offset_p95": offs[min(len(offs) - 1, int(0.95 * len(offs)))],
-            "steer_roughness": rough / max(1, ticks - 1), "energy_wh_per_m": info["energy_wh"] / dist}
+            "steer_roughness": rough / max(1, ticks - 1), "energy_wh_per_m": info["energy_wh"] / dist,
+            "back_offs": getattr(policy, "back_offs", 0)}
 
 
 def _job(args):
-    spec, condition, seeds, lib, target_speed, task = args
+    spec, condition, seeds, lib, target_speed, task, car, any_car = args
     c = campus()
     extra = {}
-    if spec.startswith("sb3:"):
+    inner = spec[len("recover:"):] if spec.startswith("recover:") else spec
+    if inner.startswith("sb3:"):
         # A learned policy sees the observation it trained on (history 0 for a
         # recurrent one); the harness checks it trained at this speed.
-        cfg = json.loads(pathlib.Path(spec[4:]).with_suffix(".json").read_text(encoding="utf-8"))["config"]
+        cfg = json.loads(pathlib.Path(inner[4:]).with_suffix(".json").read_text(encoding="utf-8"))["config"]
         extra["history"] = cfg["history"]
     env = c.CampusEnv(seed=seeds[0], ranges=ranges_for(condition), lib_path=lib, target_speed=target_speed,
-                      task=task, **extra)
-    policy = build_policy(spec, env)
+                      task=task, car=car, **extra)
+    policy = build_policy(spec, env, any_car)
     out = [run_episode(env, policy, s, options_for(condition)) for s in seeds]
     env.close()
     return spec, condition, out
@@ -196,9 +208,10 @@ def summarise(episodes: list) -> dict:
 # --------------------------------------------------------------------- main
 
 def evaluate(specs, trips: int = 100, conditions=CONDITIONS, lib=None, workers=None, chunk: int = 10,
-             seed: int = EVAL_SEED, target_speed: float = 2.0, task: str = "follow") -> dict:
+             seed: int = EVAL_SEED, target_speed: float = 2.0, task: str = "follow", car: str = "bare",
+             any_car: bool = False) -> dict:
     seeds = list(range(seed, seed + trips))
-    jobs = [(spec, cond, seeds[i:i + chunk], lib, target_speed, task) for spec in specs for cond in conditions
+    jobs = [(spec, cond, seeds[i:i + chunk], lib, target_speed, task, car, any_car) for spec in specs for cond in conditions
             for i in range(0, trips, chunk)]
     workers = workers or max(1, (os.cpu_count() or 4) - 2)
     results = {spec: {cond: [] for cond in conditions} for spec in specs}
@@ -216,7 +229,7 @@ def evaluate(specs, trips: int = 100, conditions=CONDITIONS, lib=None, workers=N
         for cond in conditions:
             results[spec][cond].sort(key=lambda e: e["seed"])
     return {"protocol": {"trips": trips, "seed": seed, "conditions": list(conditions),
-                         "target_speed": target_speed, "task": task,
+                         "target_speed": target_speed, "task": task, "car": car,
                          "perturbation": PERTURBATION},
             "policies": {spec: {cond: {"summary": summarise(eps), "episodes": eps}
                                 for cond, eps in conds.items()} for spec, conds in results.items()}}
@@ -251,13 +264,17 @@ def main(argv=None) -> int:
     ap.add_argument("--workers", type=int)
     ap.add_argument("--target-speed", type=float, default=2.0, help="[m/s]")
     ap.add_argument("--task", choices=("follow", "stop"), default="follow", help="rc_twin_env.py's tasks")
+    ap.add_argument("--car", choices=("bare", "unity", "both"), default="bare",
+                    help="rc_twin_env.py's cars: bare (the policy study's), unity (the twin's), both")
+    ap.add_argument("--any-car", action="store_true",
+                    help="let learned policies drive a car they did not train on (to measure the gap)")
     ap.add_argument("--out", type=pathlib.Path, help="JSON report (episodes included)")
     ap.add_argument("--lib")
     args = ap.parse_args(argv)
     lib = os.path.abspath(args.lib) if args.lib else None
     t0 = time.perf_counter()
     report = evaluate(args.specs, args.trips, args.conditions, lib, args.workers,
-                      target_speed=args.target_speed, task=args.task)
+                      target_speed=args.target_speed, task=args.task, car=args.car, any_car=args.any_car)
     report["seconds"] = round(time.perf_counter() - t0, 1)
     print(table(report))
     if args.out:

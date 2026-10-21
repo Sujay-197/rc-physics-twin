@@ -34,7 +34,18 @@ Reward per control tick (weights in REWARD):
   - wall     x wall impulse this tick / (m x target speed)  (speed lost to walls)
   - time                                                  a constant per tick
 Leaving the road ends the episode with the `off_road` reward; reaching the
-end ends it with `finish`; `max_time` truncates it.
+end ends it with `finish`; `max_time` truncates it. The "stop" task weighs
+offset and steering more (REWARD_STOP) and charges them linearly, |offset| /
+half width and |change in steer action| (tidiness()), so a tidy line and a
+still wheel pay even close to the centreline, where squares cost almost
+nothing.
+
+The car (`car`): "bare", the default, is the Core car with the options given
+(wheel_inertia, ackermann, wheel_rate, damping, travel; all off by default),
+as the policy study trained. "unity" is the Unity twin's car (TwinCar.cs, as
+the campus scene sets it): wheel inertia 1e-5, ideal Ackermann, DEMO
+suspension at 3 Hz, damping ratio 0.3, 15 mm travel. "both" draws one of the
+two per episode, after the randomisation, from the same generator.
 
 Two tasks (`task`):
   "follow"  the road at the target speed, from the target speed: the episode
@@ -103,6 +114,12 @@ RANGES_HELD_OUT = {
 }
 REWARD = {"offset": 0.5, "steering": 0.1, "energy": 0.2, "wall": 5.0, "time": 0.5,
           "off_road": -10.0, "finish": 10.0}
+# The "stop" task's weights: its offset and steering terms are linear (tidiness()).
+# Under REWARD, PPO with history drove the stop task 25 cm off the centreline on
+# average. At weight 2 each it drove 3 cm off it, but at under half the target
+# speed: leaving the road is charged the offset weight for every tick it saves, so
+# failing grew 2.5 times dearer against progress (Docs/policy-study.md).
+REWARD_STOP = {**REWARD, "offset": 1.0, "steering": 1.0}
 FOOTPRINT_MARGIN = 0.0175   # half the Unity car's drawn tyre width [m]; not measured
 
 LOOKAHEAD_M = (0.5, 1.0, 2.0)
@@ -123,9 +140,42 @@ REMAINING_SCALE_M = 10.0    # remaining_ratio's scale: from 4 m/s at 1.2 m/s^2 a
 STOP_TOLERANCE_M = 0.3      # a stop counts this close to the end [m] ...
 STOP_SPEED = 0.1            # ... at under this speed [m/s]
 
+# The car (`car`): "bare" is the Core's simplest car, quasi-static wheels,
+# parallel steering and a rigid body, as the policy study trained. "unity" is
+# the Unity twin's TwinCar as the campus scene sets it up (TwinCar.cs): wheel
+# inertia, ideal Ackermann and the DEMO suspension, springs set for the unladen
+# car. "both" draws one of the two per episode.
+CARS = ("bare", "unity", "both")
+UNITY_CAR = {"wheel_inertia": 1e-5, "ackermann": 1.0, "ride_frequency_hz": 3.0, "damping_ratio": 0.3,
+             "travel": 0.015}
+
 
 def frame_fields(task: str) -> list:
     return list(STOP_FIELDS if task == "stop" else FRAME_FIELDS)
+
+
+def reward_weights(task: str) -> dict:
+    return REWARD_STOP if task == "stop" else REWARD
+
+
+def tidiness(task: str, offset_ratio: float, steer_change: float) -> tuple[float, float]:
+    """The offset and steering-change costs, before their weights. Squares on
+    "follow": cheap near the line, so they barely shape it. Absolute values
+    on "stop": every centimetre off the line and every twitch of the wheel
+    costs the same."""
+    if task == "stop":
+        return abs(offset_ratio), abs(steer_change)
+    return offset_ratio ** 2, steer_change ** 2
+
+
+def unity_car(mass: float) -> dict:
+    """The car options (RcTwinEnv's) of the Unity twin's car of this unladen
+    mass: TwinCar.DemoWheelRate and DemoDamping, per wheel."""
+    w = 2.0 * math.pi * UNITY_CAR["ride_frequency_hz"]
+    k = mass * w * w / 4.0
+    c = 2.0 * UNITY_CAR["damping_ratio"] * math.sqrt(4.0 * k * mass) / 4.0
+    return dict(wheel_inertia=UNITY_CAR["wheel_inertia"], ackermann=UNITY_CAR["ackermann"], wheel_rate=k,
+                damping=c, travel=UNITY_CAR["travel"])
 SUBSTEPS, DT = 10, 0.001
 TICK = SUBSTEPS * DT
 
@@ -157,12 +207,16 @@ class RcTwinEnv:
                  ranges: dict | None = None, max_time: float = 60.0, lib_path=None,
                  wheel_inertia: float = 0.0, ackermann: float = 0.0, wheel_rate: float = 0.0,
                  damping: float = 0.0, travel: float = 0.015, walls=None,
-                 footprint_margin: float = FOOTPRINT_MARGIN, task: str = "follow"):
+                 footprint_margin: float = FOOTPRINT_MARGIN, task: str = "follow", car: str = "bare"):
         if isinstance(road, (str, pathlib.Path)):
             road = json.loads(pathlib.Path(road).read_text(encoding="utf-8"))
         if task not in TASKS:
             raise ValueError(f"task {task!r}: one of {TASKS}")
+        if car not in CARS:
+            raise ValueError(f"car {car!r}: one of {CARS}")
         self.task = task
+        self.car = car
+        self.reward = reward_weights(task)
         self.frame_fields = frame_fields(task)
         self.frame_size = len(self.frame_fields)
         self.target_speed = float(target_speed)
@@ -171,8 +225,13 @@ class RcTwinEnv:
         self.max_time = float(max_time)
         self.lib = dr.load_lib(pathlib.Path(lib_path) if lib_path else
                                ROOT / "build" / "bin" / "rc_twin.dll")
-        self._car_opts = dict(wheel_inertia=wheel_inertia, ackermann=ackermann,
-                              wheel_rate=wheel_rate, damping=damping, travel=travel)
+        # "bare" takes the car options given; "unity" replaces them.
+        bare = dict(wheel_inertia=wheel_inertia, ackermann=ackermann,
+                    wheel_rate=wheel_rate, damping=damping, travel=travel)
+        mass = dr.car_params(self.lib, type("A", (), {**bare, "payload": 0.0})()).mass
+        self._cars = {"bare": bare, "unity": unity_car(mass)}
+        self._car_kind = "bare" if car == "bare" else "unity"
+        self._car_opts = self._cars[self._car_kind]
         self.walls = list(walls or [])
         self.footprint_margin = float(footprint_margin)
         self.observation_size = self.frame_size + self.history * (self.frame_size + ACTION_SIZE)
@@ -204,9 +263,11 @@ class RcTwinEnv:
         if "road" in options:
             self._set_road(options["road"])
         self.sample = {k: self._rng.uniform(lo, hi) for k, (lo, hi) in sorted(self.ranges.items())}
+        if self.car == "both":
+            self._car_kind = self._rng.choice(("bare", "unity"))
         self._perturb = options.get("perturb")
         self._perturbed = False
-        args = type("A", (), {**self._car_opts, "payload": 0.0})()
+        args = type("A", (), {**self._cars[self._car_kind], "payload": 0.0})()
         p = dr.car_params(self.lib, args)
         apply_randomisation(p, self.sample)
         self.params = p
@@ -255,7 +316,7 @@ class RcTwinEnv:
 
         prev = self.state
         rc = self.lib.rc_twin_step(self._car, steer, accel, DT, SUBSTEPS)
-        r = REWARD
+        r = self.reward
         if rc == dr.E_GROUND:
             self._push(steer_a, thr_a)
             left = max(0.0, self.max_time - self.t) / TICK
@@ -281,8 +342,7 @@ class RcTwinEnv:
             return self._obs(), penalty, True, False, self._info("overshot")
 
         progress = min(self.s - s_prev, self.target_speed * TICK) / (self.target_speed * TICK)
-        offset = (self.d / self._half_width) ** 2
-        dsteer = (steer_a - self._last_action[0]) ** 2
+        offset, dsteer = tidiness(self.task, self.d / self._half_width, steer_a - self._last_action[0])
         energy = de * 3600.0 / (p.mass * 9.81 * self.target_speed * TICK)
         wall = hit.impulse / (p.mass * self.target_speed)
         reward = (progress - r["offset"] * offset - r["steering"] * dsteer - r["energy"] * energy
@@ -303,7 +363,8 @@ class RcTwinEnv:
 
     def nominal_params(self) -> "dr.Params":
         """The provisional car with this env's options, unrandomised: what a
-        controller is designed for. Built with this env's own bindings."""
+        controller is designed for ("both": the Unity car). Built with this
+        env's own bindings."""
         args = type("A", (), {**self._car_opts, "payload": 0.0})()
         return dr.car_params(self.lib, args)
 
@@ -396,7 +457,8 @@ class RcTwinEnv:
     def _info(self, status: str) -> dict:
         return {"status": status, "s": self.s, "offset": self.d, "time": self.t,
                 "energy_wh": self.energy_wh, "wall_contacts": self.wall_contacts,
-                "wall_impulse": self.wall_impulse, "randomisation": dict(self.sample)}
+                "wall_impulse": self.wall_impulse, "randomisation": dict(self.sample),
+                "car": self._car_kind}
 
 
 # --------------------------------------------------------------- baselines

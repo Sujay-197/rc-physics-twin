@@ -61,7 +61,7 @@ def export(prefix: pathlib.Path, lib: str, check_ticks: int = 60) -> dict:
     tuned = json.loads((ROOT / "policies" / "controllers.json").read_text(encoding="utf-8"))
     doc = {
         "format": FORMAT, "name": prefix.name, "algo": meta["algo"], "selected": meta.get("selected"),
-        "task": cfg.get("task", "follow"), "target_speed": cfg["target_speed"], "history": cfg["history"],
+        "task": cfg.get("task", "follow"), "car": cfg.get("car", "bare"), "target_speed": cfg["target_speed"], "history": cfg["history"],
         "residual": ({"kind": cfg["residual"], "scale": cfg["residual_scale"],
                       "gains": tuned[cfg["residual"]]["gains"]} if cfg["residual"] else None),
         "normalise": {"mean": vn.obs_rms.mean.tolist(), "var": vn.obs_rms.var.tolist(),
@@ -70,10 +70,12 @@ def export(prefix: pathlib.Path, lib: str, check_ticks: int = 60) -> dict:
         "head": head,
         "note": "network in float32 as trained; the C# driver computes in float32 too",
     }
-    # The check set: the policy driving one campus trip in Python.
+    # The check set: the policy driving one campus trip in Python, on its car
+    # ("both": the Unity car, which it will drive).
     c = rl._campus()
+    car = {"both": "unity"}.get(cfg.get("car", "bare"), cfg.get("car", "bare"))
     env = c.CampusEnv(seed=0, ranges=c.envmod.RANGES_NOMINAL, lib_path=lib, target_speed=cfg["target_speed"],
-                      history=cfg["history"], task=cfg.get("task", "follow"))
+                      history=cfg["history"], task=cfg.get("task", "follow"), car=car)
     policy = rl.load_policy(prefix, env)
     obs, _ = env.reset(seed=0, options={"trip": ("AB2", "S3")})
     checks = []
