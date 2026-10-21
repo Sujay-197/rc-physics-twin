@@ -117,6 +117,14 @@ RANGES_HELD_OUT = {
     "friction": (0.5, 0.8), "payload_kg": (1.0, 2.0), "servo_bandwidth": (0.4, 0.7),
     "torque": (0.6, 0.8), "tyre_stiffness": (0.6, 0.8), "battery_resistance": (2.0, 4.0),
 }
+# The hardest quarter of each training range: inside RANGES_TRAIN, apart from
+# RANGES_HELD_OUT. For model selection (train_rl.py --val-edge), so a checkpoint
+# is chosen on how it drives the training cars that are hardest to drive,
+# without ever seeing a held-out car.
+RANGES_TRAIN_EDGE = {
+    "friction": (0.8, 0.9), "payload_kg": (0.75, 1.0), "servo_bandwidth": (0.7, 0.85),
+    "torque": (0.8, 0.9), "tyre_stiffness": (0.8, 0.9), "battery_resistance": (1.625, 2.0),
+}
 REWARD = {"offset": 0.5, "steering": 0.1, "energy": 0.2, "wall": 5.0, "time": 0.5,
           "off_road": -10.0, "finish": 10.0}
 # The "stop" task's weights: its offset and steering terms are linear (tidiness()),

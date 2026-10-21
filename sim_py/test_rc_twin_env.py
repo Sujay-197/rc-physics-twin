@@ -73,6 +73,15 @@ class Env(unittest.TestCase):
             self.assertAlmostEqual(p.mass, d.mass + env.sample["payload_kg"])
             self.assertAlmostEqual(p.pack_internal_resistance,
                                    d.pack_internal_resistance * env.sample["battery_resistance"])
+        # The edge of the training ranges lies inside them, at their hard end
+        # (less grip, more load, slower servo, weaker motor, softer tyres,
+        # more battery resistance), apart from the held-out ones.
+        for k, (lo, hi) in envmod.RANGES_TRAIN_EDGE.items():
+            tlo, thi = envmod.RANGES_TRAIN[k]
+            hlo, hhi = envmod.RANGES_HELD_OUT[k]
+            self.assertTrue(tlo <= lo < hi <= thi, k)
+            self.assertTrue(hi <= hlo or lo >= hhi, k)
+            self.assertTrue(lo == tlo if hhi <= tlo else hi == thi, f"{k}: the hard end")
         # Held-out ranges do not overlap training ones (payload may touch).
         for k, (lo, hi) in envmod.RANGES_HELD_OUT.items():
             tlo, thi = envmod.RANGES_TRAIN[k]

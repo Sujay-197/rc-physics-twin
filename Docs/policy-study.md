@@ -270,6 +270,32 @@ The first round's lessons, applied (branch `rl/twin-car-2`, on the Core with the
 
 **Next.** The residual now ties the autopilot rather than losing to it, so further gains need a different selection, not a different reward. Candidates: validation that includes harder cars, with seeds and ranges of their own, disjoint from the test's; a creep-to-the-stop term, or more seeds and budget, for PPO + history; tuned hyperparameters.
 
+## A third round: selecting on the hardest training cars
+
+The second round's first candidate (branch `rl/twin-car-3`). Validation drove only ordinary training cars, which the residual's controller already finishes, so selection could only rank checkpoints by return. Each seed kept a checkpoint from its first 1 to 3M steps.
+
+**What changed.** `train_rl.py --val-edge` adds a second validation set at every validation point. It uses `RANGES_TRAIN_EDGE`, the hard quarter of each training range: grip 0.8 to 0.9, payload 0.75 to 1 kg, servo bandwidth 0.7 to 0.85, motor torque 0.8 to 0.9, tyre stiffness 0.8 to 0.9, battery resistance 1.6 to 2. These cars are inside the training ranges and apart from the held-out ones, and use seeds of their own (45000 onward). Checkpoints rank on the two sets' mean success, then their mean return. Each set had 40 trips. Everything else is as in the second round: reward v3, the Unity car, the residual on the Unity-car gains, 20M steps for the residual and 45M for PPO + history.
+
+**Results.** Same protocol and table as the second round, against the autopilot.
+
+| Driver | Selected at | Train | Held-out | Perturbed | Mean offset | Steer roughness | Against the autopilot (held-out) |
+|---|---|---|---|---|---|---|---|
+| **autopilot** | - | 98 | 82 | 86 | 6.8 cm | 0.0048 | - |
+| residual PPO s0, kerb recovery | 3M (round 2: 1M) | 100 | 70 | 76 | 10.1 cm | 0.0050 | +2 / −14, p = 0.004 |
+| residual PPO s1, kerb recovery | 3M (round 2: 1M) | 100 | 79 | 76 | 8.2 cm | 0.0051 | +4 / −7 |
+| residual PPO s2, kerb recovery | 3M (round 2: 3M) | 100 | 82 | 86 | 9.1 cm | 0.0061 | +4 / −4 |
+| PPO + history s0 | 45.9M (round 2: 43.6M) | 92 | 75 | 84 | 5.9 cm | 0.0044 | +13 / −20, p = 0.30 |
+
+**What the numbers say.**
+
+1. **Selecting on the hardest training cars made the residual worse.** It moved two seeds' choice from the 1M-step checkpoint to the 3M one. With the recovery, both lost held-out and perturbed trips they had finished from 1M. Pooled over the seeds, the residual now loses to the autopilot with held-out cars: 10 trips won, 25 lost (p = 0.017). In the second round, selection on ordinary training cars gave 18 won and 13 lost. Seed 2's choice did not move, and it drives exactly as before: training reproduced it to the checkpoint.
+2. **The edge cars are not hard enough to tell checkpoints apart.** The residual's controller finishes 29 of 30 trips with them. For seeds 0 and 1, the 3M checkpoint won on a single edge trip: 40 of 40 against 39 of 40 at 1M. One trip in 40 is noise, and what the 3M checkpoints learned did not carry over to held-out cars, with 0.5 to 0.8 of the nominal grip against the edge's 0.8 to 0.9.
+3. **PPO + history traded held-out trips for perturbed ones.** Selected at its last checkpoint, it finished fewer held-out trips than in the second round (75 against 85 %) and more after the mid-trip change (84 against 80 %). It drove faster, at 1.14 times the autopilot's trip time against 1.24, with a tidier line and smoother steering than the autopilot. Against the autopilot it still loses with held-out cars (13 won, 20 lost) and after the mid-trip change, and finishes fewer trips with training cars (92 against 98 %).
+
+**Decision.** No release. Validation on the hardest training cars is no better a guide to held-out cars than validation on ordinary ones, and here it was worse. `--val-edge` stays as an option, off by default.
+
+**Next.** A validation set that can rank checkpoints must contain cars the controller fails. Inside the training ranges there are almost none. The choice is then between leaving the residual's checkpoint at the start of training, which already ties the autopilot, and widening the training ranges themselves, a different study.
+
 ## Limits
 
 - **The car is SlipX's provisional defaults, not a measured car.** The randomisation ranges are training choices. A policy that is robust across them is robust in simulation, and no more than that.
@@ -328,6 +354,8 @@ The second round (`rl/twin-car-2`, reward v3, the Core with ESC reverse):
 ```bash
 .venv/Scripts/python sim_py/evaluate_policies.py recover:controller:pure_pursuit:policies/controllers_unity_stop.json recover:sb3:policies/twin-car/ppo-res-stop-unity-r3-s0 sb3:policies/twin-car/ppo-stop-unity-r3-s0 --task stop --car unity --trips 100 --target-speed 4
 ```
+
+The third round (`rl/twin-car-3`): the same commands as the second, with `--val-edge --val-trips 40` and `-edge-` in the output names.
 
 `tools/record_drives.py --pairs` records every route for the Unity replay (`sim_py/README.md`). Tuning, training and evaluation are deterministic given their seeds; training on GPU is not bit-exact.
 
