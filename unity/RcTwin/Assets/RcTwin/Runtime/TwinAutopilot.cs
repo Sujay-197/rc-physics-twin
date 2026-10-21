@@ -24,7 +24,9 @@
 // learned policy exported by tools/export_policy.py (PolicyDriver) when
 // `policy` is set; the panel switches between them. A new controller is a
 // new IDriver. Either is wrapped in KerbRecovery: pinned against a kerb, the
-// car backs off and retries.
+// car backs off and retries. Pure pursuit is also wrapped in CornerSpeed: it
+// plans speed along the whole route at the trip's start and slows for each
+// junction before it comes into view.
 //
 // Keys: P stops or resumes the trip. The panel picks the destination and speed.
 // Command line (the player): -goto <stop> [-speed <m/s>] [-driver learned|pure_pursuit] starts a trip;
@@ -52,6 +54,8 @@ namespace RcTwin
         public bool useLearned = true;
         [Tooltip("Back off a kerb the car is pinned against and retry (KerbRecovery).")]
         public bool kerbRecovery = true;
+        [Tooltip("Pure pursuit slows for the route's corners before they come into view (CornerSpeed).")]
+        public bool cornerSpeed = true;
         [Tooltip("Give up when further than this off the centreline [m].")]
         public double maxOffset = 1.2;
         [Tooltip("Give up after this long on one trip [s].")]
@@ -146,9 +150,22 @@ namespace RcTwin
                 targetSpeed = _learned.TargetSpeed;   // it was trained at one speed
                 d = _learned;
             }
-            else d = PurePursuitDriver.TunedForTwin(RcTwinNative.DefaultParams(), targetSpeed);
+            else
+            {
+                d = PurePursuitDriver.TunedForTwin(RcTwinNative.DefaultParams(), targetSpeed);
+                if (cornerSpeed)
+                {
+                    var road = _road;
+                    var cs = new CornerSpeed(d, targetSpeed);
+                    cs.Plan(s => road.Point(s).heading, road.Length);
+                    d = cs;
+                }
+            }
             return kerbRecovery ? new KerbRecovery(d, targetSpeed) : d;
         }
+
+        /// <summary>The corner speed plan's cap at the car this tick [m/s], or NaN.</summary>
+        public double CornerCap => ((Driver as KerbRecovery)?.Inner ?? Driver) is CornerSpeed cs ? cs.Cap : double.NaN;
 
         /// <summary>Times this trip the car backed off a kerb it was pinned against.</summary>
         public int TripBackOffs => (Driver as KerbRecovery)?.BackOffs ?? 0;
@@ -410,7 +427,7 @@ namespace RcTwin
             if (PastEnd(st) > StopTolerance) { End(Status.Failed, $"Ran past {Destination}."); return; }
             if (TripTime > timeout) { End(Status.Failed, $"Gave up after {timeout:0} s."); return; }
 
-            var a = Driver.Act(new DriveContext { Observation = _obs.Vector(), Remaining = Remaining });
+            var a = Driver.Act(new DriveContext { Observation = _obs.Vector(), Remaining = Remaining, S = s });
             _last = (DriverMath.Clip(a.steer), DriverMath.Clip(a.throttle));
             _car.Command = _last;
         }
@@ -510,7 +527,8 @@ namespace RcTwin
                     GUILayout.Label($"{Remaining:0.0} m to go, {_car.State.vx:0.00} m/s, {LastOffset * 100:+0;-0} cm off the line, " +
                                     $"{TripWallContacts} kerb contacts" +
                                     ((Driver as KerbRecovery)?.Backing == true ? ", backing off the kerb" :
-                                     TripBackOffs > 0 ? $", {TripBackOffs} back-offs" : ""), _text);
+                                     TripBackOffs > 0 ? $", {TripBackOffs} back-offs" : "") +
+                                    (CornerCap < targetSpeed ? $", corner: {CornerCap:0.0} m/s" : ""), _text);
             }
             if (TurnReport != null) GUILayout.Label(TurnReport, _text);
             GUILayout.Label(Message, _text);
