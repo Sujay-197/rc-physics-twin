@@ -281,6 +281,74 @@ def _dlqr(Ad, Bd, q, r: float, iters: int = 5000, tol: float = 1e-10):
     return [x / s for x in _mm(BtP, Ad)[0]]
 
 
+# ------------------------------------------------------------- kerb recovery
+
+class KerbRecovery:
+    """Back off a kerb the car is pinned against, then let the driver retry.
+
+    On the Unity twin's car a car that strikes a kerb at a junction nose
+    first stays pinned against it at full throttle until the trip times out
+    (Docs/policy-study.md, "Closing the gap to the Unity car"). The driver
+    cannot tell: the observation has no wall contact, and its lookahead
+    point is still round the corner. Pinned, the car is not still: it
+    bounces off the kerb and back at a few tenths of a metre a second. So:
+    when the driver has asked for throttle above `min_throttle` for
+    `stall_time` and the car has moved less than `stall_distance` in that
+    time (its speed, integrated), reverse with the steering on the other
+    lock, which swings the nose toward the way the driver was steering, for
+    `back_distance` or at most `back_time`, then hand back. A negative
+    demand held at rest reverses (on the wheel-inertia car, through the
+    ESC's reverse latch, ADR 0010).
+
+    Wraps any policy obs -> (steer, throttle); `back_offs` counts them per
+    trip. unity/.../Drivers.cs KerbRecovery is this, line for line."""
+
+    def __init__(self, inner, envmod, target_speed: float, stall_distance: float = 0.05, stall_time: float = 0.5,
+                 min_throttle: float = 0.3, back_throttle: float = -0.6, back_distance: float = 0.3,
+                 back_time: float = 1.5):
+        self.inner = inner
+        self.tick = envmod.TICK
+        self.i_v = envmod.FRAME_FIELDS.index("speed_ratio")
+        self.v_ref = target_speed
+        self.stall_distance, self.stall_time, self.min_throttle = stall_distance, stall_time, min_throttle
+        self.back_throttle, self.back_distance, self.back_time = back_throttle, back_distance, back_time
+        self.name = f"{getattr(inner, 'name', 'policy')}+kerb_recovery"
+        self.reset()
+
+    def reset(self):
+        self.stalled = 0.0       # how long the driver has asked for throttle ... [s]
+        self.moved = 0.0         # ... and how far the car has gone in that time [m]
+        self.backing = None      # while backing off: [steer, time, distance]
+        self.back_offs = 0
+        if hasattr(self.inner, "reset"):
+            self.inner.reset()
+
+    def __call__(self, obs):
+        steer, throttle = self.inner(obs)   # every tick, so a driver with memory keeps it
+        v = obs[self.i_v] * self.v_ref
+        if self.backing is not None:
+            b = self.backing
+            b[1] += self.tick
+            b[2] += max(0.0, -v) * self.tick
+            if b[1] < self.back_time and b[2] < self.back_distance:
+                return b[0], self.back_throttle
+            self.backing = None
+        if throttle > self.min_throttle:
+            self.stalled += self.tick
+            self.moved += v * self.tick
+            if abs(self.moved) > self.stall_distance:
+                self.stalled = self.moved = 0.0
+        else:
+            self.stalled = self.moved = 0.0
+        if self.stalled >= self.stall_time:
+            self.stalled = self.moved = 0.0
+            self.back_offs += 1
+            lock = 0.0 if abs(steer) < 0.05 else (-1.0 if steer > 0.0 else 1.0)
+            self.backing = [lock, 0.0, 0.0]
+            return lock, self.back_throttle
+        return steer, throttle
+
+
 # ---------------------------------------------------------------- factories
 
 KINDS = {"pure_pursuit": PurePursuit, "stanley": Stanley, "lqr": LQR}

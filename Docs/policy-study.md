@@ -207,13 +207,33 @@ Budgets as before: 20M steps for residual PPO (16 minutes a run), 30M for PPO + 
 **What this means for the twin.**
 
 - Both of the twin's drivers were tuned or trained on the bare car. On the Unity car they finish 50 to 59 % of trips with held-out cars.
-- Pure pursuit tuned for the Unity car finishes 99 / 71 / 66 %. Switching the autopilot to those gains is a small, separate change.
-- Most failures on the Unity car are kerb pins. A driver that backs off a kerb and tries again would recover most of them.
+- Pure pursuit tuned for the Unity car finishes 99 / 71 / 66 %. Switching the autopilot to those gains is a small, separate change (done: [The autopilot on the Unity car](#the-autopilot-on-the-unity-car)).
+- Most failures on the Unity car are kerb pins. A driver that backs off a kerb and tries again would recover most of them (done: 100 / 78 / 76 %, and 98 / 82 / 86 % once the car can reverse).
 - Before more learning:
   - an offset term measured from a drivable path that cuts the junction corners, not from the junction polyline;
   - kerb contact charged for every tick it lasts, not only by impulse;
   - validation on cars outside the training ranges, so selection stops rewarding training-car gains alone;
   - tuned hyperparameters, and a longer budget for PPO + history, which was still improving at 30M steps under both rewards.
+
+## The autopilot on the Unity car
+
+The two cheap wins above, in the twin (branch `twin/unity-car-autopilot`):
+
+- **The Unity-car gains.** The autopilot's pure pursuit uses `policies/controllers_unity_stop.json` (lookahead 1.5 m, speed gain 2, cornering limit 12 m/s²): `PurePursuitDriver.TunedForTwin`, checked against that file in Edit Mode. `policies/controllers.json` and `PurePursuitDriver.Tuned`'s defaults stay the study's gains, which the residual policies are built on.
+- **Backing off a pinned kerb.** `KerbRecovery` (`sim_py/controllers.py`, `Drivers.cs`, line for line, checked on a scripted trace) wraps the autopilot's driver, pure pursuit or learned. A pinned car is not still: it bounces off the kerb and back at a few tenths of a metre a second. So the test is distance, not speed. If the driver has asked for more than 0.3 throttle for 0.5 s and the car has moved less than 5 cm in that time (its speed, integrated), the recovery reverses at -0.6 on the other lock. That swings the nose toward where the driver was steering. It reverses for 0.3 m or at most 1.5 s, then hands back. The parameters were set by hand, not tuned on these seeds. The observation has no wall contact, so this is the only signal a driver has.
+
+Stop task, 4 m/s, Unity car, 100 trips per condition, success in % (train / held-out / perturbed). `recover:` wraps a policy spec in `evaluate_policies.py`:
+
+| Driver | Core as committed | with ESC reverse |
+|---|---|---|
+| pure pursuit, study gains | 91 / 59 / 69 | - |
+| pure pursuit, Unity-car gains | 99 / 71 / 66 | 98 / 66 / 68 |
+| pure pursuit, Unity-car gains, kerb recovery | **100 / 78 / 76** | **98 / 82 / 86** |
+| pure pursuit, study gains, kerb recovery | - | 98 / 84 / 82 |
+
+**Reverse.** With wheel inertia, as on the Unity car, the committed Core's negative demand is the motor brake: it stops the wheels and never turns them backwards, so the car cannot reverse. The recovery still helps there. Lifting off and steering the other way frees many pinned cars. With held-out cars, timeouts fall from 22 to 4, but leaving the road rises from 4 to 14: a freed car often leaves the road later. Trip by trip, the recovery wins 8 and loses 1 against the controller alone (held-out), and wins 10 and loses none (perturbed). The "with ESC reverse" column is a scratch build of the three-point-turn work's uncommitted ESC reverse latch (ADR 0010): a negative demand held at rest engages reverse. With it, no trip times out. On held-out cars the recovery finishes 17 trips the controller alone lost and loses 1 it finished. That build changes the Core slightly beyond reversing (the slip angle when a wheel rolls backwards), so its "Unity-car gains" row differs from the committed one.
+
+The remaining failures are leaving the road (15 and 11 % held-out and perturbed, with reverse) and running past the stop (3 %). These are low-grip cars that spin at junctions, which backing off does not fix.
 
 ## Limits
 
@@ -250,6 +270,12 @@ The Unity-car round (`rl/twin-car`). Its baselines also use the earlier stop-tas
 
 ```bash
 .venv/Scripts/python sim_py/evaluate_policies.py controller:pure_pursuit sb3:policies/twin-car/ppo-res-stop-unity-r2-s0 --task stop --car unity --trips 100 --target-speed 4
+```
+
+The autopilot on the Unity car (`twin/unity-car-autopilot`). The "with ESC reverse" column passes `--lib` a build with ADR 0010's reverse latch:
+
+```bash
+.venv/Scripts/python sim_py/evaluate_policies.py controller:pure_pursuit controller:pure_pursuit:policies/controllers_unity_stop.json recover:controller:pure_pursuit:policies/controllers_unity_stop.json --task stop --car unity --trips 100 --target-speed 4
 ```
 
 The v1-reward runs trained at commit `fe415b6`, where `REWARD_STOP` weighs offset and steering at 2.

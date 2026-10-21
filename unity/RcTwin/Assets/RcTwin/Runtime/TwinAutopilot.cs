@@ -10,9 +10,11 @@
 // the end, or failed past it, off the route or out of time. Holding a drive
 // key takes the car back.
 //
-// Drivers (IDriver): the tuned pure pursuit, or a learned policy exported by
-// tools/export_policy.py (PolicyDriver) when `policy` is set; the panel
-// switches between them. A new controller is a new IDriver.
+// Drivers (IDriver): pure pursuit tuned for this car (TunedForTwin), or a
+// learned policy exported by tools/export_policy.py (PolicyDriver) when
+// `policy` is set; the panel switches between them. A new controller is a
+// new IDriver. Either is wrapped in KerbRecovery: pinned against a kerb, the
+// car backs off and retries.
 //
 // Keys: P stops or resumes the trip. The panel picks the destination and speed.
 // Command line (the player): -goto <stop> [-speed <m/s>] [-driver learned|pure_pursuit] starts a trip;
@@ -38,6 +40,8 @@ namespace RcTwin
         public TextAsset policy;
         [Tooltip("Drive with the learned policy when there is one.")]
         public bool useLearned = true;
+        [Tooltip("Back off a kerb the car is pinned against and retry (KerbRecovery).")]
+        public bool kerbRecovery = true;
         [Tooltip("Give up when further than this off the centreline [m].")]
         public double maxOffset = 1.2;
         [Tooltip("Give up after this long on one trip [s].")]
@@ -103,13 +107,18 @@ namespace RcTwin
 
         private IDriver ChooseDriver()
         {
+            IDriver d;
             if (useLearned && _learned != null)
             {
                 targetSpeed = _learned.TargetSpeed;   // it was trained at one speed
-                return _learned;
+                d = _learned;
             }
-            return PurePursuitDriver.Tuned(RcTwinNative.DefaultParams(), targetSpeed, stopTask: true);
+            else d = PurePursuitDriver.TunedForTwin(RcTwinNative.DefaultParams(), targetSpeed);
+            return kerbRecovery ? new KerbRecovery(d, targetSpeed) : d;
         }
+
+        /// <summary>Times this trip the car backed off a kerb it was pinned against.</summary>
+        public int TripBackOffs => (Driver as KerbRecovery)?.BackOffs ?? 0;
 
         private void OnDestroy()
         {
@@ -245,7 +254,8 @@ namespace RcTwin
             if (Remaining <= StopTolerance && Math.Abs(st.vx) <= StopSpeed)
             {
                 End(Status.Arrived, $"Arrived at {Destination} in {TripTime:0.0} s" +
-                                    (TripWallContacts > 0 ? $", {TripWallContacts} kerb contacts." : "."));
+                                    (TripWallContacts > 0 ? $", {TripWallContacts} kerb contacts" : "") +
+                                    (TripBackOffs > 0 ? $", backed off the kerb {TripBackOffs}x." : "."));
                 return;
             }
             if (Math.Abs(d) > maxOffset) { End(Status.Failed, $"Left the route ({d:+0.00;-0.00} m off). Drive back or press R."); return; }
@@ -349,7 +359,9 @@ namespace RcTwin
             {
                 if (GUILayout.Button(State == Status.Paused ? "Resume (P)" : "Pause (P)", _btn)) Pause();
                 GUILayout.Label($"{Remaining:0.0} m to go, {_car.State.vx:0.00} m/s, {LastOffset * 100:+0;-0} cm off the line, " +
-                                $"{TripWallContacts} kerb contacts", _text);
+                                $"{TripWallContacts} kerb contacts" +
+                                ((Driver as KerbRecovery)?.Backing == true ? ", backing off the kerb" :
+                                 TripBackOffs > 0 ? $", {TripBackOffs} back-offs" : ""), _text);
             }
             GUILayout.Label(Message, _text);
             GUILayout.EndArea();

@@ -23,6 +23,9 @@ Policy specs (strings, so worker processes can build them):
   controller:<kind>            tuned gains from policies/controllers.json
   controller:<kind>:default    the untuned defaults
   controller:<kind>:{json}     explicit gains, as tools/tune_controllers.py uses
+  controller:<kind>:<file.json>  tuned gains from another tuning, e.g.
+                               policies/controllers_unity_stop.json
+  recover:<spec>               <spec> with the kerb recovery (controllers.KerbRecovery)
   cem:<path.json>              sim_py/train_cem.py
   sb3:<prefix>                 sim_py/train_rl.py output (needs the .venv)
 
@@ -84,12 +87,18 @@ def build_policy(spec: str, env, any_car: bool = False):
     any_car lets a learned policy drive a car it did not train on."""
     envmod = campus().envmod
     kind, _, rest = spec.partition(":")
+    if kind == "recover":
+        ctl = _load("controllers", HERE / "controllers.py")
+        return ctl.KerbRecovery(build_policy(rest, env, any_car), envmod, env.target_speed)
     if kind == "controller":
         ctl = _load("controllers", HERE / "controllers.py")
         name, _, variant = rest.partition(":")
         gains = {}
         if variant.startswith("{"):
             gains = json.loads(variant)          # explicit gains (tuning)
+        elif variant.endswith(".json"):
+            tuned = json.loads((ROOT / variant).read_text(encoding="utf-8"))
+            gains = tuned[name]["gains"]
         elif variant != "default":
             tuned = json.loads((ROOT / "policies" / "controllers.json").read_text(encoding="utf-8"))
             gains = tuned[name]["gains"]
@@ -134,17 +143,19 @@ def run_episode(env, policy, seed: int, options=None) -> dict:
             "wall": info["wall_contacts"] > 0, "return": ret, "ticks": ticks,
             "speed_error": v_err / ticks, "offset_mean": off / ticks,
             "offset_p95": offs[min(len(offs) - 1, int(0.95 * len(offs)))],
-            "steer_roughness": rough / max(1, ticks - 1), "energy_wh_per_m": info["energy_wh"] / dist}
+            "steer_roughness": rough / max(1, ticks - 1), "energy_wh_per_m": info["energy_wh"] / dist,
+            "back_offs": getattr(policy, "back_offs", 0)}
 
 
 def _job(args):
     spec, condition, seeds, lib, target_speed, task, car, any_car = args
     c = campus()
     extra = {}
-    if spec.startswith("sb3:"):
+    inner = spec[len("recover:"):] if spec.startswith("recover:") else spec
+    if inner.startswith("sb3:"):
         # A learned policy sees the observation it trained on (history 0 for a
         # recurrent one); the harness checks it trained at this speed.
-        cfg = json.loads(pathlib.Path(spec[4:]).with_suffix(".json").read_text(encoding="utf-8"))["config"]
+        cfg = json.loads(pathlib.Path(inner[4:]).with_suffix(".json").read_text(encoding="utf-8"))["config"]
         extra["history"] = cfg["history"]
     env = c.CampusEnv(seed=seeds[0], ranges=ranges_for(condition), lib_path=lib, target_speed=target_speed,
                       task=task, car=car, **extra)

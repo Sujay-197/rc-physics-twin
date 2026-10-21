@@ -33,6 +33,25 @@ class AutopilotFixture(unittest.TestCase):
             self.assertEqual(committed, fresh, f"{name}: rerun tools/make_autopilot_fixture.py")
             self.assertEqual(len(committed["checks"]), 40)
 
+    def test_the_kerb_recovery_trace_is_current(self):
+        committed = json.loads(fx.RECOVERY.read_text(encoding="utf-8"))
+        self.assertEqual(committed, fx.make_recovery(), "rerun tools/make_autopilot_fixture.py")
+
+    def test_the_kerb_recovery_trace_backs_off_and_hands_back(self):
+        doc = json.loads(fx.RECOVERY.read_text(encoding="utf-8"))
+        ticks, tick = doc["ticks"], doc["tick"]
+        backing = [t["action"][1] < 0.0 for t in ticks]
+        first = backing.index(True)
+        self.assertAlmostEqual(first, 30 + 0.5 / tick, delta=1, msg="backs off once pinned for 0.5 s")
+        self.assertEqual(ticks[first]["action"], [-1.0, -0.6], "reversing on the other lock")
+        back = backing.index(False, first)
+        self.assertAlmostEqual((back - first) * 0.4 * tick, 0.3, delta=0.01, msg="for 0.3 m")
+        self.assertFalse(any(backing[back:340]), "drives on; light throttle at rest is not a pin")
+        last = backing.index(True, back)
+        self.assertEqual(ticks[last]["action"], [1.0, -0.6], "the other lock from a right turn")
+        self.assertAlmostEqual(len(ticks) - last, 1.5 / tick, delta=1, msg="no reverse: gives up after 1.5 s")
+        self.assertEqual(ticks[-1]["back_offs"], 2)
+
     def test_it_covers_a_real_drive(self):
         doc = json.loads(fx.FIXTURE.read_text(encoding="utf-8"))
         follow, stop = doc["episodes"]

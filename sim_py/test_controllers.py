@@ -91,6 +91,14 @@ class Driving(unittest.TestCase):
             s = rep["policies"][f"controller:{kind}"]["train"]["summary"]
             self.assertEqual(s["success"][0], 1.0, kind)
 
+    def test_the_unity_car_gains_with_kerb_recovery_drive_stop_trips(self):
+        spec = "recover:controller:pure_pursuit:policies/controllers_unity_stop.json"
+        rep = ev.evaluate([spec], trips=3, conditions=("train",), lib=LIB, workers=1, target_speed=4.0,
+                          task="stop", car="unity")
+        eps = rep["policies"][spec]["train"]["episodes"]
+        self.assertEqual([e["status"] for e in eps], ["reached_end"] * 3)
+        self.assertEqual([e["back_offs"] for e in eps], [0] * 3, "no back-off on a clean trip")
+
     def test_the_cornering_limit_slows_the_car_before_a_sharp_turn(self):
         car = nominal()
         idx = C._idx(envmod)
