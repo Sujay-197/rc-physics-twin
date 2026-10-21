@@ -134,6 +134,20 @@ class CornerSpeed(unittest.TestCase):
         self.assertEqual(at(11.0), 4.0)
         self.assertEqual(C.speed_profile(lambda s: 0.3, 10.0, 4.0, a_lat, a_brake), [4.0] * 101, "straight")
 
+    def test_after_a_corner_the_plan_rises_as_accelerating_allows(self):
+        heading = lambda s: 0.0 if s < 10.0 else -0.5 * math.pi
+        a_lat, a_brake, a_accel, w = 3.0, 1.5, 1.0, 1.5
+        prof = C.speed_profile(heading, 20.0, 4.0, a_lat, a_brake, window=w, step=0.1, a_accel=a_accel)
+        v_c = math.sqrt(a_lat / (0.5 * math.pi / w))
+        at = lambda s: prof[round(s / 0.1)]
+        self.assertAlmostEqual(at(10.7), v_c, places=9, msg="the corner's last point")
+        self.assertAlmostEqual(at(11.7), math.sqrt(v_c ** 2 + 2.0 * a_accel * 1.0), places=6)
+        self.assertEqual(at(19.9), 4.0, "the target speed again, far enough on")
+        # Before the corner nothing changes, and without a_accel neither does the exit.
+        before = C.speed_profile(heading, 20.0, 4.0, a_lat, a_brake, window=w, step=0.1)
+        self.assertEqual(prof[:100], before[:100])
+        self.assertEqual(before[round(11.7 / 0.1)], 4.0)
+
     def test_the_plan_caps_the_drivers_throttle_and_never_raises_it(self):
         env = campus.CampusEnv(seed=0, ranges=envmod.RANGES_NOMINAL, lib_path=LIB, target_speed=4.0, task="stop",
                                car="unity")
@@ -158,7 +172,7 @@ class CornerSpeed(unittest.TestCase):
         eps = rep["policies"][spec]["train"]["episodes"]
         self.assertEqual([e["status"] for e in eps], ["reached_end"] * 3)
         tuned = json.loads((ROOT / "policies" / "controllers_unity_stop.json").read_text(encoding="utf-8"))
-        self.assertEqual(set(tuned["corner_speed"]["gains"]), {"a_lat", "a_brake"})
+        self.assertEqual(set(tuned["corner_speed"]["gains"]), {"a_lat", "a_brake", "a_accel"})
 
 
 class _Params:

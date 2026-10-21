@@ -145,12 +145,15 @@ namespace RcTwin
     /// Every Step along the route, curvature is the heading change across
     /// Window centred there (clamped to the route) over the window, the cap
     /// is sqrt(aLat / curvature), at most vMax, and a backward pass lowers
-    /// it so that braking at aBrake reaches every corner's cap in time.
+    /// it so that braking at aBrake reaches every corner's cap in time. With
+    /// aAccel (not NaN), a forward pass then lets the cap rise after each
+    /// corner only as fast as accelerating at aAccel allows: the car is still
+    /// turning as it leaves a junction, and full throttle there spun low-grip cars.
     /// </remarks>
     public static class SpeedProfile
     {
         public static double[] Build(Func<double, double> headingAt, double length, double vMax, double aLat,
-                                     double aBrake, double window = 1.5, double step = 0.1)
+                                     double aBrake, double window = 1.5, double step = 0.1, double aAccel = double.NaN)
         {
             int n = (int)(length / step + 1e-9) + 1;
             double half = 0.5 * window;
@@ -164,6 +167,9 @@ namespace RcTwin
             }
             for (int i = n - 2; i >= 0; i--)
                 cap[i] = Math.Min(cap[i], Math.Sqrt(cap[i + 1] * cap[i + 1] + 2.0 * aBrake * step));
+            if (!double.IsNaN(aAccel))
+                for (int i = 1; i < n; i++)
+                    cap[i] = Math.Min(cap[i], Math.Sqrt(cap[i - 1] * cap[i - 1] + 2.0 * aAccel * step));
             return cap;
         }
 
@@ -182,7 +188,8 @@ namespace RcTwin
     /// 4 m/s for a junction takes 4 to 5 m. The autopilot knows its route,
     /// so it plans speed along all of it (Plan, at each trip's start), and
     /// each tick this caps the driver's throttle by a speed loop on the plan
-    /// at the car's arc length, where the plan is below the target speed. It
+    /// at the car's arc length, where the plan is below the target speed:
+    /// before each junction, and as the car pulls away from it. It
     /// only ever lowers the throttle. Most of the Unity autopilot's held-out
     /// failures were low-grip cars spinning at a junction they reached at
     /// full speed (Docs/policy-study.md, "A corner speed plan").
@@ -190,9 +197,9 @@ namespace RcTwin
     public sealed class CornerSpeed : IDriver
     {
         /// <summary>The plan's gains, set by design (policies/controllers_unity_stop.json "corner_speed").</summary>
-        public const double DesignALat = 3.4, DesignABrake = 1.2;   // [m/s^2]
+        public const double DesignALat = 3.4, DesignABrake = 1.2, DesignAAccel = 1.2;   // [m/s^2]
 
-        public double ALat = DesignALat, ABrake = DesignABrake;   // [m/s^2]
+        public double ALat = DesignALat, ABrake = DesignABrake, AAccel = DesignAAccel;   // [m/s^2]; AAccel NaN: none
         public double Window = 1.5, Step = 0.1;                    // [m]
         public double KSpeed;                                      // throttle per unit speed-ratio error
 
@@ -217,7 +224,7 @@ namespace RcTwin
 
         /// <summary>Plan a route from its heading at arc length s [rad] and its length [m].</summary>
         public void Plan(Func<double, double> headingAt, double length) =>
-            Profile = SpeedProfile.Build(headingAt, length, TargetSpeed, ALat, ABrake, Window, Step);
+            Profile = SpeedProfile.Build(headingAt, length, TargetSpeed, ALat, ABrake, Window, Step, AAccel);
 
         /// <summary>The planned speed at arc length s, interpolated [m/s].</summary>
         public double CapAt(double s)

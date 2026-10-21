@@ -60,7 +60,9 @@ class AutopilotFixture(unittest.TestCase):
         doc = fx.make_corner()
         prof = doc["profile"]
         self.assertLess(min(prof), 2.5, "a junction on the route")
-        self.assertGreater(sum(c >= doc["target_speed"] for c in prof), len(prof) // 4, "straights at full speed")
+        self.assertGreater(sum(c >= doc["target_speed"] for c in prof), len(prof) // 8, "straights at full speed")
+        rise = max(b * b - a * a for a, b in zip(prof, prof[1:]))
+        self.assertLessEqual(rise, 2.0 * doc["a_accel"] * doc["step"] + 1e-9, "pulling away no faster than a_accel")
         braked = [t for t in doc["ticks"] if t["action"][1] < t["inner"][1]]
         kept = [t for t in doc["ticks"] if t["action"] == t["inner"]]
         self.assertGreater(len(braked), 20)

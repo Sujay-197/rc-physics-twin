@@ -353,13 +353,16 @@ class KerbRecovery:
 # --------------------------------------------------------- corner speed plan
 
 def speed_profile(heading_at, length: float, v_max: float, a_lat: float, a_brake: float,
-                  window: float = 1.5, step: float = 0.1) -> list:
+                  window: float = 1.5, step: float = 0.1, a_accel: float | None = None) -> list:
     """The speed cap [m/s] every `step` along a route of `length`, from its
     heading `heading_at(s)` [rad]. Curvature at s is the heading change
     across `window` centred on it (clamped to the route) over the window, so
     a right-angle junction reads as a turn of radius about window / (pi/2).
     The cap is sqrt(a_lat / curvature), at most v_max, and a backward pass
     lowers it so that braking at a_brake reaches every corner's cap in time.
+    With a_accel, a forward pass then lets the cap rise after each corner
+    only as fast as accelerating at a_accel allows: the car is still turning
+    as it leaves a junction, and full throttle there spun low-grip cars.
     Unity's SpeedProfile (Drivers.cs) is this, line for line."""
     n = int(length / step + 1e-9) + 1
     half = 0.5 * window
@@ -371,6 +374,9 @@ def speed_profile(heading_at, length: float, v_max: float, a_lat: float, a_brake
         cap.append(v_max if k < 1e-9 else min(v_max, math.sqrt(a_lat / k)))
     for i in range(n - 2, -1, -1):
         cap[i] = min(cap[i], math.sqrt(cap[i + 1] ** 2 + 2.0 * a_brake * step))
+    if a_accel is not None:
+        for i in range(1, n):
+            cap[i] = min(cap[i], math.sqrt(cap[i - 1] ** 2 + 2.0 * a_accel * step))
     return cap
 
 
@@ -386,7 +392,8 @@ class CornerSpeed:
     whole route, as the autopilot can (it knows the route and where the
     car is on it): speed_profile() at each trip's start, then each tick
     the driver's throttle is capped by a speed loop on the profile at the
-    car's arc length, where the plan is below the target speed: it only
+    car's arc length, where the plan is below the target speed (before each
+    junction, and, with a_accel, as the car pulls away from it): it only
     ever lowers the throttle, and off the corners the driver is as it was.
     Most held-out failures of the Unity autopilot were low-grip cars
     spinning at a junction they reached at full speed (Docs/policy-study.md).
@@ -394,14 +401,15 @@ class CornerSpeed:
     Wraps any policy obs -> (steer, throttle) for a CampusEnv `env` (its
     road and arc length s). unity/.../Drivers.cs CornerSpeed is this."""
 
-    def __init__(self, inner, env, a_lat: float, a_brake: float, window: float = 1.5, step: float = 0.1,
-                 k_speed: float = 3.0):
+    def __init__(self, inner, env, a_lat: float, a_brake: float, a_accel: float | None = None,
+                 window: float = 1.5, step: float = 0.1, k_speed: float = 3.0):
         self.inner, self.env = inner, env
-        self.a_lat, self.a_brake, self.window, self.step = a_lat, a_brake, window, step
+        self.a_lat, self.a_brake, self.a_accel, self.window, self.step = a_lat, a_brake, a_accel, window, step
         self.k_speed = getattr(inner, "k_speed", k_speed)
         self.v_ref = env.target_speed
         self.i_v = env.frame_fields.index("speed_ratio")
-        self.name = f"{getattr(inner, 'name', 'policy')}+corner_speed(a_lat={a_lat:g},a_brake={a_brake:g})"
+        self.name = (f"{getattr(inner, 'name', 'policy')}+corner_speed(a_lat={a_lat:g},a_brake={a_brake:g}"
+                     + (f",a_accel={a_accel:g})" if a_accel is not None else ")"))
         self.profile = []
 
     def reset(self):
@@ -413,7 +421,7 @@ class CornerSpeed:
                                        ctypes.byref(h))
             return h.value
         self.profile = speed_profile(heading_at, env._length, self.v_ref, self.a_lat, self.a_brake,
-                                     self.window, self.step)
+                                     self.window, self.step, self.a_accel)
         if hasattr(self.inner, "reset"):
             self.inner.reset()
 

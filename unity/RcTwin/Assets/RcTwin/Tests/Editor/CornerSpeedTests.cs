@@ -44,7 +44,8 @@ namespace RcTwin.Tests
             var inner = new Scripted();
             var cs = new CornerSpeed(inner, D(doc["target_speed"]), D(doc["k_speed"]))
             {
-                ALat = D(doc["a_lat"]), ABrake = D(doc["a_brake"]), Window = D(doc["window"]), Step = D(doc["step"]),
+                ALat = D(doc["a_lat"]), ABrake = D(doc["a_brake"]), AAccel = D(doc["a_accel"]),
+                Window = D(doc["window"]), Step = D(doc["step"]),
             };
             cs.Plan(s => road.Point(s).heading, road.Length);
             var want = (List<object>)doc["profile"];
@@ -86,11 +87,13 @@ namespace RcTwin.Tests
             var g = (Dictionary<string, object>)((Dictionary<string, object>)doc["corner_speed"])["gains"];
             Assert.AreEqual(D(g["a_lat"]), CornerSpeed.DesignALat);
             Assert.AreEqual(D(g["a_brake"]), CornerSpeed.DesignABrake);
+            Assert.AreEqual(D(g["a_accel"]), CornerSpeed.DesignAAccel);
             var pp = PurePursuitDriver.TunedForTwin(RcTwinNative.DefaultParams(), 4.0);
             var cs = new CornerSpeed(pp, 4.0);
             Assert.AreEqual(pp.KSpeed, cs.KSpeed, "the speed loop of the driver it wraps, as in Python");
             Assert.AreEqual(CornerSpeed.DesignALat, cs.ALat);
             Assert.AreEqual(CornerSpeed.DesignABrake, cs.ABrake);
+            Assert.AreEqual(CornerSpeed.DesignAAccel, cs.AAccel);
         }
     }
 }

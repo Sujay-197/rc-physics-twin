@@ -26,7 +26,7 @@ Policy specs (strings, so worker processes can build them):
   controller:<kind>:<file.json>  tuned gains from another tuning, e.g.
                                policies/controllers_unity_stop.json
   recover:<spec>               <spec> with the kerb recovery (controllers.KerbRecovery)
-  corner:<a_lat>,<a_brake>:<spec>  <spec> with the corner speed plan (controllers.CornerSpeed);
+  corner:<a_lat>,<a_brake>[,<a_accel>]:<spec>  <spec> with the corner speed plan (controllers.CornerSpeed);
   corner:tuned:<spec>          ... with the plan tuned in policies/controllers_unity_stop.json
   cem:<path.json>              sim_py/train_cem.py
   sb3:<prefix>                 sim_py/train_rl.py output (needs the .venv)
@@ -96,8 +96,7 @@ def build_policy(spec: str, env, any_car: bool = False):
             tuned = json.loads((ROOT / "policies" / "controllers_unity_stop.json").read_text(encoding="utf-8"))
             g = tuned["corner_speed"]["gains"]
         else:
-            a_lat, a_brake = map(float, plan.split(","))
-            g = {"a_lat": a_lat, "a_brake": a_brake}
+            g = dict(zip(("a_lat", "a_brake", "a_accel"), map(float, plan.split(","))))
         return ctl.CornerSpeed(build_policy(inner, env, any_car), env, **g)
     if kind == "recover":
         ctl = _load("controllers", HERE / "controllers.py")
