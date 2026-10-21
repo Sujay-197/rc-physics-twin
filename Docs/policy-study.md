@@ -235,6 +235,41 @@ Stop task, 4 m/s, Unity car, 100 trips per condition, success in % (train / held
 
 The remaining failures are leaving the road (15 and 11 % held-out and perturbed, with reverse) and running past the stop (3 %). These are low-grip cars that spin at junctions, which backing off does not fix.
 
+## A second round on the Unity car: a drivable line and kerb contact
+
+The first round's lessons, applied (branch `rl/twin-car-2`, on the Core with the ESC reverse). The bar is now the autopilot itself: the Unity-car gains with the kerb recovery, 98 / 82 / 86 %.
+
+**What changed.**
+
+- **Offset from a drivable line** (reward v3). The stop task's offset term is measured from `drivable_line()`: the centreline with every corner rounded by a 1 m arc, tangent to both legs. A corner may use at most half of each leg, so short legs get a tighter arc. A 90-degree junction is cut by 41 cm, inside the 70 cm half width. The observation still measures offset from the centreline, so exported policies run in Unity unchanged.
+- **Kerb contact charged per tick.** `REWARD_STOP["contact"]` (0.5) is charged for every tick the car touches a wall, so staying pinned costs. Like the wall term, it is not part of the leaving-the-road charge. Offset and steering stay at weight 1, as in v2.
+- **The residual builds on the Unity-car gains.** `train_rl.py --residual-gains policies/controllers_unity_stop.json` is recorded in the config and used by `load_policy` and `export_policy.py`.
+- **Every learned policy is also scored with the kerb recovery** (`recover:sb3:...`), on the same footing as the autopilot.
+- **PPO + history gets a longer budget:** 45M steps (28 minutes), against 30M before.
+
+**Results.** Stop task, 4 m/s, Unity car, 100 trips per condition. Quality is with held-out cars over the trips each finished. Trip time is the median ratio to the autopilot. The last column counts held-out trips each driver finished that the autopilot did not (+), and the reverse (−), with a two-sided sign test.
+
+| Driver | Train | Held-out | Perturbed | Mean offset | Steer roughness | Kerb contact | Trip time | Against the autopilot |
+|---|---|---|---|---|---|---|---|---|
+| **autopilot**: pure pursuit, Unity-car gains, kerb recovery | 98 | 82 | 86 | 6.8 cm | 0.0048 | 42 % | 1.00 | - |
+| pure pursuit, Unity-car gains, no recovery | 98 | 66 | 68 | 2.8 cm | 0.0014 | 42 % | 1.00 | +1 / −17 |
+| residual PPO s0, kerb recovery | 100 | 86 | 85 | 8.0 cm | 0.0055 | 41 % | 0.99 | +6 / −2, p = 0.29 |
+| residual PPO s1, kerb recovery | 100 | 83 | 85 | 7.3 cm | 0.0054 | 42 % | 1.00 | +8 / −7 |
+| residual PPO s2, kerb recovery | 100 | 82 | 86 | 9.1 cm | 0.0061 | 46 % | 0.98 | +4 / −4 |
+| residual PPO s0, s1, s2, no recovery | 98, 100, 100 | 70, 71, 65 | 72, 70, 73 | 4.7 to 5.0 cm | 0.0017 to 0.0023 | 41 to 46 % | 0.98 to 1.00 | |
+| PPO + history s0, 45M steps | 91 | 85 | 80 | 6.7 cm | 0.0039 | 31 % | 1.24 | +12 / −9, p = 0.66 |
+
+**What the numbers say.**
+
+1. **The new reward no longer costs the residual its robustness.** With reward v1 and v2, every residual seed finished fewer held-out trips than the controller it corrects: 36 to 54 % against 59 %. With v3, on the Unity-car gains, all three finish as many or more: 65 to 71 % against 66 % without the recovery, and 82 to 86 % against 82 % with it. Pooled over the seeds, with the recovery, they win 18 held-out trips and lose 13 (p = 0.47). That is a tie, and it costs a slightly wider line (7.3 to 9.1 cm against 6.8) and rougher steering.
+2. **The residual still drifts.** Each seed's best checkpoint came at 1M or 3M steps. Validation then fell, to 86.7 % for seed 0 by 20M steps. Validation uses training cars, which the base already finishes, so it has nothing left to reward but the return.
+3. **PPO + history learned the task much faster** under v3: 80 % validation at 7M steps, against 3 % at that point under v1. At 45M steps it finishes 85 % of held-out trips, with the smoothest steering of any driver here and a line as tidy as the autopilot's. It touches a kerb on fewer trips (31 % against 42 %), and the kerb recovery never once engaged for it. But it drives 24 % slower than the autopilot, and finishes fewer trips with training cars (91 %) and after the mid-trip change (80 %).
+4. **PPO + history fails by stopping short.** Its timeouts are not kerb pins. With held-out cars it brakes for the stop too early and comes to rest 1.3 to 2 m short of the destination, where it stays. It plans the stop from the training cars' braking, and the heavier, weaker held-out cars stop sooner.
+
+**Decision.** No learned policy beats the autopilot on held-out success without worse driving. The release is unchanged and the player was not rebuilt.
+
+**Next.** The residual now ties the autopilot rather than losing to it, so further gains need a different selection, not a different reward. Candidates: validation that includes harder cars, with seeds and ranges of their own, disjoint from the test's; a creep-to-the-stop term, or more seeds and budget, for PPO + history; tuned hyperparameters.
+
 ## Limits
 
 - **The car is SlipX's provisional defaults, not a measured car.** The randomisation ranges are training choices. A policy that is robust across them is robust in simulation, and no more than that.
@@ -278,7 +313,21 @@ The autopilot on the Unity car, on the current Core (ESC reverse, the second col
 .venv/Scripts/python sim_py/evaluate_policies.py controller:pure_pursuit controller:pure_pursuit:policies/controllers_unity_stop.json recover:controller:pure_pursuit:policies/controllers_unity_stop.json --task stop --car unity --trips 100 --target-speed 4
 ```
 
-The v1-reward runs trained at commit `fe415b6`, where `REWARD_STOP` weighs offset and steering at 2.
+The v1-reward runs trained at commit `fe415b6`, where `REWARD_STOP` weighs offset and steering at 2, and the v2 runs at `933b40d`, on the Core before ADR 0010.
+
+The second round (`rl/twin-car-2`, reward v3, the Core with ESC reverse):
+
+```bash
+.venv/Scripts/python sim_py/train_rl.py --algo ppo --residual --residual-gains policies/controllers_unity_stop.json --seed 0 --timesteps 20000000 --task stop --car unity --out policies/twin-car/ppo-res-stop-unity-r3-s0
+```
+
+```bash
+.venv/Scripts/python sim_py/train_rl.py --algo ppo --seed 0 --timesteps 45000000 --task stop --car unity --out policies/twin-car/ppo-stop-unity-r3-s0
+```
+
+```bash
+.venv/Scripts/python sim_py/evaluate_policies.py recover:controller:pure_pursuit:policies/controllers_unity_stop.json recover:sb3:policies/twin-car/ppo-res-stop-unity-r3-s0 sb3:policies/twin-car/ppo-stop-unity-r3-s0 --task stop --car unity --trips 100 --target-speed 4
+```
 
 `tools/record_drives.py --pairs` records every route for the Unity replay (`sim_py/README.md`). Tuning, training and evaluation are deterministic given their seeds; training on GPU is not bit-exact.
 
