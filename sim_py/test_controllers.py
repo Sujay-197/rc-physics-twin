@@ -114,6 +114,53 @@ class Driving(unittest.TestCase):
         self.assertLess(limited(obs)[1], -0.5, "brake for the corner")
 
 
+class CornerSpeed(unittest.TestCase):
+    """The corner speed plan: slow for the route's corners before they come into view."""
+
+    def test_the_profile_brakes_ahead_of_a_sharp_corner(self):
+        # A right angle at 10 m on a 20 m route, a 1.5 m window: curvature
+        # (pi/2) / 1.5 within 0.75 m of the corner.
+        heading = lambda s: 0.0 if s < 10.0 else -0.5 * math.pi
+        a_lat, a_brake, w = 3.0, 1.5, 1.5
+        prof = C.speed_profile(heading, 20.0, 4.0, a_lat, a_brake, window=w, step=0.1)
+        v_c = math.sqrt(a_lat / (0.5 * math.pi / w))
+        at = lambda s: prof[round(s / 0.1)]
+        self.assertAlmostEqual(at(10.0), v_c, places=9)
+        self.assertAlmostEqual(at(9.3), v_c, places=9, msg="the whole window is the corner")
+        # Before the window the cap rises as braking at a_brake allows ...
+        self.assertAlmostEqual(at(8.3), math.sqrt(v_c ** 2 + 2.0 * a_brake * 1.0), places=6)
+        # ... up to the target speed, far enough away; after the corner the car may speed up at once.
+        self.assertEqual(at(0.0), 4.0)
+        self.assertEqual(at(11.0), 4.0)
+        self.assertEqual(C.speed_profile(lambda s: 0.3, 10.0, 4.0, a_lat, a_brake), [4.0] * 101, "straight")
+
+    def test_the_plan_caps_the_drivers_throttle_and_never_raises_it(self):
+        env = campus.CampusEnv(seed=0, ranges=envmod.RANGES_NOMINAL, lib_path=LIB, target_speed=4.0, task="stop",
+                               car="unity")
+        obs, _ = env.reset(seed=0, options={"trip": ("S3", "AB2")})
+        idx = C._idx(envmod)
+        floor = C.CornerSpeed(lambda o: (0.1, 0.4), env, a_lat=0.01, a_brake=0.01)   # crawls everywhere
+        free = C.CornerSpeed(lambda o: (0.1, 0.4), env, a_lat=1e6, a_brake=1e6)      # never slows
+        floor.reset()
+        free.reset()
+        fast = list(obs)
+        fast[idx["speed_ratio"]] = 1.0
+        self.assertEqual(free(fast), (0.1, 0.4))
+        steer, thr = floor(fast)
+        self.assertEqual(steer, 0.1)
+        self.assertLess(thr, -0.9, "far over the plan: brake")
+        env.close()
+
+    def test_the_spec_drives_stop_trips_with_the_tuned_plan(self):
+        spec = "recover:corner:tuned:controller:pure_pursuit:policies/controllers_unity_stop.json"
+        rep = ev.evaluate([spec], trips=3, conditions=("train",), lib=LIB, workers=1, target_speed=4.0,
+                          task="stop", car="unity")
+        eps = rep["policies"][spec]["train"]["episodes"]
+        self.assertEqual([e["status"] for e in eps], ["reached_end"] * 3)
+        tuned = json.loads((ROOT / "policies" / "controllers_unity_stop.json").read_text(encoding="utf-8"))
+        self.assertEqual(set(tuned["corner_speed"]["gains"]), {"a_lat", "a_brake"})
+
+
 class _Params:
     """A dr.Params stand-in from a Nominal (the controllers read these fields)."""
 

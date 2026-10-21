@@ -19,6 +19,7 @@ the comparison. Standard library only.
 
 from __future__ import annotations
 
+import ctypes
 import math
 
 _FIELDS = None
@@ -347,6 +348,92 @@ class KerbRecovery:
             self.backing = [lock, 0.0, 0.0]
             return lock, self.back_throttle
         return steer, throttle
+
+
+# --------------------------------------------------------- corner speed plan
+
+def speed_profile(heading_at, length: float, v_max: float, a_lat: float, a_brake: float,
+                  window: float = 1.5, step: float = 0.1) -> list:
+    """The speed cap [m/s] every `step` along a route of `length`, from its
+    heading `heading_at(s)` [rad]. Curvature at s is the heading change
+    across `window` centred on it (clamped to the route) over the window, so
+    a right-angle junction reads as a turn of radius about window / (pi/2).
+    The cap is sqrt(a_lat / curvature), at most v_max, and a backward pass
+    lowers it so that braking at a_brake reaches every corner's cap in time.
+    Unity's SpeedProfile (Drivers.cs) is this, line for line."""
+    n = int(length / step + 1e-9) + 1
+    half = 0.5 * window
+    cap = []
+    for i in range(n):
+        s = i * step
+        lo, hi = max(0.0, s - half), min(length, s + half)
+        k = abs(_wrap(heading_at(hi) - heading_at(lo))) / max(hi - lo, 1e-9)
+        cap.append(v_max if k < 1e-9 else min(v_max, math.sqrt(a_lat / k)))
+    for i in range(n - 2, -1, -1):
+        cap[i] = min(cap[i], math.sqrt(cap[i + 1] ** 2 + 2.0 * a_brake * step))
+    return cap
+
+
+def _wrap(a: float) -> float:
+    return (a + math.pi) % (2.0 * math.pi) - math.pi
+
+
+class CornerSpeed:
+    """Slow for the route's corners before they come into view.
+
+    The observation sees the centreline 2 m ahead at most; braking from
+    4 m/s for a junction takes 4 to 5 m. So this plans speed along the
+    whole route, as the autopilot can (it knows the route and where the
+    car is on it): speed_profile() at each trip's start, then each tick
+    the driver's throttle is capped by a speed loop on the profile at the
+    car's arc length, where the plan is below the target speed: it only
+    ever lowers the throttle, and off the corners the driver is as it was.
+    Most held-out failures of the Unity autopilot were low-grip cars
+    spinning at a junction they reached at full speed (Docs/policy-study.md).
+
+    Wraps any policy obs -> (steer, throttle) for a CampusEnv `env` (its
+    road and arc length s). unity/.../Drivers.cs CornerSpeed is this."""
+
+    def __init__(self, inner, env, a_lat: float, a_brake: float, window: float = 1.5, step: float = 0.1,
+                 k_speed: float = 3.0):
+        self.inner, self.env = inner, env
+        self.a_lat, self.a_brake, self.window, self.step = a_lat, a_brake, window, step
+        self.k_speed = getattr(inner, "k_speed", k_speed)
+        self.v_ref = env.target_speed
+        self.i_v = env.frame_fields.index("speed_ratio")
+        self.name = f"{getattr(inner, 'name', 'policy')}+corner_speed(a_lat={a_lat:g},a_brake={a_brake:g})"
+        self.profile = []
+
+    def reset(self):
+        env = self.env
+        x, y, z, h = (ctypes.c_double() for _ in range(4))
+
+        def heading_at(s):
+            env.lib.rc_twin_road_point(env._road, s, ctypes.byref(x), ctypes.byref(y), ctypes.byref(z),
+                                       ctypes.byref(h))
+            return h.value
+        self.profile = speed_profile(heading_at, env._length, self.v_ref, self.a_lat, self.a_brake,
+                                     self.window, self.step)
+        if hasattr(self.inner, "reset"):
+            self.inner.reset()
+
+    def cap(self, s: float) -> float:
+        """The planned speed at arc length s, interpolated [m/s]."""
+        p = self.profile
+        u = max(0.0, s) / self.step
+        i = min(int(u), len(p) - 1)
+        j = min(i + 1, len(p) - 1)
+        return p[i] + (u - i) * (p[j] - p[i])
+
+    def __call__(self, obs):
+        steer, throttle = self.inner(obs)
+        if not self.profile:
+            self.reset()
+        cap = self.cap(self.env.s)
+        if cap >= self.v_ref:
+            return steer, throttle      # no corner in reach: the driver as it is
+        v = obs[self.i_v] * self.v_ref
+        return steer, min(throttle, _clip(self.k_speed * (cap - v) / self.v_ref))
 
 
 # ---------------------------------------------------------------- factories
