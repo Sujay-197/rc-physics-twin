@@ -10,6 +10,16 @@
 // the end, or failed past it, off the route or out of time. Holding a drive
 // key takes the car back.
 //
+// A route can leave the stop the way the car came in. The car then turns
+// round first, driven: TurnPlanner plans a multi-point turn of forward and
+// reverse arcs inside the road (the walls the scene gives the Core, and the
+// network's road width), off the main thread, and TurnDriver drives it
+// through TwinCar.Command (reverse is the ESC's, ADR 0010). A leg that ends
+// off its plan is replanned from where the car stopped. The trip itself
+// starts at rest once the car faces along the route, as the RL "stop" task's
+// episodes do. Only if no turn can be planned is the car turned at the stop
+// instead (a reset), and the panel says so.
+//
 // Drivers (IDriver): pure pursuit tuned for this car (TunedForTwin), or a
 // learned policy exported by tools/export_policy.py (PolicyDriver) when
 // `policy` is set; the panel switches between them. A new controller is a
@@ -60,11 +70,26 @@ namespace RcTwin
         public double TripTime { get; private set; }
         public long TripWallContacts { get; private set; }
         public double LastOffset { get; private set; }
+        /// <summary>The turn being driven before the trip, or the last one; null if none was needed.</summary>
+        public TurnPlan Turn { get; private set; }
+        /// <summary>What the car did to turn round for this trip, for the panel; null if it did not have to.</summary>
+        public string TurnReport { get; private set; }
+        /// <summary>Planning or driving the turn: the trip proper has not started.</summary>
+        public bool TurningRound => _planning != null || _turnDriver != null;
+        /// <summary>Time spent turning round [s], and how often the turn was replanned.</summary>
+        public double TurnTime { get; private set; }
+        public int TurnReplans { get; private set; }
 
         public const double ControlTick = 0.01;   // [s], sim_py/rc_twin_env.py TICK
         public const double StopTolerance = 0.3, StopSpeed = 0.1;   // rc_twin_env.py STOP_TOLERANCE_M, STOP_SPEED
         /// <summary>Facing further than this from the route's way out of the stop, the car is turned round.</summary>
         public const double TurnAroundRad = 1.0471975511965976;   // 60 degrees
+        /// <summary>The route driver takes over from a turn ending within these of the
+        /// route's centreline [m] and heading [rad].</summary>
+        public const double HandOverOffset = 0.15, HandOverHeading = 0.26;
+        /// <summary>A leg ending further than these from its planned end [m, rad] is replanned.</summary>
+        public const double LegOffPlan = 0.08, LegOffPlanHeading = 0.15;
+        public const int MaxReplans = 4;
 
         private TwinCar _car;
         private CampusRoutes _net;
@@ -78,6 +103,14 @@ namespace RcTwin
         private string _learnedError;
 
         private float _savedFixedDelta = -1f;
+
+        private double[] _route;
+        private List<(double[] xy, bool closed)> _walls;
+        private TurnPlanner _planner;
+        private System.Threading.Tasks.Task<TurnPlan> _planning;
+        private TurnDriver _turnDriver;
+        private bool _resetting;
+        private long _wallsCarried;   // kerb contacts before a reset this trip
 
         private void Awake()
         {
@@ -167,6 +200,7 @@ namespace RcTwin
 
         private void OnReset()
         {
+            if (_resetting) return;
             if (State == Status.Driving || State == Status.Paused) End(Status.Idle, "Car reset; trip cancelled.");
         }
 
@@ -186,32 +220,142 @@ namespace RcTwin
             if (origin == null) { Message = "Drive (or press R) to a stop first: trips run stop to stop."; return false; }
             if (!_net.Stops.ContainsKey(destination)) { Message = $"No stop {destination}."; return false; }
             if (_net.Stops[origin].node == _net.Stops[destination].node) { Message = $"Already at {destination}."; return false; }
-            _road?.Dispose();
-            _road = new TwinRoad(_net.Route(origin, destination), _net.RoadWidth);
-            // A route can leave the stop the way the car came in. The twin does
-            // not drive three-point turns yet, so the car is turned at the stop,
-            // as a bus turns at a terminus, and set where the RL environment
-            // starts its episodes: on the centreline, just past the stop.
-            string turned = "";
-            var (sx, sy, _, sh) = _road.Point(_car.Params.lr + 0.05);
-            if (Math.Abs(TwinObservation.Wrap(_car.State.yaw - sh)) > TurnAroundRad)
+            var route = _net.Route(origin, destination);
+            var road = new TwinRoad(route, _net.RoadWidth);
+            var (_, _, _, sh) = road.Point(_car.Params.lr + 0.05);
+            bool turn = TurnPlanner.FacesAway(_car.State.yaw, sh, TurnAroundRad);
+            if (turn && Math.Abs(_car.State.vx) > StopSpeed)
             {
-                if (Math.Abs(_car.State.vx) > StopSpeed) { Message = "Stop first: the route leaves the other way."; return false; }
-                _car.ResetTo(sx, sy, sh);
-                turned = " Turned round at the stop (not driven).";
+                road.Dispose();
+                Message = "Stop first: the route leaves the other way.";
+                return false;
             }
+            _road?.Dispose();
+            _road = road;
+            _route = route;
+            Origin = origin;
+            Destination = destination;
+            Turn = null;
+            TurnReport = null;
+            TurnTime = 0.0;
+            TurnReplans = 0;
+            _turnDriver = null;
+            _planning = null;
+            _wallsAtStart = _car.WallContacts;
+            _wallsCarried = 0;
+            TripWallContacts = 0;
+            TripTime = 0.0;
+            Remaining = double.NaN;
+            State = Status.Driving;
+            DrawRoute();
+            if (turn) PlanTurn();
+            else StartTrip();
+            return true;
+        }
+
+        // The trip proper, from rest at the stop: the RL "stop" task's episode.
+        private void StartTrip()
+        {
             Driver = ChooseDriver();
             Driver.Reset();
             _obs = new TwinObservation(Driver.History, stopTask: true);
             _first = true;
-            Origin = origin;
-            Destination = destination;
             TripTime = 0.0;
+            Message = $"{Origin} to {Destination}, {_road.Length:0.0} m.";
+        }
+
+        // ------------------------------------------------------- turning round
+
+        // Plan a turn from where the car is, off the main thread.
+        private void PlanTurn()
+        {
+            if (_walls == null)
+            {
+                // The walls the Core has (TwinCar hands it every TwinWalls); a scene
+                // without any falls back to the network's own kerbs and buildings.
+                _walls = new List<(double[], bool)>();
+                foreach (var set in FindObjectsByType<TwinWalls>(FindObjectsSortMode.InstanceID))
+                    foreach (var w in set.walls)
+                        if (w.points != null && w.points.Length >= 2) _walls.Add((TwinWalls.Flatten(w), w.closed));
+                if (_walls.Count == 0) foreach (var w in _net.Walls) _walls.Add((w.xy, w.closed));
+            }
+            var planner = new TurnPlanner(_car.Params, _car.Footprint, _walls, _net.Centrelines(), 3, _net.RoadWidth);
+            var st = _car.State;
+            var route = _route;
+            _planner = planner;
+            _turnDriver = null;
+            _planning = System.Threading.Tasks.Task.Run(() => planner.Plan(st.x, st.y, st.yaw, route));
+            Message = $"{Origin} to {Destination}: the route leaves the other way; planning a turn.";
+        }
+
+        private void TurnTick(in RcTwinNative.State st)
+        {
+            TurnTime += Time.fixedDeltaTime;
+            if (_planning != null)
+            {
+                _car.Command = (0.0, Brake());
+                if (!_planning.IsCompleted) return;
+                TurnPlan plan = _planning.Status == System.Threading.Tasks.TaskStatus.RanToCompletion ? _planning.Result : null;
+                string why = _planning.IsFaulted ? _planning.Exception.GetBaseException().Message : "no turn fits in the road here";
+                _planning = null;
+                if (plan == null) { TurnAtStop(why); return; }
+                Turn = plan;
+                _turnDriver = new TurnDriver(plan, _car.Params.steerMax);
+                TurnReport = $"Turning round: {plan.Describe()}" + (TurnReplans > 0 ? $" (replanned {TurnReplans}x)." : ".");
+            }
+
+            var drv = _turnDriver;
+            var leg = drv.Current;
+            _car.Command = drv.Act(st, Time.fixedDeltaTime);
+            if (drv.Done)
+            {
+                if (_planner.Near(st.x, st.y, st.yaw, HandOverOffset, HandOverHeading))
+                {
+                    _turnDriver = null;
+                    TurnReport = $"Turned round: {Turn.Describe()}, {TurnTime:0.0} s" +
+                                 (TurnReplans > 0 ? $", replanned {TurnReplans}x." : ".");
+                    Debug.Log($"TwinAutopilot: {TurnReport} {TripWallContacts} kerb contacts.");
+                    StartTrip();
+                }
+                else Replan("ended off the route");
+                return;
+            }
+            if (drv.LegEnded)
+            {
+                var end = leg.End;
+                double off = Math.Sqrt((st.x - end.x) * (st.x - end.x) + (st.y - end.y) * (st.y - end.y));
+                if (off > LegOffPlan || Math.Abs(TwinObservation.Wrap(st.yaw - end.yaw)) > LegOffPlanHeading) Replan("a leg ended off its plan");
+            }
+            else if (drv.Stalled > 1.0) Replan("stalled");
+            else Message = $"{Origin} to {Destination}: turning round, leg {drv.Leg + 1} of {Turn.Legs.Count} " +
+                           $"({(drv.Current.Dir > 0 ? "forward" : "reverse")}), {Math.Max(0.0, drv.LegRemaining):0.00} m left.";
+        }
+
+        private void Replan(string why)
+        {
+            if (++TurnReplans > MaxReplans)
+            {
+                End(Status.Failed, $"Could not turn round ({why}, {MaxReplans} replans). Drive back or press R.");
+                return;
+            }
+            Debug.Log($"TwinAutopilot: turn {why}; replanning ({TurnReplans}).");
+            PlanTurn();
+        }
+
+        // No turn fits: turn the car at the stop instead, as a bus turns at a
+        // terminus, where the RL environment starts its episodes (on the
+        // centreline, just past the stop).
+        private void TurnAtStop(string why)
+        {
+            var (sx, sy, _, sh) = _road.Point(_car.Params.lr + 0.05);
+            _wallsCarried = TripWallContacts;   // the reset clears the car's count
+            _resetting = true;
+            try { _car.ResetTo(sx, sy, sh); }
+            finally { _resetting = false; }
             _wallsAtStart = _car.WallContacts;
-            State = Status.Driving;
-            Message = $"{origin} to {destination}, {_road.Length:0.0} m.{turned}";
-            DrawRoute();
-            return true;
+            TurnReport = $"Turned round at the stop (not driven): {why}.";
+            Debug.LogWarning($"TwinAutopilot: {TurnReport}");
+            StartTrip();
         }
 
         public void Pause()
@@ -220,12 +364,15 @@ namespace RcTwin
             else if (State == Status.Paused) { State = Status.Driving; Message = $"{Origin} to {Destination}."; }
         }
 
-        private double Brake() => _car.State.vx > 0.05 ? -0.6 : 0.0;   // at rest a brake would reverse
+        // Against the motion; at rest a brake would reverse.
+        private double Brake() => _car.State.vx > 0.05 ? -0.6 : _car.State.vx < -0.05 ? 0.6 : 0.0;
 
         private void End(Status s, string message)
         {
             State = s;
             Message = message;
+            _planning = null;
+            _turnDriver = null;
             _car.Command = s == Status.Manual ? ((double, double)?)null : (0.0, 0.0);
         }
 
@@ -241,6 +388,8 @@ namespace RcTwin
             if (State != Status.Driving) return;
             if (_car.ManualOverride) { End(Status.Manual, "You have the car (keys held). Pick a destination to hand it back."); return; }
             var st = _car.State;
+            TripWallContacts = _wallsCarried + _car.WallContacts - _wallsAtStart;
+            if (TurningRound) { TurnTick(st); return; }
             var p = _car.Params;
             var (s, d) = _road.Locate(st.x, st.y);
             LastOffset = d;
@@ -250,7 +399,6 @@ namespace RcTwin
 
             Remaining = _road.Length - s;
             TripTime += Time.fixedDeltaTime;
-            TripWallContacts = _car.WallContacts - _wallsAtStart;
             if (Remaining <= StopTolerance && Math.Abs(st.vx) <= StopSpeed)
             {
                 End(Status.Arrived, $"Arrived at {Destination} in {TripTime:0.0} s" +
@@ -318,7 +466,7 @@ namespace RcTwin
                 _btn = new GUIStyle(GUI.skin.button) { fontSize = 12 };
                 _on = new GUIStyle(_btn) { normal = { background = on, textColor = Color.white } };
             }
-            var r = new Rect(Screen.width - 350, 10, 340, 340);
+            var r = new Rect(Screen.width - 350, 10, 340, 380);
             GUILayout.BeginArea(r, _box);
             GUILayout.Label("Autopilot", _title);
             GUILayout.Label("Driver", _text);
@@ -358,11 +506,13 @@ namespace RcTwin
             if (State == Status.Driving || State == Status.Paused)
             {
                 if (GUILayout.Button(State == Status.Paused ? "Resume (P)" : "Pause (P)", _btn)) Pause();
-                GUILayout.Label($"{Remaining:0.0} m to go, {_car.State.vx:0.00} m/s, {LastOffset * 100:+0;-0} cm off the line, " +
-                                $"{TripWallContacts} kerb contacts" +
-                                ((Driver as KerbRecovery)?.Backing == true ? ", backing off the kerb" :
-                                 TripBackOffs > 0 ? $", {TripBackOffs} back-offs" : ""), _text);
+                if (!TurningRound)
+                    GUILayout.Label($"{Remaining:0.0} m to go, {_car.State.vx:0.00} m/s, {LastOffset * 100:+0;-0} cm off the line, " +
+                                    $"{TripWallContacts} kerb contacts" +
+                                    ((Driver as KerbRecovery)?.Backing == true ? ", backing off the kerb" :
+                                     TripBackOffs > 0 ? $", {TripBackOffs} back-offs" : ""), _text);
             }
+            if (TurnReport != null) GUILayout.Label(TurnReport, _text);
             GUILayout.Label(Message, _text);
             GUILayout.EndArea();
         }

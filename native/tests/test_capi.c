@@ -215,6 +215,68 @@ static void test_params_roundtrip_and_set(void) {
   rc_twin_destroy(v);
 }
 
+/* ADR 0010: the ESC's reverse. With wheel dynamics a negative demand is the
+ * motor brake, which never turns a wheel backwards; held with the car stopped
+ * it engages reverse, until the car next rolls forward or is reset. */
+static rc_twin_vehicle* make_with_wheels(void) {
+  rc_twin_params p;
+  rc_twin_params_default(&p);
+  p.wheel_inertia = 1e-5;
+  return rc_twin_create(RC_TWIN_TIER_L2_DOUBLE_TRACK, RC_TWIN_INTEGRATOR_RK4, &p, NULL);
+}
+
+static void test_reverse_latch(void) {
+  rc_twin_vehicle* v = make_with_wheels();
+  rc_twin_vehicle* w = make_with_wheels();
+  rc_twin_state s, back, sw;
+  double before;
+  int i;
+
+  /* Held at rest: reverse. */
+  CHECK(rc_twin_step(v, 0.0, -2.0, 0.001, 1000) == RC_TWIN_OK);
+  rc_twin_get_state(v, &s);
+  CHECK(s.vx < -1.0);
+  CHECK(s.omega_w[2] < 0.0);
+
+  /* Forward again ends reverse: now a negative demand brakes, at the regen
+   * limit (about 2.3 m/s^2 for this car, where driving backwards would give
+   * nearly 7). */
+  rc_twin_step(v, 0.0, 4.0, 0.001, 1500);
+  rc_twin_get_state(v, &s);
+  CHECK(s.vx > 0.5);
+  before = s.vx;
+  rc_twin_step(v, 0.0, -8.0, 0.001, 100);
+  rc_twin_get_state(v, &s);
+  CHECK(s.vx > 0.0 && s.vx < before && before - s.vx < 0.35);
+  /* Braked to a stop, and held there: reverse again. */
+  rc_twin_step(v, 0.0, -2.0, 0.001, 3000);
+  rc_twin_get_state(v, &s);
+  CHECK(s.vx < -0.5);
+
+  /* A car rolling backwards that never stopped (a spin) is braked, also
+   * straight after a reset from reverse: the reset leaves it. */
+  memset(&back, 0, sizeof back);
+  back.vx = -2.0;
+  back.soc = 1.0;
+  back.pack_v = 11.1;
+  for (i = 0; i < 4; ++i) back.omega_w[i] = -2.0 / 0.05;
+  CHECK(rc_twin_reset(v, &back) == RC_TWIN_OK);
+  rc_twin_step(v, 0.0, -2.0, 0.001, 300);
+  rc_twin_get_state(v, &s);
+  CHECK(s.vx > -1.9);
+  for (i = 0; i < 4; ++i) CHECK(s.omega_w[i] <= 0.0);
+
+  /* Latched per step: n steps are still n single steps. */
+  for (i = 0; i < 1200; ++i) rc_twin_step(w, 0.0, -2.0, 0.001, 1);
+  rc_twin_reset(v, NULL);
+  rc_twin_step(v, 0.0, -2.0, 0.001, 1200);
+  rc_twin_get_state(v, &s);
+  rc_twin_get_state(w, &sw);
+  CHECK(same_state(&s, &sw));
+  rc_twin_destroy(v);
+  rc_twin_destroy(w);
+}
+
 int main(void) {
   test_versions();
   test_params_default();
@@ -226,5 +288,6 @@ int main(void) {
   test_n_steps_equal_n_single_steps();
   test_reset();
   test_params_roundtrip_and_set();
+  test_reverse_latch();
   TEST_MAIN_END();
 }

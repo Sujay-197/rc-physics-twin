@@ -1,5 +1,6 @@
 // Copyright 2026 The SlipX Authors
 // SPDX-License-Identifier: Apache-2.0
+// Modified 2026-10-21 by the rc-physics-twin project: see THIRD_PARTY.md.
 //
 // VehicleState, DriveInput and StepDiagnostics.
 //
@@ -93,6 +94,14 @@ struct DriveInput {
                              // (CORE-08); at L0 and L1 it is applied
                              // directly, subject to accel_max and
                              // decel_max.                          [m/s^2]
+  // The ESC is in reverse (rc-physics-twin ADR 0010). With wheel dynamics
+  // (params.wheel_inertia > 0) a negative accel_cmd is otherwise the motor
+  // brake, which stops a wheel and never reverses it; in reverse it drives
+  // the motor backwards on its torque-speed curve. Which one the driver
+  // means is the ESC's to decide (a host latches it), so it is an input.
+  // Without wheel dynamics a negative demand is a signed force either way
+  // and this is ignored.
+  bool reverse = false;
 };
 
 // Optional per-step diagnostics (CORE-12). Passing nullptr costs nothing, so

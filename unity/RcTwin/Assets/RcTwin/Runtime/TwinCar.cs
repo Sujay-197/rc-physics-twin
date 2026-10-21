@@ -102,6 +102,9 @@ namespace RcTwin
 
         public uint WallSegments => _car != null ? _car.WallCount : 0u;
 
+        /// <summary>The footprint the walls stop (ADR 0009), tyre margin included.</summary>
+        public RcTwinNative.Contact Footprint => _car.Contact;
+
         /// <summary>Slip ratio of wheel i (0 FL .. 3 RR) along the body axis: 0 rolling, > 0 spinning, -1 locked.</summary>
         public double Slip(int i)
         {

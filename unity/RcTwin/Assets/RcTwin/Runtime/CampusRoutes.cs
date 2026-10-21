@@ -29,6 +29,9 @@ namespace RcTwin
 
         public readonly double RoadWidth;
         public readonly Dictionary<string, Stop> Stops = new Dictionary<string, Stop>();
+        /// <summary>The kerb lines and building footprints the scene builder hands
+        /// to TwinWalls: name, closed, and the points as x, y pairs.</summary>
+        public readonly List<(string name, bool closed, double[] xy)> Walls = new List<(string, bool, double[])>();
         private readonly Dictionary<int, Edge> _edges = new Dictionary<int, Edge>();
         private readonly Dictionary<int, List<(int to, int edge, double length)>> _adj =
             new Dictionary<int, List<(int, int, double)>>();
@@ -60,6 +63,32 @@ namespace RcTwin
                 var stop = new Stop { name = (string)s["name"], node = I(s["node"]), weight = I(s["weight"]), x = D(s["x"]), y = D(s["y"]) };
                 (stop.nodeX, stop.nodeY) = nodeXY[stop.node];
                 Stops[stop.name] = stop;
+            }
+            if (net.TryGetValue("walls", out object walls))
+                foreach (Dictionary<string, object> w in (List<object>)walls)
+                {
+                    var pts = (List<object>)w["points"];
+                    var xy = new double[2 * pts.Count];
+                    for (int k = 0; k < pts.Count; k++)
+                    {
+                        var q = (List<object>)pts[k];
+                        xy[2 * k] = D(q[0]);
+                        xy[2 * k + 1] = D(q[1]);
+                    }
+                    Walls.Add(((string)w["name"], (bool)w["closed"], xy));
+                }
+        }
+
+        /// <summary>Every edge's centreline, x, y, z triples: the asphalt is
+        /// RoadWidth wide about them.</summary>
+        public IEnumerable<double[]> Centrelines()
+        {
+            foreach (var e in _edges.Values)
+            {
+                var xyz = new double[3 * e.polyline.Count];
+                for (int k = 0; k < e.polyline.Count; k++)
+                    for (int j = 0; j < 3; j++) xyz[3 * k + j] = e.polyline[k][j];
+                yield return xyz;
             }
         }
 
