@@ -77,11 +77,18 @@ def _controllers():
     return _MODS["controllers"]
 
 
-def build_base(inner, kind: str):
+def base_gains(kind: str, gains_file: str | None = None) -> dict:
+    """The tuning of controller `kind`: policies/controllers.json, or another
+    tuning (gains_file, relative to the repo, e.g. policies/controllers_unity_stop.json)."""
+    path = ROOT / (gains_file or "policies/controllers.json")
+    return json.loads(path.read_text(encoding="utf-8"))[kind]
+
+
+def build_base(inner, kind: str, gains_file: str | None = None):
     """The tuned controller `kind` for this env's nominal car and road."""
     c = _campus()
     ctl = _controllers()
-    tuned = json.loads((ROOT / "policies" / "controllers.json").read_text(encoding="utf-8"))[kind]
+    tuned = base_gains(kind, gains_file)
     if abs(tuned["target_speed"] - inner.target_speed) > 1e-9:
         raise ValueError(f"{kind} was tuned at {tuned['target_speed']} m/s, the env runs {inner.target_speed}")
     return ctl.build(kind, c.envmod, inner.nominal_params(), 0.5 * inner.network.width, inner.target_speed,
@@ -103,7 +110,7 @@ def make_env(cfg: dict, seed: int):
                                       history=cfg["history"], max_time=cfg["max_time"],
                                       task=cfg.get("task", "follow"), car=cfg.get("car", "bare"))
     if cfg["residual"]:
-        env = ResidualWrapper(env, cfg["residual"], cfg["residual_scale"])
+        env = ResidualWrapper(env, cfg["residual"], cfg["residual_scale"], cfg.get("residual_gains"))
     env.reset(seed=seed)
     return Monitor(env)
 
@@ -115,9 +122,9 @@ try:
         """action = clip(base(obs) + scale * a); the observation gains the
         base action, so the network knows what it is correcting."""
 
-        def __init__(self, env, kind: str, scale: float):
+        def __init__(self, env, kind: str, scale: float, gains_file: str | None = None):
             super().__init__(env)
-            self.base = build_base(env.inner, kind)
+            self.base = build_base(env.inner, kind, gains_file)
             self.scale = scale
             low = np.concatenate([env.observation_space.low, [-1.0, -1.0]])
             high = np.concatenate([env.observation_space.high, [1.0, 1.0]])
@@ -231,7 +238,7 @@ class Validator:
         self.env = c.CampusEnv(seed=VAL_SEED, ranges=c.envmod.RANGES_TRAIN, lib_path=cfg["lib"],
                                target_speed=cfg["target_speed"], history=cfg["history"], max_time=60.0,
                                task=cfg.get("task", "follow"), car=cfg.get("car", "bare"))
-        self.base = build_base(self.env, cfg["residual"]) if cfg["residual"] else None
+        self.base = build_base(self.env, cfg["residual"], cfg.get("residual_gains")) if cfg["residual"] else None
         self.meta = {"algo": algo, "residual_scale": cfg["residual_scale"]}
         self.trips = trips
 
@@ -289,7 +296,7 @@ def load_policy(prefix: pathlib.Path, env, any_car: bool = False):
     model = load_model(prefix, meta["algo"])
     with open(prefix.with_suffix(".vecnormalize.pkl"), "rb") as f:
         vn = pickle.load(f)
-    base = build_base(env, cfg["residual"]) if cfg["residual"] else None
+    base = build_base(env, cfg["residual"], cfg.get("residual_gains")) if cfg["residual"] else None
     meta["residual_scale"] = cfg["residual_scale"]
     return LoadedPolicy(model, meta, vn.obs_rms, vn.clip_obs, vn.epsilon, base)
 
@@ -312,6 +319,8 @@ def main(argv=None) -> int:
     ap.add_argument("--residual", nargs="?", const="pure_pursuit", default=None,
                     help="train a correction on this tuned controller (default pure_pursuit)")
     ap.add_argument("--residual-scale", type=float, default=0.5, help="the correction's authority")
+    ap.add_argument("--residual-gains", help="the controller's tuning, relative to the repo "
+                                             "(default policies/controllers.json)")
     ap.add_argument("--seed", type=int, default=0)
     ap.add_argument("--timesteps", type=int, required=True)
     ap.add_argument("--target-speed", type=float, default=4.0)
@@ -358,7 +367,8 @@ def main(argv=None) -> int:
     device = args.device if args.device != "auto" else ("cuda" if torch.cuda.is_available() else "cpu")
     torch.set_num_threads(2)
     cfg = {"task": args.task, "car": args.car, "target_speed": args.target_speed, "history": args.history, "max_time": args.max_time,
-           "residual": args.residual, "residual_scale": args.residual_scale, "lib": lib}
+           "residual": args.residual, "residual_scale": args.residual_scale,
+           "residual_gains": args.residual_gains, "lib": lib}
     n_envs = args.workers * args.per_worker
     venv = VecNormalize(make_vec(cfg, n_envs, args.workers, args.seed * 100_000),
                         norm_obs=True, norm_reward=True, clip_obs=10.0, gamma=args.gamma)

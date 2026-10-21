@@ -37,8 +37,13 @@ Leaving the road ends the episode with the `off_road` reward; reaching the
 end ends it with `finish`; `max_time` truncates it. The "stop" task weighs
 offset and steering more (REWARD_STOP) and charges them linearly, |offset| /
 half width and |change in steer action| (tidiness()), so a tidy line and a
-still wheel pay even close to the centreline, where squares cost almost
-nothing.
+still wheel pay even close to the line, where squares cost almost nothing.
+Its offset is measured from the drivable line (drivable_line()), the
+centreline with every corner rounded at LINE_RADIUS_M, not from the
+centreline itself: the campus routes turn 90 degrees at junctions, and a car
+paid to stay on that turns in late and hard, which a low-grip car cannot do.
+It also charges `contact` for every tick the car touches a wall, so a car
+pinned against a kerb pays for staying there.
 
 The car (`car`): "bare", the default, is the Core car with the options given
 (wheel_inertia, ackermann, wheel_rate, damping, travel; all off by default),
@@ -114,12 +119,15 @@ RANGES_HELD_OUT = {
 }
 REWARD = {"offset": 0.5, "steering": 0.1, "energy": 0.2, "wall": 5.0, "time": 0.5,
           "off_road": -10.0, "finish": 10.0}
-# The "stop" task's weights: its offset and steering terms are linear (tidiness()).
+# The "stop" task's weights: its offset and steering terms are linear (tidiness()),
+# its offset is from the drivable line, and a tick touching a wall costs `contact`.
 # Under REWARD, PPO with history drove the stop task 25 cm off the centreline on
 # average. At weight 2 each it drove 3 cm off it, but at under half the target
 # speed: leaving the road is charged the offset weight for every tick it saves, so
-# failing grew 2.5 times dearer against progress (Docs/policy-study.md).
-REWARD_STOP = {**REWARD, "offset": 1.0, "steering": 1.0}
+# failing grew 2.5 times dearer against progress (Docs/policy-study.md). Contact,
+# like the wall term, is not in that charge: a car against a kerb is not leaving.
+REWARD_STOP = {**REWARD, "offset": 1.0, "steering": 1.0, "contact": 0.5}
+LINE_RADIUS_M = 1.0   # the drivable line's corner radius: the car turns at about 0.8 m at full lock
 FOOTPRINT_MARGIN = 0.0175   # half the Unity car's drawn tyre width [m]; not measured
 
 LOOKAHEAD_M = (0.5, 1.0, 2.0)
@@ -166,6 +174,38 @@ def tidiness(task: str, offset_ratio: float, steer_change: float) -> tuple[float
     if task == "stop":
         return abs(offset_ratio), abs(steer_change)
     return offset_ratio ** 2, steer_change ** 2
+
+
+def drivable_line(points, radius: float = LINE_RADIUS_M, step: float = 0.05) -> list:
+    """The polyline `points` [(x, y)] with each corner rounded by an arc of
+    `radius`, tangent to both legs; a corner may use at most half of each
+    leg, so short legs get a tighter arc. Arcs are sampled every `step`."""
+    pts = [tuple(map(float, q[:2])) for q in points]
+    out = [pts[0]]
+    for a, b, c in zip(pts, pts[1:], pts[2:]):
+        l1, l2 = math.hypot(b[0] - a[0], b[1] - a[1]), math.hypot(c[0] - b[0], c[1] - b[1])
+        if l1 < 1e-9 or l2 < 1e-9:
+            continue
+        u1 = ((b[0] - a[0]) / l1, (b[1] - a[1]) / l1)
+        u2 = ((c[0] - b[0]) / l2, (c[1] - b[1]) / l2)
+        cross = u1[0] * u2[1] - u1[1] * u2[0]
+        turn = math.atan2(abs(cross), u1[0] * u2[0] + u1[1] * u2[1])
+        if turn < 1e-6:
+            out.append(b)
+            continue
+        half = math.tan(0.5 * turn)
+        t = min(radius * half, 0.5 * l1, 0.5 * l2)
+        r = t / half
+        side = 1.0 if cross > 0.0 else -1.0                  # left turn: centre on the left
+        p1 = (b[0] - u1[0] * t, b[1] - u1[1] * t)
+        centre = (p1[0] - side * u1[1] * r, p1[1] + side * u1[0] * r)
+        a0 = math.atan2(p1[1] - centre[1], p1[0] - centre[0])
+        n = max(1, int(math.ceil(r * turn / step)))
+        for k in range(n + 1):
+            ang = a0 + side * turn * k / n
+            out.append((centre[0] + r * math.cos(ang), centre[1] + r * math.sin(ang)))
+    out.append(pts[-1])
+    return out
 
 
 def unity_car(mass: float) -> dict:
@@ -251,6 +291,9 @@ class RcTwinEnv:
         self._road = new
         self._length = self.lib.rc_twin_road_length(new)
         self._half_width = 0.5 * float(road["width"])
+        if self.task == "stop":
+            self._line = drivable_line([(q["x"], q["y"]) for q in road["centreline"]])
+            self._line_i = 0
 
     # ------------------------------------------------------------- episode
 
@@ -297,6 +340,8 @@ class RcTwinEnv:
         self.energy_wh = 0.0
         self.wall_contacts = 0
         self.wall_impulse = 0.0
+        self.last_contact = False
+        self._line_i = 0
         self._last_action = (0.0, 0.0)
         self.s, self.d = self._locate(self.state)
         frame = self._frame(self.state)
@@ -326,6 +371,7 @@ class RcTwinEnv:
             raise RuntimeError(f"rc_twin_step failed with {rc}")
         cur = self._get_state()
         hit = dr.wall_report(self.lib, self._car)
+        self.last_contact = hit.contacts > 0
         self.wall_contacts += hit.contacts
         self.wall_impulse += hit.impulse
         self.t += TICK
@@ -342,11 +388,13 @@ class RcTwinEnv:
             return self._obs(), penalty, True, False, self._info("overshot")
 
         progress = min(self.s - s_prev, self.target_speed * TICK) / (self.target_speed * TICK)
-        offset, dsteer = tidiness(self.task, self.d / self._half_width, steer_a - self._last_action[0])
+        d = self._line_offset(cur.x, cur.y) if self.task == "stop" else self.d
+        offset, dsteer = tidiness(self.task, min(1.0, d / self._half_width) if self.task == "stop"
+                                  else d / self._half_width, steer_a - self._last_action[0])
         energy = de * 3600.0 / (p.mass * 9.81 * self.target_speed * TICK)
         wall = hit.impulse / (p.mass * self.target_speed)
         reward = (progress - r["offset"] * offset - r["steering"] * dsteer - r["energy"] * energy
-                  - r["wall"] * wall - r["time"])
+                  - r["wall"] * wall - r.get("contact", 0.0) * self.last_contact - r["time"])
 
         self._push(steer_a, thr_a)
         if self.task == "stop":
@@ -407,6 +455,28 @@ class RcTwinEnv:
         self.lib.rc_twin_road_point(self._road, self._length, ctypes.byref(x), ctypes.byref(y),
                                     ctypes.byref(z), ctypes.byref(h))
         return (st.x - x.value) * math.cos(h.value) + (st.y - y.value) * math.sin(h.value)
+
+    def _line_offset(self, x: float, y: float) -> float:
+        """Distance [m] to the drivable line, searched near where the car
+        was last tick (the line is dense on arcs, so a window of segments),
+        and along all of it when nothing there is on the road."""
+        best = self._line_search(x, y, max(0, self._line_i - 5), self._line_i + 20)
+        if best > self._half_width:
+            best = self._line_search(x, y, 0, len(self._line))
+        return best
+
+    def _line_search(self, x: float, y: float, lo: int, hi: int) -> float:
+        line, best, best_i = self._line, math.inf, self._line_i
+        for i in range(lo, min(len(line) - 1, hi)):
+            (ax, ay), (bx, by) = line[i], line[i + 1]
+            dx, dy = bx - ax, by - ay
+            ll = dx * dx + dy * dy
+            t = 0.0 if ll < 1e-18 else max(0.0, min(1.0, ((x - ax) * dx + (y - ay) * dy) / ll))
+            dist = math.hypot(ax + t * dx - x, ay + t * dy - y)
+            if dist < best:
+                best, best_i = dist, i
+        self._line_i = best_i
+        return best
 
     def _locate(self, st) -> tuple[float, float]:
         s, d = ctypes.c_double(), ctypes.c_double()

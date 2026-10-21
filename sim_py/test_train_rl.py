@@ -128,5 +128,30 @@ class TrainRL(unittest.TestCase):
                 self.rl.load_policy(out, env("unity"))
 
 
+    def test_a_residual_builds_on_the_tuning_it_names(self):
+        import json
+        campus = self.rl._campus()
+        unity = "policies/controllers_unity_stop.json"
+        sys.path.insert(0, str(ROOT / "tools"))
+        import export_policy
+        with tempfile.TemporaryDirectory() as tmp:
+            out = pathlib.Path(tmp) / "res-gains"
+            self.assertEqual(self.rl.main(["--algo", "ppo", "--residual", "--residual-gains", unity, "--task", "stop",
+                                           "--car", "unity", "--out", str(out), *TINY]), 0)
+            meta = json.loads(out.with_suffix(".json").read_text(encoding="utf-8"))
+            self.assertEqual(meta["config"]["residual_gains"], unity)
+            env = campus.CampusEnv(seed=0, target_speed=4.0, history=4, lib_path=LIB, task="stop", car="unity")
+            gains = self.rl.base_gains("pure_pursuit", unity)["gains"]
+            self.assertNotEqual(gains, self.rl.base_gains("pure_pursuit")["gains"])
+            p = self.rl.load_policy(out, env)
+            ctl = self.rl._controllers()
+            want = ctl.build("pure_pursuit", campus.envmod, env.nominal_params(), 0.5 * env.network.width, 4.0,
+                             task="stop", **gains)
+            obs, _ = env.reset(seed=2)
+            self.assertEqual(p.base(obs), want(obs))
+            self.assertEqual(export_policy.export(out, LIB, check_ticks=3)["residual"]["gains"], gains)
+            env.close()
+
+
 if __name__ == "__main__":
     unittest.main()
