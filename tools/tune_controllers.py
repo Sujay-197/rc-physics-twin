@@ -34,7 +34,11 @@ TUNE_SEED = 30_000
 sys.path.insert(0, str(ROOT / "sim_py"))
 import evaluate_policies as ev  # noqa: E402
 
+# The corner speed plan (controllers.CornerSpeed) on the autopilot: pure
+# pursuit with the Unity-car gains and the kerb recovery. --kinds corner_speed.
+CORNER_BASE = "recover:corner:{a_lat:g},{a_brake:g}:controller:pure_pursuit:policies/controllers_unity_stop.json"
 GRIDS = {
+    "corner_speed": {"a_lat": [2.0, 3.0, 4.0, 6.0, 9.0], "a_brake": [1.0, 1.5, 2.0]},
     "pure_pursuit": {"lookahead": [0.6, 0.8, 1.0, 1.2, 1.5, 1.8, 2.0], "k_speed": [2.0, 4.0, 6.0],
                      "a_lat": [None, 3.0, 5.0, 8.0, 12.0]},
     # The first grids put Stanley's k and LQR's q_e and r on their edges, so
@@ -61,7 +65,7 @@ def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     ap.add_argument("--target-speed", type=float, default=4.0)
     ap.add_argument("--trips", type=int, default=60)
-    ap.add_argument("--kinds", nargs="+", default=list(GRIDS))
+    ap.add_argument("--kinds", nargs="+", default=[k for k in GRIDS if k != "corner_speed"])
     ap.add_argument("--task", choices=("follow", "stop"), default="follow")
     ap.add_argument("--car", choices=("bare", "unity", "both"), default="bare")
     ap.add_argument("--out", type=pathlib.Path, default=ROOT / "policies" / "controllers.json")
@@ -73,19 +77,24 @@ def main(argv=None) -> int:
     for kind in args.kinds:
         t0 = time.perf_counter()
         cands = list(configs(kind))
-        specs = [f"controller:{kind}:{json.dumps(c, separators=(',', ':'))}" for c in cands]
+        specs = [CORNER_BASE.format(**c) if kind == "corner_speed" else
+                 f"controller:{kind}:{json.dumps(c, separators=(',', ':'))}" for c in cands]
         rep = ev.evaluate(specs, trips=args.trips, conditions=("train",), lib=lib, seed=TUNE_SEED,
                           target_speed=args.target_speed, task=args.task, car=args.car)
         scored = sorted(((rank_key(rep["policies"][sp]["train"]["summary"]), sp, c)
                          for sp, c in zip(specs, cands)), key=lambda t: t[0], reverse=True)
         (best_key, _, best), (second_key, _, _) = scored[0], scored[1]
         s = rep["policies"][scored[0][1]]["train"]["summary"]
+        prev = out.get(kind) if isinstance(out.get(kind), dict) else {}
         out[kind] = {"gains": best, "target_speed": args.target_speed,
                      "tuning": {"task": args.task, "car": args.car, "trips": args.trips, "seed": TUNE_SEED, "candidates": len(cands),
                                 "condition": "train", "success": s["success"][0],
                                 "wall_contact": s["wall_contact"][0], "return": s["return"][0],
                                 "runner_up": {"success": second_key[0], "wall_contact": -second_key[1],
                                               "return": second_key[2]}}}
+        if "rule" in prev:
+            # Gains set by design (their "rule" says why): keep them, record the tuning beside them.
+            out[kind] = {**prev, "tuning": {**out[kind]["tuning"], "best": best}}
         print(f"{kind}: {len(cands)} candidates in {time.perf_counter() - t0:.0f} s; best {best} "
               f"success {s['success'][0]:.2f}, walls {s['wall_contact'][0]:.2f}, return {s['return'][0]:.0f}",
               flush=True)

@@ -52,6 +52,23 @@ class AutopilotFixture(unittest.TestCase):
         self.assertAlmostEqual(len(ticks) - last, 1.5 / tick, delta=1, msg="no reverse: gives up after 1.5 s")
         self.assertEqual(ticks[-1]["back_offs"], 2)
 
+    def test_the_corner_speed_trace_is_current(self):
+        committed = json.loads(fx.CORNER.read_text(encoding="utf-8"))
+        self.assertEqual(committed, fx.make_corner(), "rerun tools/make_autopilot_fixture.py")
+
+    def test_the_corner_speed_trace_slows_for_corners_and_leaves_straights_alone(self):
+        doc = fx.make_corner()
+        prof = doc["profile"]
+        self.assertLess(min(prof), 2.5, "a junction on the route")
+        self.assertGreater(sum(c >= doc["target_speed"] for c in prof), len(prof) // 8, "straights at full speed")
+        rise = max(b * b - a * a for a, b in zip(prof, prof[1:]))
+        self.assertLessEqual(rise, 2.0 * doc["a_accel"] * doc["step"] + 1e-9, "pulling away no faster than a_accel")
+        braked = [t for t in doc["ticks"] if t["action"][1] < t["inner"][1]]
+        kept = [t for t in doc["ticks"] if t["action"] == t["inner"]]
+        self.assertGreater(len(braked), 20)
+        self.assertGreater(len(kept), 100)
+        self.assertTrue(all(t["action"][1] <= t["inner"][1] for t in doc["ticks"]), "never raises the throttle")
+
     def test_it_covers_a_real_drive(self):
         doc = json.loads(fx.FIXTURE.read_text(encoding="utf-8"))
         follow, stop = doc["episodes"]

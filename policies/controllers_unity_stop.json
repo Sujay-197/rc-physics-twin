@@ -22,5 +22,34 @@
     "return": 154.5914239122342
    }
   }
+ },
+ "corner_speed": {
+  "gains": {
+   "a_lat": 3.4,
+   "a_brake": 1.2,
+   "a_accel": 1.2
+  },
+  "target_speed": 4.0,
+  "rule": "Set by design, as the stop plan's a_stop is: a_brake and a_accel are a_stop (1.2 m/s^2, below what the weakest cars brake at); a_lat is the lowest grip in any range (0.5 g) times the same margin, 1.2 / 1.7 = 0.7: 0.7 x 0.5 x 9.81 = 3.4 m/s^2. Tuning on training cars (below, over a_lat and a_brake) cannot choose it: they never need it, and every candidate finished every trip, so the fastest plan won on return.",
+  "tuning": {
+   "task": "stop",
+   "car": "unity",
+   "trips": 60,
+   "seed": 30000,
+   "candidates": 15,
+   "condition": "train",
+   "success": 1.0,
+   "wall_contact": 0.0,
+   "return": 188.79480531960445,
+   "runner_up": {
+    "success": 1.0,
+    "wall_contact": 0.0,
+    "return": 187.6913306676908
+   },
+   "best": {
+    "a_lat": 9.0,
+    "a_brake": 2.0
+   }
+  }
  }
 }

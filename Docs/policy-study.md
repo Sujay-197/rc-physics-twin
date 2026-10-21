@@ -235,6 +235,38 @@ Stop task, 4 m/s, Unity car, 100 trips per condition, success in % (train / held
 
 The remaining failures are leaving the road (15 and 11 % held-out and perturbed, with reverse) and running past the stop (3 %). These are low-grip cars that spin at junctions, which backing off does not fix.
 
+## A corner speed plan
+
+The autopilot's remaining failures are low-grip cars that reach a junction too fast. Its cornering limit reads the curvature of the observation's centreline, which reaches 2 m ahead. Braking from 4 m/s for a right angle takes 4 to 5 m. So the car sees each junction too late to slow for it.
+
+**What it does.** The autopilot knows its route, so it plans speed along all of it at the start of each trip (`controllers.speed_profile`, `CornerSpeed`; `SpeedProfile` and `CornerSpeed` in `Drivers.cs`, line for line):
+
+- **Corner speed.** Every 10 cm, the curvature is the heading change across a 1.5 m window centred there, divided by the window. A right-angle junction reads as a turn of about 1 m radius. The cap there is the square root of `a_lat` over that curvature.
+- **Braking in time.** A backward pass lowers the cap before each corner, so that braking at `a_brake` reaches the corner's cap in time.
+- **Pulling away gently.** A forward pass then lets the cap rise after each corner only as fast as accelerating at `a_accel` allows. Without it, the cap jumped back to 4 m/s at a junction's exit while the car was still turning. The speed loop then went to full throttle, and on a low-grip car that spun it: yaw rate from 1.6 to 12.5 rad/s within half a second.
+- **Driving.** Each tick, where the plan is below the target speed, a speed loop on the plan at the car's arc length caps pure pursuit's throttle. It only ever lowers the throttle; on straights the driver is exactly as before.
+
+**Its gains are set by design, not tuned.** The stop plan's braking, `a_stop` = 1.2 m/s², was set below what the weakest cars can brake (about 1.7 m/s²). The corner plan reuses it for `a_brake` and `a_accel`. For `a_lat` it takes the lowest grip anywhere in the ranges, 0.5 g, with the same margin of 1.2 / 1.7 = 0.7: 0.7 × 0.5 × 9.81 = 3.4 m/s². Like `a_stop`, that uses the bounds of the held-out ranges, but no held-out result. Tuning on training cars (`tune_controllers.py --kinds corner_speed`) cannot choose it. Training cars never need the plan, every candidate finished every tuning trip, and the fastest plan in the grid (`a_lat` 9, `a_brake` 2) won on return. `policies/controllers_unity_stop.json` keeps both: the gains, the rule that set them, and the tuning's pick.
+
+**Results.** Stop task, 4 m/s, Unity car, the Core with ESC reverse, 100 trips per condition. Every plan runs on the autopilot (Unity-car gains, kerb recovery). Trip time is the median ratio to the autopilot over trips both finished. Quality and kerb contact are with held-out cars, over the trips each finished.
+
+| Driver | Train | Held-out | Perturbed | Kerb contact | Mean offset | Steer roughness | Trip time (train) | Against the autopilot (held-out; perturbed) |
+|---|---|---|---|---|---|---|---|---|
+| autopilot | 98 | 82 | 86 | 42 % | 6.8 cm | 0.0048 | 1.00 | - |
+| + corner plan, tuned on training cars (9, 2) | 99 | 84 | 86 | 39 % | 7.0 cm | 0.0053 | 1.00 | +5 / −3; +7 / −7 |
+| + corner plan by design, no exit ramp (3.4, 1.2) | 99 | 96 | 92 | 22 % | 5.8 cm | 0.0038 | 1.05 | +15 / −1; +9 / −3 |
+| **+ corner plan by design (3.4, 1.2, 1.2)** | **100** | **99** | **100** | **8 %** | **3.6 cm** | **0.0021** | 1.07 | **+17 / −0; +14 / −0** |
+
+**What the numbers say.**
+
+1. **Slowing for junctions in time, and leaving them gently, is what the low-grip cars needed.** The full plan finishes 99 % of held-out trips and every trip after the mid-trip change, against the autopilot's 82 and 86 %. Trip by trip it finishes 17 and 14 trips the autopilot failed, and fails none it finished (p < 0.001 for both). The one held-out failure left is a car with 0.51 of the nominal grip and 1.2 kg of payload, on a 9 m route.
+2. **Each half of the plan fixes its own failures.** Braking before the junction cut leaving the road with held-out cars from 15 trips to 4. Most of the failures left were after the mid-trip change, and the two traced were spins under full throttle on the way out of a junction. The exit ramp removes most of them: +3 / −0 held-out and +8 / −0 perturbed against the plan without it.
+3. **The line and the steering got better.** Mean offset with held-out cars fell from 6.8 to 3.6 cm, steering roughness to less than half, and kerb contact from 42 to 8 % of trips (0 % after the mid-trip change).
+4. **It costs a little time with ordinary cars.** With training cars the trips take 7 % longer. Energy per metre is about the same as the autopilot's (0.65 against 0.68 mWh/m); without the exit ramp, braking and flooring it out of each junction had used a quarter more. With held-out cars the median trip takes no longer.
+
+**What the twin uses.** The campus autopilot now wraps pure pursuit in the full corner plan with these gains (`TwinAutopilot.cornerSpeed`, on by default), inside the kerb recovery. The panel shows the plan's speed when it is below the cruise speed ("corner: 1.7 m/s"). Unity's Edit Mode tests replay Python's plan for a campus route, and a scripted trace through it, to 1e-9 (`CornerSpeedTests`, `Fixtures/corner_speed.json`).
+
+
 ## A second round on the Unity car: a drivable line and kerb contact
 
 The first round's lessons, applied (branch `rl/twin-car-2`, on the Core with the ESC reverse). The bar is now the autopilot itself: the Unity-car gains with the kerb recovery, 98 / 82 / 86 %.
@@ -356,6 +388,12 @@ The second round (`rl/twin-car-2`, reward v3, the Core with ESC reverse):
 ```
 
 The third round (`rl/twin-car-3`): the same commands as the second, with `--val-edge --val-trips 40` and `-edge-` in the output names.
+
+The corner speed plan:
+
+```bash
+.venv/Scripts/python sim_py/evaluate_policies.py recover:controller:pure_pursuit:policies/controllers_unity_stop.json recover:corner:9,2:controller:pure_pursuit:policies/controllers_unity_stop.json recover:corner:3.4,1.2:controller:pure_pursuit:policies/controllers_unity_stop.json recover:corner:tuned:controller:pure_pursuit:policies/controllers_unity_stop.json --task stop --car unity --trips 100 --target-speed 4
+```
 
 `tools/record_drives.py --pairs` records every route for the Unity replay (`sim_py/README.md`). Tuning, training and evaluation are deterministic given their seeds; training on GPU is not bit-exact.
 
