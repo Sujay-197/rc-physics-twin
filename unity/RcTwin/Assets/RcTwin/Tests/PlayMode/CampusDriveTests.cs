@@ -65,26 +65,48 @@ namespace RcTwin.Tests
         }
 
         [UnityTest]
-        public IEnumerator ARouteThatLeavesBehindTheCarTurnsItRoundFirst()
+        public IEnumerator ARouteThatLeavesBehindTheCarStartsWithADrivenTurn()
         {
-            // At S3 the car faces down edge 22; the route to AB2 leaves the
-            // other way. It is turned at the stop, then drives there cleanly.
+            // At S3 the car faces down edge 22, into the side road; the route
+            // to AB2 leaves north, behind it and to the right. The car plans a
+            // turn in the junction and drives it, reversing on the Core
+            // (ADR 0010), without a reset; then it drives the trip and stops.
             yield return Load();
             var pilot = _car.GetComponent<TwinAutopilot>();
+            int resets = 0;
+            _car.Resetted += () => resets++;
             pilot.targetSpeed = 3.0;
             Assert.IsTrue(pilot.Go("AB2"), pilot.Message);
-            StringAssert.Contains("Turned round", pilot.Message);
+            Assert.IsTrue(pilot.TurningRound, "it turns round before the trip");
+            double slowest = 0.0;
+            bool reportedLegs = false;
             float scale = Time.timeScale;
             Time.timeScale = 5f;
             try
             {
                 float t0 = Time.time;
-                while (pilot.State == TwinAutopilot.Status.Driving && Time.time - t0 < 60f) yield return null;
+                while (pilot.State == TwinAutopilot.Status.Driving && Time.time - t0 < 60f)
+                {
+                    slowest = System.Math.Min(slowest, _car.State.vx);
+                    reportedLegs |= pilot.TurningRound && pilot.Message.Contains("leg ");
+                    yield return null;
+                }
             }
             finally { Time.timeScale = scale; }
+            Debug.Log($"S3 to AB2: {pilot.TurnReport} {pilot.Message}");
             Assert.AreEqual(TwinAutopilot.Status.Arrived, pilot.State, pilot.Message);
             Assert.AreEqual("AB2", pilot.CurrentStop());
-            Assert.AreEqual(0, pilot.TripWallContacts, "no kerb strikes");
+            Assert.AreEqual(0, resets, "driven round, not reset");
+            Assert.Less(slowest, -0.3, "it reversed");
+            Assert.IsNotNull(pilot.Turn);
+            Assert.GreaterOrEqual(pilot.Turn.Legs.Count, 2, pilot.Turn.Describe());
+            Assert.IsTrue(reportedLegs, "the panel showed the legs as they were driven");
+            StringAssert.StartsWith("Turned round: ", pilot.TurnReport);
+            StringAssert.Contains("-point turn", pilot.TurnReport);
+            // The trip itself as the RL "stop" task counts it.
+            Assert.LessOrEqual(System.Math.Abs(_car.State.vx), TwinAutopilot.StopSpeed, "stopped");
+            Assert.LessOrEqual(pilot.Remaining, TwinAutopilot.StopTolerance, "at the stop");
+            Assert.LessOrEqual(pilot.TripWallContacts, 2, "at most a graze of the kerb, turn included");
         }
 
         [UnityTest]
