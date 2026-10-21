@@ -296,6 +296,53 @@ class StopReward(unittest.TestCase):
         cost = envmod.reward_weights("stop")["steering"] * 0.06 * dithered[2]
         self.assertGreater(clean[0] - dithered[0], 0.8 * cost)
 
+    def test_the_drivable_line_rounds_each_corner_inside_the_road(self):
+        # A 90-degree corner with 3 m legs: the line leaves the first leg R
+        # before the corner, rejoins the second R after it, and cuts the
+        # corner by R (sqrt 2 - 1).
+        R = envmod.LINE_RADIUS_M
+        line = envmod.drivable_line([(0.0, 0.0), (3.0, 0.0), (3.0, 3.0)], R)
+        self.assertEqual(line[0], (0.0, 0.0))
+        self.assertEqual(line[-1], (3.0, 3.0))
+        self.assertTrue(any(abs(x - (3.0 - R)) < 1e-9 and abs(y) < 1e-9 for x, y in line), "leaves at 3 - R")
+        apex = min(math.hypot(x - 3.0, y) for x, y in line)
+        self.assertAlmostEqual(apex, R * (math.sqrt(2.0) - 1.0), places=2)
+        steps = [math.hypot(b[0] - a[0], b[1] - a[1]) for a, b in zip(line, line[1:])]
+        self.assertLess(max(s for s in steps if s < 2.0), 0.06, "the arc is dense")
+        # Short legs take a smaller radius: each corner may use half of each leg.
+        tight = envmod.drivable_line([(0.0, 0.0), (0.4, 0.0), (0.4, 0.4)], R)
+        self.assertGreaterEqual(min(x for x, y in tight[1:]), 0.2 - 1e-9)
+        # A straight road is its own line.
+        self.assertEqual(envmod.drivable_line([(0.0, 0.0), (1.0, 0.0), (2.0, 0.0)], R),
+                         [(0.0, 0.0), (1.0, 0.0), (2.0, 0.0)])
+
+    def test_the_stop_task_charges_offset_from_the_drivable_line(self):
+        env = make(HILL, task="stop", ranges=envmod.RANGES_NOMINAL)
+        env.reset(seed=0)
+        pts = [(p["x"], p["y"]) for p in env.road["centreline"]]
+        line = envmod.drivable_line(pts)
+        for x, y in line[:: max(1, len(line) // 20)]:
+            self.assertAlmostEqual(env._line_offset(x, y), 0.0, places=6)
+        x, y = line[len(line) // 2]
+        self.assertAlmostEqual(env._line_offset(x + 0.1, y), 0.1, delta=0.1001)
+        env.close()
+
+    def test_kerb_contact_costs_every_tick_it_lasts(self):
+        # Against a wall across the road, pushing: every tick in contact is charged.
+        wall = [{"points": [[3.0, -2.0], [3.0, 2.0]], "closed": False}]
+        env = make(FLAT, task="stop", target_speed=2.0, ranges=envmod.RANGES_NOMINAL, walls=wall)
+        env.reset(seed=0)
+        touching = []
+        for _ in range(400):
+            obs, r, te, tr, info = env.step((0.0, 1.0))
+            touching.append(env.last_contact)
+            if te or tr:
+                break
+        self.assertGreater(sum(touching[-100:]), 90, "pinned against the wall")
+        self.assertGreater(envmod.reward_weights("stop")["contact"], 0.0)
+        self.assertNotIn("contact", envmod.REWARD, "follow is unchanged")
+        env.close()
+
     def test_leaving_the_road_charges_the_stop_tasks_weights(self):
         env = make(road=FLAT, ranges=envmod.RANGES_NOMINAL, task="stop")
         trace, rewards, info = rollout(env, lambda o: (1.0, 0.5), seed=0)

@@ -58,12 +58,12 @@ def export(prefix: pathlib.Path, lib: str, check_ticks: int = 60) -> dict:
     with open(prefix.with_suffix(".vecnormalize.pkl"), "rb") as f:
         vn = pickle.load(f)
     layers, head = layers_of(model, meta["algo"])
-    tuned = json.loads((ROOT / "policies" / "controllers.json").read_text(encoding="utf-8"))
     doc = {
         "format": FORMAT, "name": prefix.name, "algo": meta["algo"], "selected": meta.get("selected"),
         "task": cfg.get("task", "follow"), "car": cfg.get("car", "bare"), "target_speed": cfg["target_speed"], "history": cfg["history"],
         "residual": ({"kind": cfg["residual"], "scale": cfg["residual_scale"],
-                      "gains": tuned[cfg["residual"]]["gains"]} if cfg["residual"] else None),
+                      "gains": rl.base_gains(cfg["residual"], cfg.get("residual_gains"))["gains"]}
+                     if cfg["residual"] else None),
         "normalise": {"mean": vn.obs_rms.mean.tolist(), "var": vn.obs_rms.var.tolist(),
                       "epsilon": float(vn.epsilon), "clip": float(vn.clip_obs)},
         "layers": [{"weight": W.tolist(), "bias": b.tolist(), "activation": a} for W, b, a in layers],
