@@ -1,5 +1,6 @@
 // Copyright 2026 The SlipX Authors
 // SPDX-License-Identifier: Apache-2.0
+// Modified 2026-10-19 by the rc-physics-twin project: see THIRD_PARTY.md.
 //
 // Physical sanity checks on VehicleParams.
 //
@@ -14,6 +15,7 @@
 // under -fno-exceptions.
 
 #include <cmath>
+#include <initializer_list>
 
 #include "slipx/params.hpp"
 
@@ -121,6 +123,24 @@ const char* validate(const VehicleParams& p) {
   // v_eps is the slip-angle denominator floor (see l1_bicycle.cpp). Zero
   // reintroduces the standstill singularity it exists to prevent.
   if (!(p.v_eps > 0.0)) return "v_eps must be positive [m/s]";
+  if (!(p.wheel_inertia >= 0.0) || !std::isfinite(p.wheel_inertia)) {
+    return "wheel_inertia must be finite and not negative [kg m^2]";
+  }
+  if (!(p.ackermann >= -1.0 && p.ackermann <= 1.0)) {
+    return "ackermann must be between -1 (anti) and 1 (ideal) [-]";
+  }
+  for (double v : {p.wheel_rate_front, p.wheel_rate_rear, p.damping_front,
+                   p.damping_rear, p.suspension_travel}) {
+    if (!(v >= 0.0) || !std::isfinite(v)) {
+      return "suspension parameters must be finite and not negative";
+    }
+  }
+  if ((p.wheel_rate_front > 0.0) != (p.wheel_rate_rear > 0.0)) {
+    return "suspension needs both wheel rates, front and rear [N/m]";
+  }
+  if (p.has_suspension() && !(p.suspension_travel > 0.0)) {
+    return "suspension needs a positive suspension_travel [m]";
+  }
 
   return nullptr;
 }

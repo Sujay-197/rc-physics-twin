@@ -1,0 +1,10 @@
+{
+  "schema_version": "0.1.0",
+  "id": "sample-straight-flat",
+  "description": "20 m straight, level, no features. A baseline.",
+  "width": 1.0,
+  "centreline": [
+    {"x": 0.0, "y": 0.0, "z": 0.0},
+    {"x": 20.0, "y": 0.0, "z": 0.0}
+  ]
+}

@@ -1,0 +1,72 @@
+# Build and test on every push and pull request, on the reference toolchain
+# (tools/bootstrap_toolchain.py: Zig 0.16 / Clang 21, mingw-w64, UCRT).
+#
+#   native   rc_twin.dll and its suites (C ABI, walls, roads, the Python
+#            harness, edge profiler, RL env and campus), plus the C# bindings
+#   core     the vendored SlipX: every layer's tests, and the determinism
+#            check against conformance/reference_hashes.tsv
+#
+# Unity's Edit and Play Mode suites need a licensed editor and are run locally
+# (README); they are not part of CI.
+name: ci
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  native:
+    runs-on: windows-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: "8.0.x"
+      - name: Toolchain
+        run: python tools/bootstrap_toolchain.py
+      - name: Configure
+        run: |
+          echo "$GITHUB_WORKSPACE/.toolchain/venv/Scripts" >> "$GITHUB_PATH"
+          .toolchain/venv/Scripts/cmake -S . -B build -G Ninja \
+            -DCMAKE_TOOLCHAIN_FILE="$GITHUB_WORKSPACE/.toolchain/zig-toolchain.cmake" \
+            -DPython3_EXECUTABLE="$(python -c 'import sys; print(sys.executable)')"
+      - name: Build
+        run: .toolchain/venv/Scripts/cmake --build build
+      - name: Test
+        run: .toolchain/venv/Scripts/ctest --test-dir build --output-on-failure
+      - name: C# bindings
+        working-directory: native/tests/csharp
+        run: dotnet run -- "$GITHUB_WORKSPACE/build/bin"
+
+  core:
+    runs-on: windows-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - name: Toolchain
+        run: python tools/bootstrap_toolchain.py
+      - name: Configure
+        run: |
+          .toolchain/venv/Scripts/cmake -S core -B build-core -G Ninja \
+            -DCMAKE_TOOLCHAIN_FILE="$GITHUB_WORKSPACE/.toolchain/zig-toolchain.cmake" \
+            -DSLIPX_BUILD_TESTS=ON -DSLIPX_BUILD_PYTHON=OFF
+      - name: Build
+        run: .toolchain/venv/Scripts/cmake --build build-core
+      - name: Test
+        run: .toolchain/venv/Scripts/ctest --test-dir build-core --output-on-failure
+      - name: Determinism
+        run: python tools/check_determinism.py --build-dir build-core --require-row

@@ -1,5 +1,6 @@
 // Copyright 2026 The SlipX Authors
 // SPDX-License-Identifier: Apache-2.0
+// Modified 2026-10-19 by the rc-physics-twin project: see THIRD_PARTY.md.
 //
 // VehicleParams: the plain struct through which every parameter enters the
 // core (CORE-01).
@@ -239,6 +240,46 @@ struct VehicleParams {
   // than hidden so that it appears in the manifest hash and so that a caller
   // who changes it knows they have changed the model.
   double v_eps = 0.5;        // [m/s]
+
+  // ------------------------------------------------------- wheel dynamics
+  // Rotational inertia of ONE wheel about its axle, including the drivetrain
+  // inertia reflected to it (rc-physics-twin ADR 0006). Zero, the default,
+  // keeps L2's quasi-static wheels (ADR-0027) exactly: wheel speeds are then
+  // derived from the delivered force. Positive makes them integrated state at
+  // L2, so lock-up and wheelspin are dynamic events. No effect below L2.
+  //
+  // No default is offered beyond zero: a value has to come from the car. It
+  // is identifiable from a lifted-wheel spin-down or a step-torque wheelspin
+  // run with wheel encoders.
+  double wheel_inertia = 0.0;  //                                 [kg m^2]
+
+  // ------------------------------------------------------------ Ackermann
+  // Fraction of ideal Ackermann steering at L2 (rc-physics-twin ADR 0007):
+  // 0 is parallel steer, both front wheels at the reference angle (SlipX's
+  // L2 exactly, the default); 1 points both front wheels at one turn centre
+  // on the rear-axle line; negative is anti-Ackermann. The reference angle
+  // (VehicleState::steer) is the virtual centre wheel's. Measured directly:
+  // steer to a known angle and read both front wheels. No effect below L2,
+  // whose single front wheel is the reference wheel already.
+  double ackermann = 0.0;      //                                      [-]
+
+  // ----------------------------------------------------------- suspension
+  // A body that heaves, pitches and rolls on springs at L2 (rc-physics-twin
+  // ADR 0008). On when both wheel rates are positive; all zero, the default,
+  // keeps SlipX's quasi-static load transfer (ADR-0022) exactly. Wheel rates
+  // are measured at the wheel on the bench: a known load on one corner (a
+  // bathroom scale) and the wheel's travel (a ruler). Damping comes from a
+  // drop test's decay. Uses ixx and iyy. No effect below L2.
+  double wheel_rate_front = 0.0;   // per wheel, at the wheel           [N/m]
+  double wheel_rate_rear = 0.0;    //                                    [N/m]
+  double damping_front = 0.0;      // per wheel, at the wheel        [N s/m]
+  double damping_rear = 0.0;       //                                [N s/m]
+  double suspension_travel = 0.0;  // compression from static to the
+                                   // bump stop                           [m]
+
+  bool has_suspension() const {
+    return wheel_rate_front > 0.0 && wheel_rate_rear > 0.0;
+  }
 };
 
 // Returns nullptr if the parameter set is usable, or a static message naming

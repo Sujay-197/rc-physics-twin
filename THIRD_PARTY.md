@@ -8,6 +8,7 @@ Status of each upstream. **SlipX is vendored in `core/`**; nothing else is. Befo
 | Gym-Khana (TeoIlie/Gym-Khana) | MIT | PyPI metadata | Dependency or fork under `sim_py/`; keep copyright notice | No |
 | ApexSim (pzimbrod/apexsim) | Apache-2.0 | GitHub README | Reference only | No |
 | TLabVehiclePhysics (TLabAltoh) | MIT | Third-party directory listing | Reference only | No |
+| OpenStreetMap data (campus extract) | ODbL 1.0 | [openstreetmap.org/copyright](https://www.openstreetmap.org/copyright) | **Included**: `campus/osm/amrita.osm.json` and what `tools/campus_scenery.py` derives from it (`campus/scenery.json`, the campus scenery meshes); attribution in the files and below | Yes, 2026-10-20 |
 
 ## SlipX: pinned commit and what its license files say
 
@@ -32,6 +33,16 @@ Checked 2026-10-19 against the upstream repository, not package metadata.
 | `core/src/core/slipx_core/include/slipx/load_transfer.hpp` | Optional `g_normal` argument (default is the old arithmetic) | Ours (ADR 0005); not sent |
 | `core/src/core/slipx_core/src/l2_double_track.cpp` | Grade, banking and per-wheel grip at L2; level ground unchanged bit for bit | Ours (ADR 0005); not sent |
 | `core/src/core/slipx_core/tests/test_ground.cpp` (new), `tests/CMakeLists.txt` | 18 tests for the above | Ours (ADR 0005); not sent |
+| `core/src/core/slipx_core/include/slipx/params.hpp`, `src/params.cpp` | `wheel_inertia` (default 0) and its validation | Ours (ADR 0006); not sent |
+| `core/src/core/slipx_core/src/l2_double_track.cpp` | Wheel rotational dynamics when `wheel_inertia > 0`; inertia 0 unchanged bit for bit | Ours (ADR 0006); not sent |
+| `core/src/orchestration/slipx_sim/src/simulation.cpp` | `wheel_inertia` in the manifest's params digest, only when set | Ours (ADR 0006); not sent |
+| `core/src/core/slipx_core/tests/test_wheels.cpp` (new) | 20 tests for the above | Ours (ADR 0006); not sent |
+| `params.hpp`, `params.cpp`, `l2_double_track.cpp`, `slipx_sim/src/simulation.cpp` | `ackermann` fraction (default 0 = parallel steer, unchanged bit for bit); per-wheel front angles at L2; in the manifest digest when set | Ours (ADR 0007); not sent |
+| `core/src/core/slipx_core/tests/test_ackermann.cpp` (new) | 10 tests for the above | Ours (ADR 0007); not sent |
+| `core/src/core/slipx_core/include/slipx/state.hpp` | `DriveInput::reverse` (default false): the ESC's reverse, an input | Ours (ADR 0010); not sent |
+| `core/src/core/slipx_core/src/l2_double_track.cpp` | With wheel dynamics, `reverse` drives the motor backwards on its mirrored curve instead of braking; the slip angle of a wheel rolling backwards is measured from its backward direction (a wheel rolling forwards unchanged bit for bit; conformance hashes unchanged) | Ours (ADR 0010); not sent |
+| `core/src/core/slipx_core/tests/test_wheels.cpp` | 6 tests for the above | Ours (ADR 0010); not sent |
+| (none: `slipx/contact.hpp` used unchanged) | `native/src/rc_twin.cpp` calls SlipX's `segment_contact` and `resolve_contact` (ADR-0055) for walls; the header is not modified | Ours (ADR 0009) |
 
 Upstream lineage note: Gym-Khana says it is based on the UPenn `f1tenth_gym`. Check that lineage's license before copying code that may originate there.
 
@@ -44,3 +55,10 @@ Upstream lineage note: Gym-Khana says it is based on the UPenn `f1tenth_gym`. Ch
 ## MIT obligations (Gym-Khana)
 
 - Keep the copyright and permission notice in copies or substantial portions.
+
+## OpenStreetMap (campus scenery)
+
+`campus/osm/amrita.osm.json` is an OpenStreetMap extract of the Amrita Vishwa Vidyapeetham campus, Coimbatore (Overpass API, 2026-10-20). `campus/scenery.json` and the scenery meshes in `unity/RcTwin/Assets/RcTwin/Generated/Campus/` are derived from it. Map data (c) OpenStreetMap contributors, available under the Open Database License (ODbL) 1.0, https://www.openstreetmap.org/copyright. A derived database shared publicly must stay under the ODbL.
+
+Map screenshots used as references for tree cover and bare ground are third-party imagery. They and everything made from them (`campus/reference/`, `Generated/Campus/Local/`) stay local and out of git.
+

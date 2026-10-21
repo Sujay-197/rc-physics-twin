@@ -5,8 +5,9 @@
 // Core's provisional defaults), a chase camera, and ground features the Core
 // feels through RaycastGround (ADR 0005): a hill (10 % up, 0.6 m plateau,
 // 10 % down) straight ahead, a 10 % banked strip to the right and an ice
-// patch (grip x0.25) to the left. Unity coordinates: the car starts at the
-// origin facing +z.
+// patch (grip x0.25) to the left. Faces taller than the climbable step are
+// walls (ADR 0009): the hill's sides and the bank's high edge and ends.
+// Unity coordinates: the car starts at the origin facing +z.
 using System.IO;
 using UnityEditor;
 using UnityEditor.SceneManagement;
@@ -44,6 +45,10 @@ namespace RcTwin.EditorTools
             plateau.GetComponent<Renderer>().sharedMaterial = hillMat;
             Wedge("Hill down (10 %)", "HillDown", 3f, 6f, 0.6f, new Vector3(0f, 0f, 24f), 180f, hillMat);
 
+            // Speed breaker: a 1.5 cm round hump, 0.3 m long, across the lane at z 4.
+            Hump("Speed breaker (1.5 cm)", "SpeedBreaker", 3f, 0.3f, 0.015f, new Vector3(0f, 0f, 4f),
+                 ColourMaterial("Breaker", new Color(0.95f, 0.8f, 0.1f)));
+
             // Bank: x 4..7 rising 0.3 m toward +x (the car's right), z 0..20.
             Wedge("Bank (10 %, right side high)", "Bank", 20f, 3f, 0.3f, new Vector3(4f, 0f, 10f), 90f,
                   ColourMaterial("Bank", new Color(0.45f, 0.6f, 0.45f)));
@@ -56,6 +61,32 @@ namespace RcTwin.EditorTools
             ice.GetComponent<Renderer>().sharedMaterial = ColourMaterial("Ice", new Color(0.7f, 0.85f, 1f));
             ice.AddComponent<GroundSurface>().muScale = 0.25f;
 
+            // Walls (ADR 0009) wherever a face is taller than the climbable
+            // step (half the wheel radius): the hill's sides from where the
+            // ramps pass the step, and the bank's high edge and its ends.
+            // ISO (x, y) is Unity (z, -x).
+            float step = 0.5f * (float)p.wheelRadius;
+            var walls = new GameObject("Walls (ADR 0009)").AddComponent<TwinWalls>();
+            float hillIn = 8f + 6f * step / 0.6f, hillOut = 24f - 6f * step / 0.6f;
+            walls.Add("Hill, left side", false, new Vector2(hillIn, 1.5f), new Vector2(hillOut, 1.5f));
+            walls.Add("Hill, right side", false, new Vector2(hillIn, -1.5f), new Vector2(hillOut, -1.5f));
+            float bankIn = 4f + 3f * step / 0.3f;
+            walls.Add("Bank, ends and high edge", false,
+                      new Vector2(0f, -bankIn), new Vector2(0f, -7f), new Vector2(20f, -7f), new Vector2(20f, -bankIn));
+
+            var car = BuildCar(p);
+            AttachChaseCamera(car.transform);
+
+            Directory.CreateDirectory(Path.GetDirectoryName(ScenePath));
+            EditorSceneManager.SaveScene(scene, ScenePath);
+            RegisterScene(ScenePath);
+            Debug.Log($"Built {ScenePath}. Press Play; W/S throttle, A/D steer, R reset.");
+        }
+
+        // The reference car, proportions from the Core's provisional defaults,
+        // at the origin facing +z. Shared by every scene builder.
+        internal static TwinCar BuildCar(RcTwinNative.Params p)
+        {
             // Car root sits at the CoG; children are placed from the params.
             var car = new GameObject("TwinCar");
             car.AddComponent<RaycastGround>();
@@ -70,6 +101,7 @@ namespace RcTwin.EditorTools
             body.transform.localScale = new Vector3(Mathf.Min(tf, tr) * 0.75f, 0.05f, lf + lr + 0.1f);
             body.transform.localPosition = new Vector3(0f, r - h + 0.04f, (lf - lr) * 0.5f);
             body.GetComponent<Renderer>().sharedMaterial = ColourMaterial("Body", new Color(0.85f, 0.25f, 0.1f));
+            twin.body = body.transform;
 
             // Core order FL, FR, RL, RR. ISO y is left, Unity x is right.
             var wheelPos = new[]
@@ -101,19 +133,25 @@ namespace RcTwin.EditorTools
                 twin.wheels[i] = pivot.transform;
             }
             car.transform.position = new Vector3(0f, h, 0f);
+            return twin;
+        }
 
+        internal static void AttachChaseCamera(Transform target)
+        {
             var cam = Camera.main;
-            if (cam != null)
-            {
-                cam.nearClipPlane = 0.02f;
-                cam.transform.position = new Vector3(0f, 0.8f, -1.8f);
-                cam.gameObject.AddComponent<ChaseCamera>().target = car.transform;
-            }
+            if (cam == null) return;
+            cam.nearClipPlane = 0.02f;
+            cam.transform.position = new Vector3(target.position.x, 0.8f, target.position.z - 1.8f);
+            cam.gameObject.AddComponent<ChaseCamera>().target = target;
+        }
 
-            Directory.CreateDirectory(Path.GetDirectoryName(ScenePath));
-            EditorSceneManager.SaveScene(scene, ScenePath);
-            EditorBuildSettings.scenes = new[] { new EditorBuildSettingsScene(ScenePath, true) };
-            Debug.Log($"Built {ScenePath}. Press Play; W/S throttle, A/D steer, R reset.");
+        // Adds the scene to the build list if missing, keeping the others.
+        internal static void RegisterScene(string path)
+        {
+            var list = new System.Collections.Generic.List<EditorBuildSettingsScene>(EditorBuildSettings.scenes);
+            if (list.Exists(s => s.path == path)) return;
+            list.Add(new EditorBuildSettingsScene(path, true));
+            EditorBuildSettings.scenes = list.ToArray();
         }
 
         // A ramp: width across local x, rising from height 0 at local z = 0 to
@@ -160,7 +198,42 @@ namespace RcTwin.EditorTools
             go.AddComponent<MeshCollider>().sharedMesh = mesh;
         }
 
-        private static Material ColourMaterial(string name, Color c)
+        // A round hump across the lane: height h sin^2(pi z / length), 24 strips,
+        // centred on `centre`. Top faces only plus a floor, collider on the mesh.
+        private static void Hump(string name, string assetName, float width, float length, float h,
+                                 Vector3 centre, Material mat)
+        {
+            const int n = 24;
+            float w = width * 0.5f;
+            var verts = new System.Collections.Generic.List<Vector3>();
+            var tris = new System.Collections.Generic.List<int>();
+            for (int i = 0; i < n; i++)
+            {
+                float z0 = length * i / n, z1 = length * (i + 1) / n;
+                float y0 = h * Mathf.Pow(Mathf.Sin(Mathf.PI * z0 / length), 2f);
+                float y1 = h * Mathf.Pow(Mathf.Sin(Mathf.PI * z1 / length), 2f);
+                int b = verts.Count;
+                verts.Add(new Vector3(-w, y0, z0 - length / 2)); verts.Add(new Vector3(w, y0, z0 - length / 2));
+                verts.Add(new Vector3(-w, y1, z1 - length / 2)); verts.Add(new Vector3(w, y1, z1 - length / 2));
+                tris.AddRange(new[] { b, b + 2, b + 1, b + 1, b + 2, b + 3 });  // up-facing
+            }
+            var mesh = new Mesh { name = assetName };
+            mesh.SetVertices(verts);
+            mesh.SetTriangles(tris, 0);
+            mesh.RecalculateNormals();
+            mesh.RecalculateBounds();
+            Directory.CreateDirectory(GenDir);
+            string path = $"{GenDir}/{assetName}.asset";
+            AssetDatabase.DeleteAsset(path);
+            AssetDatabase.CreateAsset(mesh, path);
+            var go = new GameObject(name);
+            go.transform.position = centre;
+            go.AddComponent<MeshFilter>().sharedMesh = mesh;
+            go.AddComponent<MeshRenderer>().sharedMaterial = mat;
+            go.AddComponent<MeshCollider>().sharedMesh = mesh;
+        }
+
+        internal static Material ColourMaterial(string name, Color c)
         {
             string path = $"{GenDir}/{name}.mat";
             var m = AssetDatabase.LoadAssetAtPath<Material>(path);
@@ -208,7 +281,7 @@ namespace RcTwin.EditorTools
             return m;
         }
 
-        private static Shader LitShader() =>
+        internal static Shader LitShader() =>
             Shader.Find("Universal Render Pipeline/Lit") ?? Shader.Find("Standard");
     }
 }

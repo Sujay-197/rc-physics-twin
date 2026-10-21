@@ -26,12 +26,20 @@ namespace RcTwin.Tests
             Assert.IsNotNull(_car.GetComponent<RaycastGround>(), "the car reads the scene's ground");
         }
 
+        // Holds W for the run if throttle is set. The caller releases it with
+        // Lift(): code after the last yield of a nested coroutine is not run
+        // by the test runner, so a release here would never happen.
         private IEnumerator Run(double x, double y, double yaw, double vx, float seconds, bool throttle)
         {
             _car.ResetTo(x, y, yaw, vx);
             if (throttle) Press(_kb.wKey);
             yield return new WaitForSeconds(seconds);
-            if (throttle) Release(_kb.wKey);
+        }
+
+        private void Lift()
+        {
+            if (_kb.wKey.isPressed) Release(_kb.wKey);
+            if (_kb.sKey.isPressed) Release(_kb.sKey);
         }
 
         [UnityTest]
@@ -61,8 +69,11 @@ namespace RcTwin.Tests
         {
             yield return Load();
             yield return Run(2.0, -10.0, 0.0, 0.5, 1.0f, true);    // flat ground
+            Lift();
             double grip = _car.State.vx;
+            yield return null;
             yield return Run(2.0, 5.5, 0.0, 0.5, 1.0f, true);      // the ice patch
+            Lift();
             double ice = _car.State.vx;
             Assert.Less(ice, 0.5 * grip, $"ice {ice:F3} m/s vs grip {grip:F3} m/s");
             Assert.Greater(ice, 0.5, "but some traction remains");
@@ -77,6 +88,89 @@ namespace RcTwin.Tests
             // m g sin(phi) / C_alpha, about 8 mm/s sideways: 9.4 mm in 1 s natively.
             Assert.Greater(_car.State.y, -5.5 + 0.005, "drifted left, toward the low edge");
             Assert.Greater(_car.State.yaw, 0.0, "and turned toward it");
+        }
+
+        [UnityTest]
+        public IEnumerator OnIceTheRearWheelsSpinAndThenLock()
+        {
+            yield return Load();
+            Assert.Greater(_car.Params.wheelInertia, 0.0, "wheel dynamics on (ADR 0006)");
+            yield return Run(2.0, 5.5, 0.0, 0.5, 0.5f, true);      // full throttle on ice
+            Lift();
+            Assert.Greater(_car.Slip(2), 0.5, "rear left spinning");
+            Assert.Greater(_car.Slip(3), 0.5, "rear right spinning");
+            Assert.Less(System.Math.Abs(_car.Slip(0)), 0.05, "front rolling");
+
+            yield return null;                                       // the release lands
+            Assert.IsFalse(_kb.wKey.isPressed);
+            _car.ResetTo(2.0, 5.5, 0.0, 3.0);                       // rolling at 3 m/s
+            Press(_kb.sKey);
+            yield return new WaitForSeconds(0.3f);
+            Lift();
+            Assert.AreEqual(0.0, _car.State.omegaRL, "rear left locked");
+            Assert.AreEqual(0.0, _car.State.omegaRR, "rear right locked");
+            Assert.Greater(_car.State.vx, 1.5, "still sliding");
+        }
+
+        [UnityTest]
+        public IEnumerator TheSpeedBreakerPitchesTheBodyAndItSettles()
+        {
+            yield return Load();
+            Assert.Greater(_car.Params.wheelRateFront, 0.0, "suspension on (ADR 0008)");
+            _car.ResetTo(2.0, 0.0, 0.0, 2.0);  // rolling at 2 m/s toward the hump at z 4
+            Assert.AreEqual(0.0, _car.State.pitch, 1e-9, "starts level");
+            double peak = 0.0;
+            double peakLoad = 0.0;
+            for (int k = 0; k < 75; k++)                            // 1.5 s at 50 Hz
+            {
+                yield return new WaitForFixedUpdate();
+                peak = System.Math.Max(peak, System.Math.Abs(_car.State.pitch));
+                peakLoad = System.Math.Max(peakLoad, _car.State.fzFL);
+            }
+            Assert.Greater(peak, 0.003, "the hump pitched the body");
+            Assert.Greater(peakLoad, 1.3 * 0.25 * _car.Params.mass * 9.81, "and loaded the front tyres");
+            yield return new WaitForSeconds(1.5f);
+            Assert.Less(System.Math.Abs(_car.State.pitch), 0.003, "settled again");
+            Assert.IsFalse(_car.OffGround);
+        }
+
+        [UnityTest]
+        public IEnumerator TheHillsSideIsAWallNotAStep()
+        {
+            // Beside the 0.6 m plateau (x 14..18, sides at y = +-1.5), driving
+            // square at its right side. Before ADR 0009 the wheels snapped up
+            // onto the top; now the car stays on the floor and bounces off.
+            yield return Load();
+            Assert.Greater(_car.WallSegments, 0u, "the scene's walls reached the Core");
+            _car.ResetTo(16.0, -3.0, System.Math.PI / 2, 1.5);
+            yield return new WaitForSeconds(1.5f);
+            Assert.Greater(_car.WallContacts, 0, "it hit the side");
+            Assert.Less(_car.State.z, 0.01, "still on the floor, not on the plateau");
+            Assert.Less(_car.State.y, -1.5 - 0.1, "and on its own side of the wall");
+            Assert.IsFalse(_car.OffGround);
+        }
+
+        [UnityTest]
+        public IEnumerator TheRampStillClimbsAndTheEdgeStillDrops()
+        {
+            // Up the 10 % ramp onto the plateau and down the far side: the
+            // climbable step keeps ramps as ground (ADR 0009).
+            yield return Load();
+            _car.ResetTo(6.0, 0.0, 0.0, 2.0);
+            Press(_kb.wKey);
+            double top = 0.0;
+            float until = Time.time + 3f;
+            while (Time.time < until && _car.State.x < 26.0)
+            {
+                yield return null;
+                top = System.Math.Max(top, _car.State.z);
+            }
+            Lift();
+            yield return null;
+            Assert.Greater(top, 0.55, "it climbed onto the plateau");
+            Assert.Greater(_car.State.x, 24.0, "and drove off the far ramp");
+            Assert.Less(_car.State.z, 0.05, "back on the floor");
+            Assert.AreEqual(0, _car.WallContacts, "without touching the sides");
         }
 
         [UnityTest]

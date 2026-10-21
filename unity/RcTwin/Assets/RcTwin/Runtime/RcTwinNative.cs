@@ -1,4 +1,4 @@
-// P/Invoke bindings for native/include/rc_twin.h (ABI version 2).
+// P/Invoke bindings for native/include/rc_twin.h (ABI version 7).
 //
 // Deliberately free of UnityEngine so native/tests/csharp can compile and run
 // it against rc_twin.dll outside the editor. Field order here must match the
@@ -15,7 +15,7 @@ namespace RcTwin
     public static class RcTwinNative
     {
         public const string Lib = "rc_twin";
-        public const uint AbiVersion = 2;
+        public const uint AbiVersion = 7;
 
         public const int Ok = 0, ENull = -1, EInvalid = -2, EInternal = -3, EGround = -4;
 
@@ -70,6 +70,14 @@ namespace RcTwin
             public double steerMax, steerRateMax, steerBandwidth, steerDamping;
 
             public double dragCoeff, rollResist, vEps;
+
+            public double wheelInertia;  // per wheel [kg m^2]; 0 = quasi-static wheels (ADR 0006)
+            public double ackermann;     // fraction of ideal, [-1, 1]; 0 = parallel steer (ADR 0007)
+
+            // Suspension (ADR 0008): per wheel, at the wheel. Both rates > 0 turns it on.
+            public double wheelRateFront, wheelRateRear;  // [N/m]
+            public double dampingFront, dampingRear;      // [N s/m]
+            public double suspensionTravel;               // [m] static to bump stop
         }
 
         /// <summary>Ground under one wheel, world frame, ISO 8855 (ADR 0005).</summary>
@@ -83,6 +91,47 @@ namespace RcTwin
             public static GroundSample Level(double height = 0.0) =>
                 new GroundSample { height = height, nz = 1.0, muScale = 1.0 };
         }
+
+        /// <summary>Wall contact constants and the car's footprint (ADR 0009).</summary>
+        [StructLayout(LayoutKind.Sequential)]
+        public struct Contact
+        {
+            public double restitution;          // 0 dead stop .. 1 elastic, provisional
+            public double friction;             // tangential / normal impulse cap, provisional
+            public double restitutionMinSpeed;  // [m/s] no bounce below
+            public double halfLength, halfWidth, centreOffset;  // footprint [m], centre ahead of the CoG
+        }
+
+        /// <summary>What the last step call's wall contacts did.</summary>
+        [StructLayout(LayoutKind.Sequential)]
+        public struct WallReport
+        {
+            public uint contacts;
+            public uint reserved;
+            public double impulse;      // total normal impulse [N s]
+            public double maxApproach;  // highest closing speed [m/s]
+        }
+
+        [DllImport(Lib, CallingConvention = CallingConvention.Cdecl)]
+        public static extern int rc_twin_contact_default(ref Params p, out Contact c);
+
+        [DllImport(Lib, CallingConvention = CallingConvention.Cdecl)]
+        public static extern int rc_twin_set_contact(IntPtr v, ref Contact c);
+
+        [DllImport(Lib, CallingConvention = CallingConvention.Cdecl)]
+        public static extern int rc_twin_get_contact(IntPtr v, out Contact c);
+
+        [DllImport(Lib, CallingConvention = CallingConvention.Cdecl)]
+        public static extern int rc_twin_add_wall(IntPtr v, double[] xy, uint nPoints, int closed);
+
+        [DllImport(Lib, CallingConvention = CallingConvention.Cdecl)]
+        public static extern int rc_twin_clear_walls(IntPtr v);
+
+        [DllImport(Lib, CallingConvention = CallingConvention.Cdecl)]
+        public static extern uint rc_twin_wall_count(IntPtr v);
+
+        [DllImport(Lib, CallingConvention = CallingConvention.Cdecl)]
+        public static extern int rc_twin_get_wall_report(IntPtr v, out WallReport r);
 
         [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
         public delegate int GroundFn(IntPtr user, int wheel, double x, double y, ref GroundSample sample);
@@ -124,6 +173,29 @@ namespace RcTwin
         [DllImport(Lib, CallingConvention = CallingConvention.Cdecl)]
         public static extern int rc_twin_step(IntPtr v, double steerCmd, double accelCmd,
                                               double dt, uint n);
+
+        // Roads (rc_twin_road_*): a centreline to measure against, as the RL
+        // environment does (sim_py/rc_twin_env.py); TwinRoad wraps them.
+        [DllImport(Lib, CallingConvention = CallingConvention.Cdecl)]
+        public static extern IntPtr rc_twin_road_create(double[] xyz, double[] bank, uint nPoints, double width,
+                                                        out IntPtr reason);
+
+        [DllImport(Lib, CallingConvention = CallingConvention.Cdecl)]
+        public static extern void rc_twin_road_destroy(IntPtr r);
+
+        [DllImport(Lib, CallingConvention = CallingConvention.Cdecl)]
+        public static extern double rc_twin_road_length(IntPtr r);
+
+        [DllImport(Lib, CallingConvention = CallingConvention.Cdecl)]
+        public static extern int rc_twin_road_locate(IntPtr r, double x, double y, out double s, out double d);
+
+        [DllImport(Lib, CallingConvention = CallingConvention.Cdecl)]
+        public static extern int rc_twin_road_point(IntPtr r, double s, out double x, out double y, out double z,
+                                                    out double heading);
+
+        [DllImport(Lib, CallingConvention = CallingConvention.Cdecl)]
+        public static extern int rc_twin_road_ground(IntPtr road, int wheel, double x, double y,
+                                                     out GroundSample sample);
 
         public static string CoreVersion => Marshal.PtrToStringAnsi(rc_twin_core_version());
 
@@ -244,6 +316,30 @@ namespace RcTwin
                 if (box != null) box.error = "ground provider threw: " + e.Message;
                 return 1;
             }
+        }
+
+        // ------------------------------------------------------------ walls
+        public RcTwinNative.Contact Contact
+        {
+            get { RcTwinNative.Check(RcTwinNative.rc_twin_get_contact(Live, out var c), "get_contact"); return c; }
+            set { RcTwinNative.Check(RcTwinNative.rc_twin_set_contact(Live, ref value), "set_contact"); }
+        }
+
+        /// <summary>A wall through ISO (x, y) pairs, flattened; closed joins the ends.</summary>
+        public void AddWall(double[] xy, bool closed)
+        {
+            if (xy == null || xy.Length % 2 != 0) throw new ArgumentException("xy holds (x, y) pairs");
+            RcTwinNative.Check(RcTwinNative.rc_twin_add_wall(Live, xy, (uint)(xy.Length / 2), closed ? 1 : 0),
+                               "add_wall");
+        }
+
+        public void ClearWalls() => RcTwinNative.Check(RcTwinNative.rc_twin_clear_walls(Live), "clear_walls");
+
+        public uint WallCount => RcTwinNative.rc_twin_wall_count(Live);
+
+        public RcTwinNative.WallReport LastWallReport
+        {
+            get { RcTwinNative.Check(RcTwinNative.rc_twin_get_wall_report(Live, out var r), "get_wall_report"); return r; }
         }
 
         public void ResetToRest() =>

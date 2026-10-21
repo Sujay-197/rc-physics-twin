@@ -50,3 +50,17 @@ obj/
 unity/**/Assets/Plugins/
 unity/**/Assets/Plugins.meta
 unity/**/*.slnx
+
+# map screenshots used as references (third-party imagery: not redistributed)
+campus/reference/
+# campus scenery from local map screenshots (tools/campus_scenery.py)
+unity/**/Generated/Campus/Local/
+unity/**/Generated/Campus/Local.meta
+
+# trained models (tens of MB): kept local; their metadata, learning curves and the released exports are committed
+policies/study/*.zip
+policies/study/*.pkl
+policies/v2/*.zip
+policies/v2/*.pkl
+policies/twin-car/*.zip
+policies/twin-car/*.pkl

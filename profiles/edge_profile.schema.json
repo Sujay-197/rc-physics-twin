@@ -1,0 +1,57 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/Sujay-197/rc-physics-twin/profiles/edge_profile.schema.json",
+  "title": "rc-physics-twin edge profile cache",
+  "description": "Physics-grounded edge costs for the fleet sim (spec section 7, ADR 0004), written by tools/edge_profiler.py. One entry per (edge_id, vehicle_class, payload_kg, soc_bucket, speed_target_mps), sorted by that key. Each entry records the digests it was computed from; an entry whose road, car or controller digest no longer matches is stale and is recomputed or dropped.",
+  "type": "object",
+  "required": ["schema_version", "profiler_version", "controller", "vehicle_classes", "entries"],
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": { "const": "0.1.0" },
+    "profiler_version": { "type": "string" },
+    "controller": {
+      "type": "object",
+      "description": "The reference driver every entry assumes (ADR 0004: the costs are this driver's, not every driver's)."
+    },
+    "vehicle_classes": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "object",
+        "required": ["params_digest", "provenance"],
+        "properties": {
+          "params_digest": { "type": "string", "pattern": "^[0-9a-f]{64}$", "description": "SHA-256 of the car's full rc_twin_params, payload excluded." },
+          "provenance": { "enum": ["provisional", "identified", "measured"] },
+          "note": { "type": "string" },
+          "options": { "type": "object" }
+        }
+      }
+    },
+    "entries": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["edge_id", "vehicle_class", "payload_kg", "soc_bucket", "speed_target_mps",
+                     "road_digest", "params_digest", "controller_digest", "status",
+                     "time_s", "energy_wh", "mean_speed_mps", "peak_ax_mps2", "peak_ay_mps2", "breaker_penalty_s"],
+        "additionalProperties": false,
+        "properties": {
+          "edge_id": { "type": "string" },
+          "vehicle_class": { "type": "string" },
+          "payload_kg": { "type": "number", "minimum": 0 },
+          "soc_bucket": { "type": "number", "minimum": 0, "maximum": 1, "description": "State of charge at the edge's start." },
+          "speed_target_mps": { "type": "number", "exclusiveMinimum": 0 },
+          "road_digest": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+          "params_digest": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+          "controller_digest": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+          "status": { "enum": ["reached_end", "left_road", "timeout"], "description": "Only reached_end entries carry costs; the others mark an edge this car cannot drive at this condition." },
+          "time_s": { "type": ["number", "null"], "description": "Traversal time [s]." },
+          "energy_wh": { "type": ["number", "null"], "description": "Battery-terminal energy [Wh], regeneration netted off." },
+          "mean_speed_mps": { "type": ["number", "null"] },
+          "peak_ax_mps2": { "type": "number", "minimum": 0 },
+          "peak_ay_mps2": { "type": "number", "minimum": 0 },
+          "breaker_penalty_s": { "type": ["number", "null"], "description": "Time lost to the edge's speed breakers: this run against the same edge with its breakers removed [s]. 0 for an edge without breakers." }
+        }
+      }
+    }
+  }
+}

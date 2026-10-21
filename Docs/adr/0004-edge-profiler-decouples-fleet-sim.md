@@ -1,6 +1,6 @@
 # ADR 0004: Edge profiler decouples the fleet sim from the physics
 
-**Status:** Proposed  **Date:** 2026-10-19
+**Status:** Accepted (implemented as `tools/edge_profiler.py`, cache `profiles/edge_profile.schema.json`)  **Date:** 2026-10-19
 
 ## Context
 
@@ -18,3 +18,5 @@ Cache key: `(edge_id, vehicle_class, payload, soc_bucket)`. Invalidate on any ch
 - Energy-aware dispatch and charging constraints become possible.
 - Approximation: the cache assumes the reference controller's driving style. Document the controller and record it in each cache's manifest.
 - The fleet sim never links the Core.
+- As built: entries also carry the target speed in their key, and each records SHA-256 digests of the road file's content, the car's full parameter set and the profiler-and-controller version. A rerun keeps entries whose digests match and recomputes or drops the rest. The speed-breaker penalty is measured against the same edge with its breakers removed, so it depends on the reference driver's breaker policy, which the cache records.
+- A charge bucket of 1.0 cannot take regenerated charge (the Core clamps state of charge at 1), so it overstates energy on edges where the driver brakes; the profiler warns.

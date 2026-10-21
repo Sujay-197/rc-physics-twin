@@ -60,7 +60,7 @@ static void moving(rc_twin_vehicle* v, double vx, double yaw) {
 }
 
 static void test_abi_v2(void) {
-  CHECK(rc_twin_abi_version() == 2u);
+  CHECK(rc_twin_abi_version() >= 2u);
   CHECK(rc_twin_set_ground_query(NULL, query, NULL) == RC_TWIN_E_NULL);
 }
 
@@ -179,6 +179,32 @@ static void test_l1_accepts_level_and_refuses_grade(void) {
   rc_twin_destroy(v);
 }
 
+/* ADR 0010: reverse engages only with the car stopped, wheels included. A car
+ * standing on driven wheels that spin on ice is braked: the motor brake takes
+ * them from 20 rad/s to 2.5 in one step and stops them at zero in the next,
+ * where driving backwards would carry them past zero. */
+static void test_reverse_waits_for_the_wheels_to_stop(void) {
+  rc_twin_params p;
+  rc_twin_vehicle* v;
+  rc_twin_state s;
+  ground_t g = level();
+  int i;
+  rc_twin_params_default(&p);
+  p.wheel_inertia = 1e-5;
+  v = rc_twin_create(RC_TWIN_TIER_L2_DOUBLE_TRACK, RC_TWIN_INTEGRATOR_RK4, &p, NULL);
+  g.mu = 0.0;
+  rc_twin_set_ground_query(v, query, &g);
+  memset(&s, 0, sizeof s);
+  s.soc = 1.0;
+  s.pack_v = 11.1;
+  for (i = 0; i < 4; ++i) s.omega_w[i] = 20.0;
+  rc_twin_reset(v, &s);
+  CHECK(rc_twin_step(v, 0.0, -2.0, 0.001, 2) == RC_TWIN_OK);
+  rc_twin_get_state(v, &s);
+  CHECK(s.omega_w[2] == 0.0 && s.omega_w[3] == 0.0);
+  rc_twin_destroy(v);
+}
+
 int main(void) {
   test_abi_v2();
   test_contact_points_and_order();
@@ -186,5 +212,6 @@ int main(void) {
   test_grade_grip_and_height_reach_the_core();
   test_failures_keep_the_state();
   test_l1_accepts_level_and_refuses_grade();
+  test_reverse_waits_for_the_wheels_to_stop();
   TEST_MAIN_END();
 }
