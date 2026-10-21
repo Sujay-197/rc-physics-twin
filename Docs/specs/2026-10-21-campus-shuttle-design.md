@@ -62,6 +62,7 @@ The shuttle waits at a stop. A student appears at AB2 with a label "→ S6" and 
 - **The plan** is an ordered list of stops to visit, each with who boards and who alights there. Every accepted request has its pickup before its drop-off, and the load never exceeds capacity along the plan.
 - **Accepting requests** (*my call*: cheapest insertion). When a request appears, the shuttle tries every place to insert its pickup and drop-off into the current plan and keeps the cheapest that respects capacity and the battery rule below. Cost: the added driving time plus the extra waiting and riding time it causes the students already in the plan. Travel times between stops come from route lengths (`CampusRoutes.Route`) at the cruise speed, plus a fixed dwell at each stop and a turn-round allowance when a leg leaves a stop the way the shuttle came in. If no insertion is allowed (full, or not enough battery), the request waits unassigned and is retried whenever the plan changes.
 - **Commitment:** the next stop in the plan is fixed once the shuttle has left for it, so it never U-turns mid-road to chase a new request. Later stops may be reordered.
+- **Stopping on the way** (*my call*): stops sit on the through roads (62 of the 90 routes pass at least one other stop), so a student often waits at a stop the shuttle is about to drive through. Like a bus, the shuttle stops there when someone is waiting with a seat free for them, or someone aboard gets off there; otherwise it drives through. This needs one addition to `TwinAutopilot`: end the current trip early at a stop on the route ahead (`StopEarlyAt`), when there is room to brake for it at the stop plan's 1.2 m/s². The driving itself (pure pursuit, corner plan, kerb recovery) is unchanged; the trip's road and corner plan are cut at that stop.
 - **Driving:** each leg of the plan is one `TwinAutopilot.Go(next stop)`. The autopilot drives it as today (turn-round, corner speed plan, kerb recovery), at the cruise speed (default 2 m/s, the panel's default).
 - **At a stop:** the shuttle stops (the autopilot's arrival), the alighting students get off, then the boarding ones get on, a few seconds each, visibly (they walk to and from the door). Then it leaves for the next stop.
 - **Idle:** with nothing to do, the shuttle waits at the stop it is at. *My call:* if the battery is below 60 % and idle, it goes to top up at AB1.
@@ -78,7 +79,8 @@ The shuttle waits at a stop. A student appears at AB2 with a label "→ S6" and 
 
   It takes 1 if it has the energy for it, else 2. The bottom bar says so ("Battery low: dropping off 2, then charging" / "Battery low: charging first").
 - **Charging at AB1:** a charger sits at the AB1 stop. Parked there, the battery fills at a rate that takes it from 10 to 95 % in about 30 s (*my call*, a setting), shown on the gauge and with a charging effect. Students on board stay aboard; students waiting at AB1 may board while it charges. It leaves at 95 %.
-- **Flat battery:** if it ever runs out anyway (an estimate was wrong), the shuttle stops, −500 points, and after a few seconds it is towed: it reappears at AB1 and charges. Students on board are delivered by it afterwards.
+- **Flat battery:** the Core has no cutoff (charge stops at 0 % and the car still drives), so flat is a game rule: at 0.5 % charge the shuttle stops, −500 points, and after a few seconds it is towed: it reappears at AB1 and charges. Students on board are delivered by it afterwards.
+- **A failed trip** (*my call*): if the autopilot gives up on a trip (left the route, ran past the stop, timed out) or cannot start one, the shuttle is towed to the stop it was driving to and carries on; students aboard stay aboard; no penalty beyond kerb strikes. The autopilot's existing fallback when no turn-round can be planned (turning the car at the stop, "not driven") is accepted.
 
 ### Score
 
@@ -88,7 +90,7 @@ The shuttle waits at a stop. A student appears at AB2 with a label "→ S6" and 
 - +20 more if their ride took no more than 1.5 times the direct trip.
 - A student who gives up: −50.
 - A flat battery: −500.
-- Each kerb strike: −5.
+- Each kerb strike: −5, counted once per scrape (the car's wall counter counts every physics frame in contact).
 - Shown with the score: delivered, average wait, gave up.
 
 ### Screen (layout C)
@@ -112,7 +114,7 @@ The shuttle waits at a stop. A student appears at AB2 with a label "→ S6" and 
 - Unity 6000.5.3f1, the existing RcTwin project and campus scene; the Core and `rc_twin` plugin unchanged (ABI 7).
 - The autopilot and its driving stay as they are. The game sits on top of `TwinAutopilot` (one stop-to-stop trip at a time) and `CampusRoutes`.
 - The campus is 1/10 scale: speeds and distances are the twin's (a 2 m/s cruise is about 72 km/h at full scale; that is the twin's world and stays).
-- The campus player build (`CampusSceneBuilder.BuildPlayerBatch`) produces the game.
+- The campus player build (`CampusSceneBuilder.BuildPlayerBatch`) produces the game. *My call:* one scene; the player starts in game mode, and `-goto <stop>` on the command line still runs the one-trip autopilot demo instead. In the editor the game stays off unless a test or the inspector turns it on, so the existing Play Mode tests that drive `TwinAutopilot` directly are unaffected.
 - Testable logic (requests, plan insertion, battery rule, score) lives in plain C# free of `UnityEngine`, like `Drivers.cs`, with Edit Mode tests; a Play Mode test runs the game headless for a few simulated minutes and checks it delivers students and never runs flat.
 
 ## Left to the builder
