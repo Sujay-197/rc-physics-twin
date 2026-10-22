@@ -31,10 +31,9 @@ UA = {"User-Agent": "rc-physics-twin fetch_assets (github.com/Sujay-197/rc-physi
 
 # (Poly Haven id, kind, resolution)
 ASSETS = [
-    ("belfast_sunset_puresky", "hdri", "4k"),
+    ("kloppenheim_06_puresky", "hdri", "4k"),
     ("asphalt_02", "texture", "2k"),
     ("concrete_pavement", "texture", "2k"),
-    ("concrete_wall_008", "texture", "2k"),
     ("leafy_grass", "texture", "2k"),
     ("jacaranda_tree", "model", "2k"),
     ("tree_small_02", "model", "2k"),

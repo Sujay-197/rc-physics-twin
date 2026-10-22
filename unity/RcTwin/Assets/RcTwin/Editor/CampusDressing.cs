@@ -13,7 +13,6 @@ using System.Globalization;
 using System.IO;
 using UnityEditor;
 using UnityEngine;
-using UnityEngine.Rendering;
 using Object = UnityEngine.Object;
 
 namespace RcTwin.EditorTools
@@ -25,7 +24,8 @@ namespace RcTwin.EditorTools
         public readonly List<Vector2[]> Roads = new List<Vector2[]>();
         public readonly List<(Vector2[] pts, float halfWidth)> SideRoads = new List<(Vector2[], float)>();
         public readonly List<Vector2[]> Buildings = new List<Vector2[]>();
-        public readonly List<Vector2[]> NoPlanting = new List<Vector2[]>();   // water, pitches
+        public readonly List<Vector2[]> NoPlanting = new List<Vector2[]>();   // water
+        public readonly List<Vector2[]> Pitches = new List<Vector2[]>();      // sports grounds: open, but the twin's roads cross some
         /// <summary>Junctions and corners: where sidewalks stop and the car turns.</summary>
         public readonly List<Vector2> Corners = new List<Vector2>();
         /// <summary>Each stop: its node, the road's direction there, the shelter's side (+1 right).</summary>
@@ -95,7 +95,8 @@ namespace RcTwin.EditorTools
                 foreach (Dictionary<string, object> l in (List<object>)sc["land"])
                 {
                     string kind = (string)l["kind"];
-                    if (kind == "water" || kind == "pitch") L.NoPlanting.Add(Points((List<object>)l["polygon"]));
+                    if (kind == "water") L.NoPlanting.Add(Points((List<object>)l["polygon"]));
+                    else if (kind == "pitch") L.Pitches.Add(Points((List<object>)l["polygon"]));
                 }
             }
             return L;
@@ -120,7 +121,13 @@ namespace RcTwin.EditorTools
         /// <summary>How far p is outside the nearest building (negative: inside one).</summary>
         public float BuildingClearance(Vector2 p) => PolygonClearance(p, Buildings);
 
-        public bool Plantable(Vector2 p, float r) => PolygonClearance(p, NoPlanting) >= r;
+        /// <summary>Not in water; on a sports ground only along a road crossing it.</summary>
+        public bool Plantable(Vector2 p, float r) =>
+            PolygonClearance(p, NoPlanting) >= r &&
+            (PolygonClearance(p, Pitches) >= r || RoadDistance(p) < HalfWidth + Walk + PitchEdge);
+
+        /// <summary>How far from a road the dressing may stand on a sports ground [m].</summary>
+        public const float PitchEdge = 2f;
 
         public float CornerDistance(Vector2 p)
         {
@@ -182,7 +189,7 @@ namespace RcTwin.EditorTools
     {
         public const string RootName = "Dressing (drawn only: Poly Haven CC0, no colliders)";
 
-        public enum Kind { Tree, Shrub, Plant, Rock, Lamp, Bench }
+        public enum Kind { Tree, Shrub, Plant, Rock, Lamp, Bench }   // as RcTwin.DressingKind
 
         /// <summary>A prop as tools/prepare_assets.py makes it, at scale 1 [m]: the
         /// radius of its base (what must stay off the road), of its crown, and the
@@ -204,6 +211,9 @@ namespace RcTwin.EditorTools
             new Prop { Name = "shrub_02_b", Kind = Kind.Shrub, Base = 0.07f, Crown = 0.07f, Room = 0.055f, Height = 0.122f },
             new Prop { Name = "shrub_02_c", Kind = Kind.Shrub, Base = 0.105f, Crown = 0.105f, Room = 0.08f, Height = 0.105f },
             new Prop { Name = "shrub_02_d", Kind = Kind.Shrub, Base = 0.065f, Crown = 0.065f, Room = 0.05f, Height = 0.098f },
+            new Prop { Name = "bush_round", Kind = Kind.Shrub, Base = 0.075f, Crown = 0.075f, Room = 0.055f, Height = 0.110f },
+            new Prop { Name = "bush_hedge", Kind = Kind.Shrub, Base = 0.097f, Crown = 0.097f, Room = 0.06f, Height = 0.101f },
+            new Prop { Name = "bush_tall", Kind = Kind.Shrub, Base = 0.063f, Crown = 0.063f, Room = 0.05f, Height = 0.172f },
             new Prop { Name = "shrub_03_a", Kind = Kind.Plant, Base = 0.012f, Crown = 0.012f, Room = 0.012f, Height = 0.040f },
             new Prop { Name = "shrub_03_b", Kind = Kind.Plant, Base = 0.012f, Crown = 0.012f, Room = 0.012f, Height = 0.035f },
             new Prop { Name = "shrub_03_c", Kind = Kind.Plant, Base = 0.01f, Crown = 0.01f, Room = 0.01f, Height = 0.030f },
@@ -236,7 +246,8 @@ namespace RcTwin.EditorTools
         public static List<Placement> Plan(CampusLayout L, int seed = 20261022)
         {
             var rng = new System.Random(seed);
-            string[] shrubs = { "shrub_02_a", "shrub_02_b", "shrub_02_c", "shrub_02_d" };
+            string[] sprigs = { "shrub_02_a", "shrub_02_b", "shrub_02_c", "shrub_02_d" };   // undergrowth
+            string[] bushes = { "bush_round", "bush_round", "bush_tall" };
             string[] plants = { "shrub_03_a", "shrub_03_b", "shrub_03_c" };
             float R() => (float)rng.NextDouble();
             var placed = new List<Placement>();
@@ -266,7 +277,7 @@ namespace RcTwin.EditorTools
                     if (L.RoadDistance(p.At) < L.HalfWidth + 0.7f * crown) return false;
                     if (L.BuildingClearance(p.At) < 0.45f * crown) return false;
                     foreach (var (c, r) in crowns)
-                        if (Vector2.Distance(c, p.At) < 0.55f * (crown + r)) return false;
+                        if (Vector2.Distance(c, p.At) < 0.42f * (crown + r)) return false;
                 }
                 if (p.OnSidewalk && L.CornerDistance(p.At) < beyond + CornerClear) return false;
                 float mine = prop.Room * p.Scale;
@@ -289,12 +300,21 @@ namespace RcTwin.EditorTools
                 if (prop.Kind == Kind.Tree) crowns.Add((at, prop.Crown * scale));
             }
 
+            // A mature tree (6-14 m at full scale), now and then bushes round its foot,
+            // or a rock or two among small plants.
             void Tree(Vector2 at, Vector2 dir, Vector2 right, bool roadside)
             {
-                bool big = R() < (roadside ? 0.3f : 0.4f);
+                bool big = R() < (roadside ? 0.35f : 0.45f);
                 string name = big ? "jacaranda_tree" : "tree_small_02";
-                float scale = big ? 0.75f + 0.3f * R() : 0.85f + 0.4f * R();
+                float scale = big ? 1f + 0.35f * R() : 1.25f + 0.5f * R();
                 Try(name, at, 360f * R(), scale, false);
+                if (R() < 0.45f)
+                    for (int k = 0, n = 2 + rng.Next(3); k < n; k++)
+                    {
+                        float a = 2f * Mathf.PI * R(), d = 0.14f + 0.18f * R();
+                        Try(R() < 0.2f ? sprigs[rng.Next(sprigs.Length)] : bushes[rng.Next(bushes.Length)],
+                            at + new Vector2(Mathf.Cos(a), Mathf.Sin(a)) * d, 360f * R(), 0.9f + 0.5f * R(), false);
+                    }
                 if (R() < 0.2f)
                 {
                     int n = 1 + rng.Next(3);
@@ -327,28 +347,36 @@ namespace RcTwin.EditorTools
                         Try("street_lamp_01", p + right * (L.HalfWidth + 0.72f * L.Walk), Yaw(dir), 1f, onSidewalk: true);
                     }
                     // Trees behind the sidewalk, a second row further back now and then.
-                    for (float s = 0.5f * R(); s < length; s += 0.8f + 0.7f * R())
+                    for (float s = 0.5f * R(); s < length; s += 0.7f + 0.6f * R())
                     {
-                        if (R() > 0.85f) continue;
+                        if (R() > 0.92f) continue;
                         var (p, dir) = At(stations, s);
                         Vector2 right = new Vector2(dir.y, -dir.x) * side;
                         Tree(p + right * (beyond + 0.14f + 0.45f * R()), dir, right, true);
                         if (R() < 0.5f) Tree(p + right * (beyond + 0.9f + 0.8f * R()) + dir * (0.4f * R()), dir, right, true);
                     }
-                    // Hedges: runs along the sidewalk's back edge, round the trunks.
+                    // Hedges: runs of clipped bushes along the sidewalk's back edge, round the trunks.
                     for (float s = 0.3f; s < length;)
                     {
-                        if (R() < 0.35f)
+                        if (R() < 0.6f)
                         {
-                            float end = Mathf.Min(length, s + 1.2f + 1.8f * R());
-                            for (; s < end; s += 0.1f + 0.03f * R())
+                            float end = Mathf.Min(length, s + 1.5f + 2.5f * R());
+                            for (; s < end; s += 0.14f + 0.03f * R())
                             {
                                 var (p, dir) = At(stations, s);
                                 Vector2 right = new Vector2(dir.y, -dir.x) * side;
-                                Try(shrubs[rng.Next(shrubs.Length)], p + right * (beyond + 0.085f), 360f * R(), 0.85f + 0.3f * R(), false);
+                                Try("bush_hedge", p + right * (beyond + 0.11f), Yaw(dir) + 90f + 10f * (R() - 0.5f), 0.9f + 0.2f * R(), false);
                             }
                         }
-                        s += 1.5f + 2.5f * R();
+                        s += 1f + 1.5f * R();
+                    }
+                    // Bushes in the ground between the hedge and the trees.
+                    for (float s = 0.2f * R(); s < length; s += 0.35f + 0.3f * R())
+                    {
+                        if (R() > 0.45f) continue;
+                        var (p, dir) = At(stations, s);
+                        Vector2 right = new Vector2(dir.y, -dir.x) * side;
+                        Try(bushes[rng.Next(bushes.Length)], p + right * (beyond + 0.3f + 0.9f * R()), 360f * R(), 0.9f + 0.6f * R(), false);
                     }
                     // Now and then a bench on the grass behind the sidewalk, facing the road.
                     for (float s = 2.5f + 3f * R(); s < length; s += 5f + 4f * R())
@@ -363,13 +391,13 @@ namespace RcTwin.EditorTools
             Vector2 lo = new Vector2(float.MaxValue, float.MaxValue), hi = -lo;
             foreach (var r in L.Roads)
                 foreach (var q in r) { lo = Vector2.Min(lo, q); hi = Vector2.Max(hi, q); }
-            lo -= Vector2.one * 6f;
-            hi += Vector2.one * 6f;
-            for (int i = 0; i < 2500; i++)
+            lo -= Vector2.one * 14f;
+            hi += Vector2.one * 14f;
+            for (int i = 0; i < 6000; i++)
             {
                 var at = new Vector2(Mathf.Lerp(lo.x, hi.x, R()), Mathf.Lerp(lo.y, hi.y, R()));
                 float d = L.RoadDistance(at);
-                if (d < beyond + 1.2f || d > 8f || R() > 1.2f - d / 8f) continue;
+                if (d < beyond + 1.2f || d > 16f || R() > 1.25f - d / 16f) continue;
                 Tree(at, Vector2.up, Vector2.right, false);
             }
             return placed;
@@ -404,76 +432,33 @@ namespace RcTwin.EditorTools
 
         // ------------------------------------------------------------ building
 
-        /// <summary>Instantiates the plan's models under a new root; returns it, or
-        /// null without the prepared models. Each lamp gets a warm light.</summary>
+        /// <summary>The plan as the scene keeps it: a root with a CampusDressingView
+        /// listing the prepared models and each copy's place, which makes the copies
+        /// when the scene loads. Null without the prepared models.</summary>
         public static GameObject Build(List<Placement> plan, CampusLayout L)
         {
-            var models = new Dictionary<string, GameObject>();
+            var index = new Dictionary<string, int>();
+            var models = new List<CampusDressingView.Model>();
             foreach (var prop in Props)
             {
                 var m = CampusLook.Model(prop.Name);
-                if (m != null) models[prop.Name] = m;
+                if (m == null) continue;
+                index[prop.Name] = models.Count;
+                models.Add(new CampusDressingView.Model { prefab = m, kind = (DressingKind)(int)prop.Kind, height = prop.Height });
             }
             if (models.Count == 0) return null;
+            var keep = plan.FindAll(p => index.ContainsKey(p.Prop));
             var root = new GameObject(RootName);
-            var groups = new Dictionary<Kind, Transform>();
-            foreach (Kind k in Enum.GetValues(typeof(Kind)))
-            {
-                groups[k] = new GameObject($"{k}s").transform;
-                groups[k].SetParent(root.transform, false);
-            }
-            int n = 0;
-            foreach (var p in plan)
-            {
-                if (!models.TryGetValue(p.Prop, out var model)) continue;
-                var go = (GameObject)PrefabUtility.InstantiatePrefab(model, groups[p.Kind]);
-                go.transform.SetPositionAndRotation(new Vector3(p.At.x, p.OnSidewalk ? L.Kerb : 0f, p.At.y),
-                                                    Quaternion.Euler(0f, p.Yaw, 0f));
-                go.transform.localScale = Vector3.one * p.Scale;
-                foreach (var c in go.GetComponentsInChildren<Collider>(true)) Object.DestroyImmediate(c);
-                bool smallThing = p.Kind == Kind.Plant || (p.Kind == Kind.Rock && p.Scale < 0.5f);
-                foreach (var r in go.GetComponentsInChildren<Renderer>(true))
-                {
-                    r.shadowCastingMode = smallThing ? ShadowCastingMode.Off : ShadowCastingMode.On;
-                    r.lightProbeUsage = LightProbeUsage.Off;
-                }
-                if (go.TryGetComponent<LODGroup>(out var lod)) Transitions(lod, p.Kind);
-                if (p.Kind == Kind.Lamp) LampLight(go.transform, Find(p.Prop).Height);
-                n++;
-            }
-            Debug.Log($"Campus dressing: {n} props ({Count(plan, Kind.Tree)} trees, {Count(plan, Kind.Shrub)} shrubs, " +
-                      $"{Count(plan, Kind.Lamp)} lamps, {Count(plan, Kind.Bench)} benches, {Count(plan, Kind.Rock)} rocks, {Count(plan, Kind.Plant)} plants).");
+            var view = root.AddComponent<CampusDressingView>();
+            view.models = models.ToArray();
+            view.which = keep.ConvertAll(p => index[p.Prop]).ToArray();
+            view.at = keep.ConvertAll(p => new Vector4(p.At.x, p.OnSidewalk ? L.Kerb : 0f, p.At.y, p.Yaw)).ToArray();
+            view.scale = keep.ConvertAll(p => p.Scale).ToArray();
+            Debug.Log($"Campus dressing: {keep.Count} props ({Count(keep, Kind.Tree)} trees, {Count(keep, Kind.Shrub)} shrubs, " +
+                      $"{Count(keep, Kind.Lamp)} lamps, {Count(keep, Kind.Bench)} benches, {Count(keep, Kind.Rock)} rocks, {Count(keep, Kind.Plant)} plants).");
             return root;
         }
 
         private static int Count(List<Placement> plan, Kind k) => plan.FindAll(p => p.Kind == k).Count;
-
-        // Screen heights where each LOD hands over, and where the prop is culled.
-        private static void Transitions(LODGroup group, Kind kind)
-        {
-            float[] at = kind switch
-            {
-                Kind.Tree => new[] { 0.32f, 0.11f, 0.008f },
-                Kind.Lamp => new[] { 0.2f, 0.06f, 0.006f },
-                Kind.Plant => new[] { 0.08f, 0.03f, 0.01f },
-                _ => new[] { 0.15f, 0.05f, 0.006f },
-            };
-            var lods = group.GetLODs();
-            for (int i = 0; i < lods.Length && i < at.Length; i++) lods[i].screenRelativeTransitionHeight = at[i];
-            group.SetLODs(lods);
-        }
-
-        private static void LampLight(Transform lamp, float height)
-        {
-            var go = new GameObject("Lamp light");
-            go.transform.SetParent(lamp, false);
-            go.transform.localPosition = new Vector3(0f, height * 0.9f, 0f);
-            var light = go.AddComponent<Light>();
-            light.type = LightType.Point;
-            light.color = new Color(1f, 0.72f, 0.42f);
-            light.range = 0.9f;
-            light.intensity = 0.14f;
-            light.shadows = LightShadows.None;
-        }
     }
 }

@@ -1,6 +1,7 @@
 // The campus look, applied by CampusSceneBuilder (THIRD_PARTY.md, "Campus look"):
 //   - a golden-hour sky (Poly Haven HDRI) and a low warm sun from where the
-//     sky's sun is, soft shadows, warm haze;
+//     sky's sun is, soft shadows, warm haze, and hills rising to a mountain
+//     range round the campus, highest toward the sun;
 //   - post-processing: ACES tonemapping, bloom, SSAO (the renderer's
 //     feature, tuned to the 1/10 scale), a warm grade and a vignette;
 //   - PBR surfaces (URP Lit, smoothness = 1 - roughness): asphalt with a wet
@@ -35,7 +36,7 @@ namespace RcTwin.EditorTools
         public const float SunElevation = 14f;
         /// <summary>The sun's bearing from the camera's first view [deg, clockwise from above]:
         /// ahead and to the side, so the scene is half backlit.</summary>
-        public const float SunBearing = 35f;
+        public const float SunBearing = 58f;
 
         public static string ManifestFile => Path.GetFullPath(Path.Combine(Application.dataPath, "..", LookDir, "look.json"));
         public static bool Available => File.Exists(ManifestFile);
@@ -63,6 +64,7 @@ namespace RcTwin.EditorTools
             if (assets) ImportAll();
             else Debug.Log($"No {ManifestFile}: the campus keeps plain surfaces (tools/fetch_assets.py, then tools/prepare_assets.py in Blender).");
             var sun = SkyAndSun(parts.View);
+            Mountains(parts.Layout, -sun.transform.forward);
             Pipeline();
             PostProcessing();
             CameraSetup(Camera.main);
@@ -78,7 +80,11 @@ namespace RcTwin.EditorTools
                     blobs.name = "Trees (local imagery; off: the dressing's trees stand instead)";
                 }
             }
+            // Reflections baked with the dressing standing; the scene keeps only its list.
+            var view = Object.FindFirstObjectByType<CampusDressingView>();
+            view?.Spawn();
             Reflections(parts.Layout);
+            view?.Clear();
             RenderSettings.sun = sun;
         }
 
@@ -183,7 +189,17 @@ namespace RcTwin.EditorTools
             switch (mode)
             {
                 case "cutout":
-                    m.SetFloat("_Smoothness", 0.35f);   // leaves: a soft sheen, not the sky's glint
+                    m.SetFloat("_Smoothness", 0.15f);   // leaves: a soft sheen, not the sky's glint
+                    // Light through the leaves, faked: a little of their own colour glows,
+                    // so a crown against the sun is deep green, not black.
+                    m.EnableKeyword("_EMISSION");
+                    m.SetTexture("_EmissionMap", Tex(set, "albedo"));
+                    m.SetColor("_EmissionColor", new Color(0.55f, 0.6f, 0.38f));
+                    // A crown's leaves don't take shadows (their own, mostly): its sunny side lights
+                    // whole, as a canopy reads; they still cast them.
+                    m.SetFloat("_ReceiveShadows", 0f);
+                    m.EnableKeyword("_RECEIVE_SHADOWS_OFF");
+                    m.globalIlluminationFlags = MaterialGlobalIlluminationFlags.RealtimeEmissive;   // URP keeps _EMISSION only for an emissive flag
                     m.SetFloat("_AlphaClip", 1f);
                     m.SetFloat("_Cutoff", 0.5f);
                     m.EnableKeyword("_ALPHATEST_ON");
@@ -209,7 +225,7 @@ namespace RcTwin.EditorTools
                 case "emissive":
                     m.EnableKeyword("_EMISSION");
                     m.SetColor("_EmissionColor", new Color(1f, 0.74f, 0.46f) * 5f);
-                    m.globalIlluminationFlags = MaterialGlobalIlluminationFlags.None;
+                    m.globalIlluminationFlags = MaterialGlobalIlluminationFlags.RealtimeEmissive;   // URP keeps _EMISSION only for an emissive flag
                     break;
             }
             EditorUtility.SetDirty(m);
@@ -291,7 +307,7 @@ namespace RcTwin.EditorTools
                 sky.SetTexture("_MainTex", hdr);
                 sky.SetFloat("_Mapping", 1f);     // latitude-longitude
                 sky.SetFloat("_ImageType", 0f);   // 360 degrees
-                sky.SetFloat("_Exposure", 1.05f);
+                sky.SetFloat("_Exposure", 1f);
                 sky.SetFloat("_Rotation", PanoramaRotation(u, toward));
                 sky.SetColor("_Tint", new Color(0.5f, 0.5f, 0.5f));
             }
@@ -303,7 +319,7 @@ namespace RcTwin.EditorTools
                 sky.SetFloat("_AtmosphereThickness", 1.3f);
                 sky.SetColor("_SkyTint", new Color(0.55f, 0.52f, 0.52f));
                 sky.SetColor("_GroundColor", new Color(0.38f, 0.34f, 0.3f));
-                sky.SetFloat("_Exposure", 1.2f);
+                sky.SetFloat("_Exposure", 1f);
             }
             RenderSettings.skybox = sky;
 
@@ -320,13 +336,13 @@ namespace RcTwin.EditorTools
             light.shadowStrength = 0.82f;
 
             RenderSettings.ambientMode = AmbientMode.Trilight;
-            RenderSettings.ambientSkyColor = new Color(0.62f, 0.68f, 0.82f);
+            RenderSettings.ambientSkyColor = new Color(0.7f, 0.77f, 0.92f);
             RenderSettings.ambientEquatorColor = new Color(0.72f, 0.64f, 0.58f);
             RenderSettings.ambientGroundColor = new Color(0.3f, 0.28f, 0.24f);
             RenderSettings.fog = true;
             RenderSettings.fogMode = FogMode.ExponentialSquared;
-            RenderSettings.fogDensity = 0.011f;
-            RenderSettings.fogColor = new Color(0.92f, 0.84f, 0.78f);   // the sky at the horizon
+            RenderSettings.fogDensity = 0.0032f;   // the mountains, 2-7 km off at full scale, half in the haze
+            RenderSettings.fogColor = new Color(0.82f, 0.8f, 0.8f);   // distance haze, a little warm
             return light;
         }
 
@@ -344,6 +360,114 @@ namespace RcTwin.EditorTools
             m.shader = Shader.Find(shader);
             EditorUtility.SetDirty(m);
             return m;
+        }
+
+        // --------------------------------------------------------- mountains
+
+        public const float HillsFrom = 230f, HillsTo = 680f, PeakHeight = 95f;
+
+        /// <summary>A ring of hills round the campus rising to ridged mountains, highest
+        /// toward the sun so the range stands backlit against the bright sky; drawn only,
+        /// far beyond the shadows. Deterministic.</summary>
+        private static void Mountains(CampusLayout L, Vector3 toSun)
+        {
+            Vector2 lo = new Vector2(float.MaxValue, float.MaxValue), hi = -lo;
+            foreach (var r in L.Roads)
+                foreach (var q in r) { lo = Vector2.Min(lo, q); hi = Vector2.Max(hi, q); }
+            Vector2 centre = 0.5f * (lo + hi), sun = new Vector2(toSun.x, toSun.z).normalized;
+            const int seg = 900, rings = 70;
+            var v = new Vector3[(seg + 1) * (rings + 1)];
+            var uv = new Vector2[v.Length];
+            for (int i = 0; i <= seg; i++)
+            {
+                float a = 2f * Mathf.PI * i / seg;
+                var dir = new Vector2(Mathf.Cos(a), Mathf.Sin(a));
+                float range = 0.3f + 0.7f * Mathf.SmoothStep(0f, 1f, Mathf.InverseLerp(-0.3f, 0.85f, Vector2.Dot(dir, sun)));
+                for (int j = 0; j <= rings; j++)
+                {
+                    float t = (float)j / rings, r = Mathf.Lerp(HillsFrom, HillsTo, t);
+                    var p = centre + dir * r;
+                    float ridge = 0f, amp = 1f, f = 0.0045f;
+                    for (int o = 0; o < 5; o++)   // ridged fractal noise
+                    {
+                        float n = 1f - Mathf.Abs(2f * Mathf.PerlinNoise(p.x * f + 31.7f * o, p.y * f - 17.3f * o) - 1f);
+                        ridge += amp * n * n;
+                        amp *= 0.5f;
+                        f *= 2.1f;
+                    }
+                    float rise = Mathf.SmoothStep(0f, 1f, Mathf.InverseLerp(0f, 0.55f, t));
+                    float hills = 9f * Mathf.PerlinNoise(p.x * 0.02f + 5f, p.y * 0.02f + 9f) * Mathf.SmoothStep(0f, 1f, t * 6f);
+                    float h = PeakHeight * range * rise * ridge / 1.6f + hills;
+                    v[i * (rings + 1) + j] = new Vector3(p.x, h - 0.05f, p.y);
+                    uv[i * (rings + 1) + j] = new Vector2(i * 28f / seg, Mathf.Clamp01(h / PeakHeight));
+                }
+            }
+            var tris = new List<int>(seg * rings * 6);
+            for (int i = 0; i < seg; i++)
+                for (int j = 0; j < rings; j++)
+                {
+                    int a = i * (rings + 1) + j, b = a + rings + 1;
+                    tris.AddRange(new[] { a, a + 1, b, b, a + 1, b + 1 });
+                }
+            var mesh = new Mesh { name = "Mountains", indexFormat = IndexFormat.UInt32 };
+            mesh.vertices = v;
+            mesh.uv = uv;
+            mesh.SetTriangles(tris, 0);
+            if (Vector3.Dot(Vector3.Cross(v[1] - v[0], v[rings + 1] - v[0]), Vector3.up) < 0f) { tris.Reverse(); mesh.SetTriangles(tris, 0); }
+            mesh.RecalculateNormals();
+            mesh.RecalculateBounds();
+            Directory.CreateDirectory(Path.Combine(Application.dataPath, "..", LookDir));
+            string path = $"{LookDir}/Mountains.asset";
+            AssetDatabase.DeleteAsset(path);
+            AssetDatabase.CreateAsset(mesh, path);
+
+            var m = new Material(FlatGroundSceneBuilder.LitShader()) { name = "Mountains" };
+            string matPath = $"{LookDir}/Mountains.mat";
+            AssetDatabase.DeleteAsset(matPath);
+            AssetDatabase.CreateAsset(m, matPath);
+            m.SetTexture("_BaseMap", MountainTexture());
+            m.SetColor("_BaseColor", Color.white);
+            m.SetFloat("_Smoothness", 0.08f);
+            EditorUtility.SetDirty(m);
+            var go = new GameObject("Mountains (drawn only, in the haze)");
+            go.AddComponent<MeshFilter>().sharedMesh = mesh;
+            var mr = go.AddComponent<MeshRenderer>();
+            mr.sharedMaterial = m;
+            mr.shadowCastingMode = ShadowCastingMode.Off;
+            mr.receiveShadows = false;
+        }
+
+        // Forest below, scrub and grass above, rock on the tops; mottled. v is height.
+        private static Texture2D MountainTexture()
+        {
+            string path = $"{LookDir}/Textures/mountains_albedo.png";
+            const int w = 512, h = 256;
+            var px = new Color[w * h];
+            Color forest = new Color(0.12f, 0.19f, 0.1f), scrub = new Color(0.3f, 0.34f, 0.19f), rock = new Color(0.42f, 0.39f, 0.34f);
+            for (int y = 0; y < h; y++)
+                for (int x = 0; x < w; x++)
+                {
+                    float t = y / (h - 1f);
+                    float n = Mathf.PerlinNoise(x * 0.06f, y * 0.11f), n2 = Mathf.PerlinNoise(x * 0.23f + 40f, y * 0.31f);
+                    float tt = t + 0.25f * (n - 0.5f);
+                    var c = tt < 0.45f ? Color.Lerp(forest, scrub, Mathf.SmoothStep(0f, 1f, tt / 0.45f) * (0.4f + 0.6f * n2))
+                                       : Color.Lerp(scrub, rock, Mathf.SmoothStep(0f, 1f, (tt - 0.45f) / 0.45f));
+                    c *= 0.85f + 0.3f * n2;
+                    c.a = 1f;
+                    px[y * w + x] = c;
+                }
+            var tex = new Texture2D(w, h, TextureFormat.RGBA32, true);
+            tex.SetPixels(px);
+            tex.Apply();
+            Directory.CreateDirectory(Path.Combine(Application.dataPath, "..", LookDir, "Textures"));
+            File.WriteAllBytes(Path.Combine(Application.dataPath, "..", path), tex.EncodeToPNG());
+            Object.DestroyImmediate(tex);
+            AssetDatabase.ImportAsset(path, ImportAssetOptions.ForceSynchronousImport);
+            var ti = (TextureImporter)AssetImporter.GetAtPath(path);
+            ti.wrapModeU = TextureWrapMode.Repeat;
+            ti.wrapModeV = TextureWrapMode.Clamp;
+            ti.SaveAndReimport();
+            return AssetDatabase.LoadAssetAtPath<Texture2D>(path);
         }
 
         // ----------------------------------------------- pipeline and post
@@ -461,7 +585,7 @@ namespace RcTwin.EditorTools
         {
             // The road: asphalt with a wet sheen (its lane lines are plain paint).
             Paint(parts.Asphalt, Lit("Road", "asphalt_02", new Color(0.9f, 0.9f, 0.93f)), 0.3f);
-            Paint(parts.Sidewalks, Lit("Sidewalk", "concrete_pavement", new Color(0.95f, 0.93f, 0.9f)), 0.18f);
+            Paint(parts.Sidewalks, Lit("Sidewalk", "concrete_pavement", new Color(0.82f, 0.84f, 0.87f)), 0.18f);
 
             var grass = Lit("Grass", "leafy_grass", new Color(0.86f, 0.9f, 0.8f));
             if (parts.Grass != null && parts.Grass.TryGetComponent<MeshRenderer>(out var gr))
@@ -608,7 +732,7 @@ namespace RcTwin.EditorTools
             m.SetTexture("_EmissionMap", Tex("facade", "emission"));
             m.SetColor("_EmissionColor", Color.white * 1.4f);
             m.EnableKeyword("_EMISSION");
-            m.globalIlluminationFlags = MaterialGlobalIlluminationFlags.None;
+            m.globalIlluminationFlags = MaterialGlobalIlluminationFlags.RealtimeEmissive;   // URP keeps _EMISSION only for an emissive flag
             EditorUtility.SetDirty(m);
             return m;
         }

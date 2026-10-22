@@ -112,6 +112,8 @@ namespace RcTwin.Tests
             EditorSceneManager.NewScene(NewSceneSetup.EmptyScene, NewSceneMode.Single);
             var root = CampusDressing.Build(Plan, Layout);
             Assert.IsNotNull(root);
+            Assert.AreEqual(0, root.transform.childCount, "the scene keeps the list; the copies are made on load");
+            Assert.AreEqual(Plan.Count, root.GetComponent<CampusDressingView>().Spawn());
             Assert.AreEqual(0, root.GetComponentsInChildren<Collider>(true).Length, "drawn only");
             Assert.Greater(root.GetComponentsInChildren<LODGroup>(true).Length, 200);
             Assert.AreEqual(Plan.Count(p => p.Kind == CampusDressing.Kind.Lamp), root.GetComponentsInChildren<Light>(true).Length, "a light per lamp");

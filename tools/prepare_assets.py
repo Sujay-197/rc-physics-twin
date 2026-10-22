@@ -20,10 +20,11 @@ builder's look pass reads (Editor/CampusLook.cs):
                       materials and the texture set each uses), texture sets
 
 LODs: wood and solid parts are collapse-decimated (a tree's twigs, small
-islands hidden in the crown, dropped first at the far LODs); leaves (curved cards of
-~25-35 faces each, alpha-clipped) are thinned first, keeping a random share
-of the leaf islands scaled up about their centres so the crown keeps its
-density, then decimated.
+islands hidden in the crown, dropped first at the far LODs). Leaves are
+curved, alpha-clipped islands of ~25-35 faces; each becomes one flat card
+(two triangles) fitted to it, the leaf image whole, so the nearest LOD keeps
+every leaf. The far LODs keep a random share of the cards, scaled up about
+their centres so the crown keeps its volume.
 """
 
 from __future__ import annotations
@@ -44,6 +45,7 @@ SRC = ROOT / "assets_src"
 MODELS = SRC / "polyhaven" / "models"
 OUT = ROOT / "unity" / "RcTwin" / "Assets" / "RcTwin" / "Generated" / "Look"
 TWIN_SCALE = 0.1   # the campus and the car are 1/10 scale
+SKY = "kloppenheim_06_puresky"   # tools/fetch_assets.py's HDRI
 
 # Texture sets: name -> (folder under assets_src/polyhaven, file prefix, options).
 #   alpha: "alpha" / "opacity" (a separate map) or "diff" (the colour map's own alpha)
@@ -51,7 +53,6 @@ TWIN_SCALE = 0.1   # the campus and the car are 1/10 scale
 TEXTURE_SETS = {
     "asphalt_02": ("textures/asphalt_02", "asphalt_02", {"wet": True}),
     "concrete_pavement": ("textures/concrete_pavement", "concrete_pavement", {}),
-    "concrete_wall_008": ("textures/concrete_wall_008", "concrete_wall_008", {}),
     "leafy_grass": ("textures/leafy_grass", "leafy_grass", {}),
     "boulder_01": ("models/boulder_01/textures", "boulder_01", {}),
     "jacaranda_tree_branches": ("models/jacaranda_tree/textures", "jacaranda_tree_branches", {}),
@@ -90,13 +91,23 @@ MATERIALS = {
     "modular_street_seating_timber": ("modular_street_seating_timber", "opaque"),
 }
 
-# A LOD: (ratio for solid parts, share of leaf islands kept, ratio for the kept leaves,
+# A LOD: (ratio for the wood, share of leaf cards kept,
 # wood islands smaller than this share of the tree's height dropped: twigs inside the crown,
 # wood vertices closer than this share welded: thin branch tubes the collapse cannot reduce).
 TREE_LODS = {
-    "tree_small_02": [(0.35, 0.7, 0.2, 0.0, 0.0), (0.10, 0.35, 0.12, 0.03, 0.001), (0.03, 0.15, 0.08, 0.08, 0.003)],
-    "jacaranda_tree": [(0.08, 0.55, 0.16, 0.01, 0.0005), (0.025, 0.25, 0.10, 0.04, 0.002), (0.008, 0.1, 0.07, 0.10, 0.005)],
+    "tree_small_02": [(0.35, 1.0, 0.0, 0.0), (0.10, 0.6, 0.03, 0.001), (0.03, 0.3, 0.08, 0.003)],
+    "jacaranda_tree": [(0.08, 1.0, 0.01, 0.0005), (0.025, 0.6, 0.04, 0.002), (0.008, 0.3, 0.10, 0.005)],
 }
+LEAF_GROWTH = 1.25   # each card a little larger than its leaf: a fuller crown at every distance
+
+# Bushes, made here: tree_small_02's leaf cards packed into a dome (Poly Haven's shrubs are
+# sprigs, not bushes). name -> (half width, half depth, height [m, full scale], cards, seed).
+BUSHES = {
+    "bush_round": (0.65, 0.65, 1.1, 900, 1),
+    "bush_hedge": (0.9, 0.45, 0.95, 1000, 2),
+    "bush_tall": (0.55, 0.55, 1.7, 1000, 3),
+}
+BUSH_LODS = [1.0, 0.45, 0.18]   # share of the cards kept
 SOLID_LODS = [1.0, 0.35, 0.1]
 
 # Props: name -> (source fbx folder, objects in it, kind, extra scale on top of 1/10,
@@ -252,6 +263,72 @@ def islands(me, faces: np.ndarray) -> np.ndarray:
         if np.array_equal(before, lab):
             break
     return lab[corners[0]]
+
+
+def leaf_cards(o, leaf_slots: set):
+    """Replace each leaf island with one flat quad: the affine map from the island's UVs
+    to its positions (least squares), evaluated at the corners of its UV box."""
+    me = o.data
+    n = len(me.polygons)
+    mi = np.empty(n, np.int32)
+    me.polygons.foreach_get("material_index", mi)
+    faces = np.nonzero(np.isin(mi, list(leaf_slots)))[0]
+    if len(faces) == 0:
+        return
+    lab = islands(me, faces)
+    ids, inv = np.unique(lab, return_inverse=True)
+    lst = np.empty(n, np.int32)
+    tot = np.empty(n, np.int32)
+    me.polygons.foreach_get("loop_start", lst)
+    me.polygons.foreach_get("loop_total", tot)
+    lv = np.empty(len(me.loops), np.int32)
+    me.loops.foreach_get("vertex_index", lv)
+    co = np.empty(len(me.vertices) * 3, np.float32)
+    me.vertices.foreach_get("co", co)
+    co = co.reshape(-1, 3).astype(np.float64)
+    uv = np.empty(len(me.loops) * 2, np.float32)
+    me.uv_layers[0].data.foreach_get("uv", uv)
+    uv = uv.reshape(-1, 2).astype(np.float64)
+    loops = np.concatenate([lst[faces] + j for j in range(tot[faces].max())])
+    owner = np.concatenate([inv] * tot[faces].max())
+    real = np.concatenate([tot[faces] > j for j in range(tot[faces].max())])
+    loops, owner = loops[real], owner[real]
+    x = np.column_stack([uv[loops], np.ones(len(loops))])          # [u, v, 1]
+    P = co[lv[loops]]
+    k = len(ids)
+    M = np.zeros((k, 3, 3))
+    B = np.zeros((k, 3, 3))
+    np.add.at(M, owner, x[:, :, None] * x[:, None, :])
+    np.add.at(B, owner, x[:, :, None] * P[:, None, :])
+    lo = np.full((k, 2), np.inf)
+    hi = np.full((k, 2), -np.inf)
+    np.minimum.at(lo, owner, uv[loops])
+    np.maximum.at(hi, owner, uv[loops])
+    ok = (np.abs(np.linalg.det(M)) > 1e-14) & np.all(hi - lo > 1e-5, axis=1)
+    A = np.zeros((k, 3, 3))
+    A[ok] = np.linalg.solve(M[ok], B[ok])                          # P = [u v 1] @ A
+    slot = np.zeros(k, np.int32)
+    slot[inv] = mi[faces]
+    corners_uv = np.stack([np.column_stack([lo[:, 0], lo[:, 1]]), np.column_stack([hi[:, 0], lo[:, 1]]),
+                           np.column_stack([hi[:, 0], hi[:, 1]]), np.column_stack([lo[:, 0], hi[:, 1]])], axis=1)
+    corners = np.einsum("kci,kij->kcj", np.concatenate([corners_uv, np.ones((k, 4, 1))], axis=2), A)
+    centre = corners.mean(axis=1, keepdims=True)
+    corners = centre + LEAF_GROWTH * (corners - centre)
+
+    bm = bmesh.new()
+    bm.from_mesh(me)
+    bm.faces.ensure_lookup_table()
+    bmesh.ops.delete(bm, geom=[bm.faces[i] for i in faces], context="FACES")
+    bmesh.ops.delete(bm, geom=[v for v in bm.verts if not v.link_faces], context="VERTS")
+    layer = bm.loops.layers.uv[0]
+    for i in np.nonzero(ok)[0]:
+        vs = [bm.verts.new(c) for c in corners[i]]
+        f = bm.faces.new(vs)
+        f.material_index = int(slot[i])
+        for loop, t in zip(f.loops, corners_uv[i]):
+            loop[layer].uv = t
+    bm.to_mesh(me)
+    bm.free()
 
 
 def thin_leaves(o, leaf_slots: set, keep: float, rng: random.Random):
@@ -434,16 +511,18 @@ def prepare_prop(name: str, seed: int) -> dict:
         leaf = {i for i, m in enumerate(mats) if MATERIALS[m][1] == "cutout" and kind == "tree" and "leaves" in m}
         wood = set(range(len(mats))) - leaf
         height = base.dimensions.z
+        if lods == "tree":
+            leaf_cards(base, leaf)
         for i in range(3):
             o = base if i == 2 else copy_object(base, f"{name}_LOD{i}")
             o.name = f"{name}_LOD{i}"
             o.data.name = o.name
             if lods == "tree":
-                solid, keep, leaf_ratio, twig, merge = TREE_LODS[name][i]
+                solid, keep, twig, merge = TREE_LODS[name][i]
                 drop_small_islands(o, wood, twig * height)
                 weld(o, wood, merge * height)
                 thin_leaves(o, leaf, keep, random.Random(seed + i))
-                o = decimate(o, {k: (leaf_ratio if k in leaf else solid) for k in range(len(mats))})
+                o = decimate(o, {k: (1.0 if k in leaf else solid) for k in range(len(mats))})
             else:
                 o = decimate(o, {k: SOLID_LODS[i] for k in range(len(mats))})
             if kind in ("tree", "shrub", "plant"):
@@ -511,6 +590,88 @@ def sun_in(hdri: pathlib.Path) -> dict:
             "peak": round(float(lum.max()), 1)}
 
 
+def prepare_bush(name: str) -> dict:
+    """A bush of leaf cards: each card copied from the small tree's crown, turned at random
+    and set in a dome, more of them toward its skin; three LODs keeping fewer, larger cards."""
+    hx, hy, h, n, seed = BUSHES[name]
+    t0 = time.time()
+    reset()
+    import_fbx("tree_small_02")
+    tree = join([bpy.data.objects["tree_small_02_LOD0"]], "tree")
+    mats = [m.name for m in tree.data.materials]
+    leaf = mats.index("tree_small_02_leaves")
+    leaf_cards(tree, {leaf})
+    me = tree.data
+    cards = []
+    uvl = me.uv_layers[0].data
+    for f in me.polygons:
+        if f.material_index == leaf and f.loop_total == 4:
+            co = np.array([me.vertices[me.loops[i].vertex_index].co[:] for i in f.loop_indices])
+            uv = np.array([uvl[i].uv[:] for i in f.loop_indices])
+            cards.append((co - co.mean(0), uv))
+    rng = np.random.default_rng(seed)
+    pick = rng.choice(len(cards), n)
+    verts, uvs = [], []
+    for k in range(n):
+        co, uv = cards[pick[k]]
+        a, b, c = rng.uniform(0, 2 * np.pi, 3)
+        rz = np.array([[np.cos(a), -np.sin(a), 0], [np.sin(a), np.cos(a), 0], [0, 0, 1]])
+        rx = np.array([[1, 0, 0], [0, np.cos(b), -np.sin(b)], [0, np.sin(b), np.cos(b)]])
+        ry = np.array([[np.cos(c), 0, np.sin(c)], [0, 1, 0], [-np.sin(c), 0, np.cos(c)]])
+        d = rng.normal(size=3)
+        d /= np.linalg.norm(d)
+        d[2] = abs(d[2]) * 0.9 + 0.1                       # the upper half, a little below the middle
+        r = 0.55 + 0.45 * rng.random() ** 0.5               # most leaves near the skin
+        at = np.array([d[0] * hx, d[1] * hy, d[2] * h]) * r
+        verts.append(co @ (rz @ rx @ ry).T + at)
+        uvs.append(uv)
+    mesh = bpy.data.meshes.new(name)
+    v = np.concatenate(verts)
+    faces = [(4 * k, 4 * k + 1, 4 * k + 2, 4 * k + 3) for k in range(n)]
+    mesh.from_pydata(v.tolist(), [], faces)
+    layer = mesh.uv_layers.new(name="UVMap")
+    layer.data.foreach_set("uv", np.concatenate(uvs).ravel())
+    mesh.materials.append(bpy.data.materials["tree_small_02_leaves"])
+    for o in list(bpy.data.objects):
+        bpy.data.objects.remove(o)
+    base = bpy.data.objects.new(f"{name}_base", mesh)
+    bpy.context.scene.collection.objects.link(base)
+    lod_objs = []
+    for i, keep in enumerate(BUSH_LODS):
+        o = copy_object(base, f"{name}_LOD{i}")
+        thin_leaves(o, {0}, keep, random.Random(seed * 10 + i))
+        o.data.shade_smooth()
+        foliage_normals(o, {0})
+        me = o.data
+        co = np.empty(len(me.vertices) * 3, np.float32)
+        me.vertices.foreach_get("co", co)
+        me.vertices.foreach_set("co", (co * TWIN_SCALE).astype(np.float32))
+        me.update()
+        lod_objs.append(o)
+    bpy.data.objects.remove(base)
+    out = OUT / "Models" / f"{name}.fbx"
+    with bpy.context.temp_override(selected_objects=lod_objs, selected_editable_objects=lod_objs):
+        bpy.ops.export_scene.fbx(filepath=str(out), use_selection=True, object_types={"MESH"},
+                                 apply_scale_options="FBX_SCALE_ALL", axis_forward="-Z", axis_up="Y",
+                                 bake_space_transform=True, mesh_smooth_type="OFF", use_mesh_modifiers=False,
+                                 add_leaf_bones=False, path_mode="STRIP", embed_textures=False)
+    me0 = lod_objs[0].data
+    co = np.empty(len(me0.vertices) * 3, np.float32)
+    me0.vertices.foreach_get("co", co)
+    co = co.reshape(-1, 3)
+    size = co.max(0) - co.min(0)
+    info = {
+        "kind": "shrub", "fbx": f"Models/{name}.fbx",
+        "height": round(float(co[:, 2].max()), 4),
+        "size": [round(float(size[0]), 4), round(float(size[2]), 4), round(float(size[1]), 4)],
+        "radius": round(float(np.sqrt((co[:, 0] ** 2 + co[:, 1] ** 2).max())), 4),
+        "lod_triangles": [tri_count(o.data) for o in lod_objs],
+        "materials": {"tree_small_02_leaves": {"set": "tree_small_02_leaves", "mode": "cutout"}},
+    }
+    log(f"{name}: LOD tris {info['lod_triangles']} height {info['height']} radius {info['radius']} ({time.time() - t0:.0f} s)")
+    return info
+
+
 # ---------------------------------------------------------------------- main
 
 def main():
@@ -529,6 +690,10 @@ def main():
         if only and name not in only:
             continue
         manifest["props"][name] = prepare_prop(name, seed=100 * i)
+    for name in BUSHES:
+        if only and name not in only:
+            continue
+        manifest["props"][name] = prepare_bush(name)
     for name in TEXTURE_SETS:
         if only and name not in only:
             continue
@@ -536,7 +701,10 @@ def main():
         manifest["texture_sets"][name] = prepare_texture_set(name)
         log(f"texture set {name} ({time.time() - t0:.0f} s)")
 
-    hdri = next((SRC / "polyhaven" / "hdri").glob("*.hdr"))
+    hdri = next((SRC / "polyhaven" / "hdri").glob(f"{SKY}_*.hdr"))
+    for old in (OUT / "Sky").glob("*.hdr*"):
+        if not old.name.startswith(SKY):
+            old.unlink()
     shutil.copy2(hdri, OUT / "Sky" / hdri.name)
     manifest["sky"] = f"Sky/{hdri.name}"
     manifest["sun"] = sun_in(hdri)

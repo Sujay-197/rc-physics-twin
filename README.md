@@ -106,6 +106,15 @@ Where the route leaves the stop the way the car came in, the car first turns rou
 
 `-goto <stop>` runs the one-trip autopilot demo instead of the game. In the editor the game stays off unless `ShuttleGame.RunInEditor` is set (as its Play Mode tests do), so the scene's other tests keep the car. Its rules are plain C# in `Runtime/Shuttle/`, tested in Edit Mode on a fake world.
 
+**The campus look.** A golden-hour sky and sun, hills rising to a mountain range in the haze, post-processing, PBR road, sidewalks and buildings, and the campus dressed with about 1,600 trees, hedges and bushes, street lamps, rocks and benches. Every prop is off the asphalt and none has a collider, so the car and the autopilot are unaffected (`Editor/CampusLook.cs`, `Editor/CampusDressing.cs`). Its CC0 models and textures and the Inter font (THIRD_PARTY.md) are not in git; to get them before building the scene:
+
+```
+python tools/fetch_assets.py
+D:\blender\blender.exe -b --factory-startup --python tools/prepare_assets.py
+```
+
+The first downloads about 530 MB into `assets_src/`; the second (Blender 5.2) writes the 1/10-scale, LOD'd copies to `unity/RcTwin/Assets/RcTwin/Generated/Look/`. Without them the scene keeps its light, a procedural sky, the mountains, haze and post-processing, with plain surfaces and no dressing.
+
 The autopilot's driver is an `IDriver` (`unity/RcTwin/Assets/RcTwin/Runtime/Drivers.cs`). Each control tick, the driver gets the RL environment's own `"stop"`-task observation (`sim_py/README.md`), computed in C# by `TwinObservation` on the native road. A trip ends as that task's episodes do: stopped within 0.3 m of the destination, or failed. Two drivers come with it, and the panel switches between them:
 
 - the tuned pure pursuit, with its stop plan;
