@@ -134,9 +134,11 @@ namespace RcTwin.EditorTools
             AssetDatabase.StartAssetEditing();
             try
             {
-                foreach (var kv in props)
+                var models = new List<object>(props.Values);
+                if (Manifest().TryGetValue("figures", out var figures))
+                    models.AddRange(((Dictionary<string, object>)figures).Values);
+                foreach (Dictionary<string, object> p in models)
                 {
-                    var p = (Dictionary<string, object>)kv.Value;
                     string path = $"{LookDir}/{(string)p["fbx"]}";
                     if (!(AssetImporter.GetAtPath(path) is ModelImporter mi)) continue;
                     var mats = (Dictionary<string, object>)p["materials"];
@@ -144,7 +146,7 @@ namespace RcTwin.EditorTools
                     {
                         var d = (Dictionary<string, object>)m.Value;
                         mi.AddRemap(new AssetImporter.SourceAssetIdentifier(typeof(Material), m.Key),
-                                    PropMaterial(m.Key, (string)d["set"], (string)d["mode"]));
+                                    d.ContainsKey("color") ? FigureMaterial(m.Key, d) : PropMaterial(m.Key, (string)d["set"], (string)d["mode"]));
                     }
                     if (mi.userData == ImportStamp) continue;
                     mi.globalScale = 1f;
@@ -179,7 +181,7 @@ namespace RcTwin.EditorTools
         }
 
         private static Texture2D Tex(string set, string map) =>
-            AssetDatabase.LoadAssetAtPath<Texture2D>($"{LookDir}/Textures/{set}_{map}.png");
+            set == null ? null : AssetDatabase.LoadAssetAtPath<Texture2D>($"{LookDir}/Textures/{set}_{map}.png");
 
         // --------------------------------------------------------- materials
 
@@ -231,6 +233,26 @@ namespace RcTwin.EditorTools
             EditorUtility.SetDirty(m);
             return m;
         }
+
+        /// <summary>A plain URP Lit material for the shuttle and the students
+        /// (tools/make_figures.py): colour, smoothness, metallic, and a glow for lamps.</summary>
+        private static Material FigureMaterial(string name, Dictionary<string, object> spec)
+        {
+            var m = Lit(name, null, Colour((List<object>)spec["color"]));
+            m.SetFloat("_Smoothness", F(spec["smoothness"]));
+            m.SetFloat("_Metallic", F(spec["metallic"]));
+            var e = (List<object>)spec["emission"];
+            if (e.Count == 4)
+            {
+                m.EnableKeyword("_EMISSION");
+                m.SetColor("_EmissionColor", Colour(e) * F(e[3]));
+                m.globalIlluminationFlags = MaterialGlobalIlluminationFlags.RealtimeEmissive;   // URP keeps _EMISSION only for an emissive flag
+            }
+            EditorUtility.SetDirty(m);
+            return m;
+        }
+
+        private static Color Colour(List<object> c) => new Color(F(c[0]), F(c[1]), F(c[2]));
 
         /// <summary>URP Lit from a prepared texture set: albedo, normal, metallic with
         /// smoothness in alpha. Reset each build, so the look is what this code says.</summary>
