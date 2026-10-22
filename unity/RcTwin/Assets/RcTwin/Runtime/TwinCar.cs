@@ -100,6 +100,13 @@ namespace RcTwin
         /// <summary>Wall contacts since the last reset.</summary>
         public long WallContacts { get; private set; }
 
+        /// <summary>Kerb strikes since the last reset: a scrape counts once, and a
+        /// new strike needs StrikeGap without contact first (a pinned car bounces
+        /// off the kerb and back).</summary>
+        public long KerbStrikes { get; private set; }
+        public const double StrikeGap = 0.5;   // [s]
+        private double _sinceContact = double.PositiveInfinity;
+
         public uint WallSegments => _car != null ? _car.WallCount : 0u;
 
         /// <summary>The footprint the walls stop (ADR 0009), tyre margin included.</summary>
@@ -183,11 +190,34 @@ namespace RcTwin
             Quaternion.Euler(-(float)(pitchNoseUp * Mathf.Rad2Deg), 0f, -(float)(rollRightDown * Mathf.Rad2Deg));
 
         /// <summary>Place the car at ISO (x, y), heading yaw, at rest or rolling at speed vx.</summary>
+        /// <summary>The pack's capacity [Ah]: the campus shuttle game's battery
+        /// is a small one, so a charge lasts minutes (ShuttleGame). Nothing else changes.</summary>
+        public void SetPackCapacity(double ah)
+        {
+            var p = _car.Params;
+            p.packCapacityAh = ah;
+            _car.Params = p;
+            _p = _car.Params;
+        }
+
+        /// <summary>Set the state of charge, 0 to 1, keeping the rest of the state:
+        /// charging at a charger. Only while parked.</summary>
+        public void SetCharge(double soc)
+        {
+            var s = _car.State;
+            if (Math.Abs(s.vx) >= 0.05) throw new InvalidOperationException("charge only while parked");
+            s.soc = Math.Max(0.0, Math.Min(1.0, soc));
+            _car.Reset(s);
+            _prev = _curr = _car.State;
+        }
+
         public void ResetTo(double x, double y, double yaw, double vx = 0.0)
         {
             double w = vx / _p.wheelRadius;  // wheels rolling with the car
             _ground?.Forget();               // a teleport: cast from above again
             WallContacts = 0;
+            KerbStrikes = 0;
+            _sinceContact = double.PositiveInfinity;
             var s = new RcTwinNative.State
             {
                 x = x, y = y, yaw = yaw, vx = vx, soc = 1.0, packV = 11.1,
@@ -259,6 +289,12 @@ namespace RcTwin
 
             LastWallReport = _car.LastWallReport;
             WallContacts += LastWallReport.contacts;
+            if (LastWallReport.contacts > 0)
+            {
+                if (_sinceContact >= StrikeGap) KerbStrikes++;
+                _sinceContact = 0.0;
+            }
+            else _sinceContact += n * coreDt;
             _prev = _curr;
             _curr = _car.State;
             _prevUp = _currUp;
