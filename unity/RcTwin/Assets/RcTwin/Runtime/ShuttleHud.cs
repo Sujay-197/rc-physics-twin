@@ -2,6 +2,7 @@
 // the score top-left, a minimap top-right, a bottom bar with the battery, the
 // seats, what the shuttle is doing and the request queue. Click a stop, on the
 // minimap or in the world, to raise a request; the gear opens the settings.
+// Its look (Inter, rounded translucent panels, icons) is HudSkin's.
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -72,8 +73,8 @@ namespace RcTwin
         private Minimap _map;
         private Rect _mapArea;
         private Material _lines;
-        private GUIStyle _box, _big, _text, _small, _chip, _chipAssigned, _btn, _btnOn, _tag;
-        private Texture2D _white;
+        private GUIStyle _box, _big, _text, _small, _chip, _chipAssigned, _btn, _btnOn, _tag, _gauge, _caption;
+        private Texture2D _white, _dot;
         private string _pickFrom;                 // destination picker open for this origin
         private bool _settings;
         private float _scale = 1f;
@@ -150,10 +151,13 @@ namespace RcTwin
         private void ScorePanel()
         {
             var s = _game.Score;
-            GUILayout.BeginArea(new Rect(12f, 12f, 330f, 76f), _box);
-            GUILayout.Label($"Score {s.Points:N0}", _big);
-            GUILayout.Label($"Delivered {s.Delivered} · Avg wait {Clock(s.AverageWait)} · Gave up {s.GaveUp}", _text);
-            GUILayout.EndArea();
+            var r = new Rect(12f, 12f, 350f, 82f);
+            GUI.Box(r, GUIContent.none, _box);
+            Icon(HudIcon.Score, new Rect(r.x + 16f, r.y + 15f, 26f, 26f), HudSkin.Gold);
+            GUI.Label(new Rect(r.x + 50f, r.y + 9f, r.width - 60f, 36f), $"Score {s.Points:N0}", _big);
+            Icon(HudIcon.Clock, new Rect(r.x + 19f, r.y + 53f, 14f, 14f), HudSkin.Muted);
+            GUI.Label(new Rect(r.x + 40f, r.y + 48f, r.width - 50f, 24f),
+                      $"Delivered {s.Delivered} · Avg wait {Clock(s.AverageWait)} · Gave up {s.GaveUp}", _text);
         }
 
         // ----------------------------------------------------------- minimap
@@ -166,7 +170,7 @@ namespace RcTwin
             {
                 Lines(() =>
                 {
-                    GL.Color(new Color(0.55f, 0.57f, 0.6f));
+                    GL.Color(new Color(0.62f, 0.66f, 0.72f));
                     foreach (var c in net.Centrelines())
                         for (int i = 3; i + 1 < c.Length; i += 3)
                         {
@@ -174,7 +178,7 @@ namespace RcTwin
                             GL.Vertex(_map.ToMap(c[i], c[i + 1]));
                         }
                     // The shuttle's planned path, stop to stop along the routes.
-                    GL.Color(new Color(0.35f, 0.75f, 1f));
+                    GL.Color(HudSkin.Accent);
                     var st = _car.State;
                     string at = _game.AtStop ?? _game.LegFrom;
                     foreach (var ps in _game.Brain.Plan.Stops)
@@ -206,18 +210,17 @@ namespace RcTwin
                 var q = _map.ToMap(s.nodeX, s.nodeY);
                 int n = waiting.Count(r => r.Origin == s.name);
                 bool charger = s.name == _game.Settings.ChargerStop;
-                var dot = new Rect(q.x - 6f, q.y - 6f, 12f, 12f);
-                GUI.color = charger ? new Color(0.35f, 0.85f, 0.45f) : new Color(0.25f, 0.5f, 0.95f);
-                GUI.DrawTexture(dot, _white);
+                GUI.color = new Color(1f, 1f, 1f, 0.9f);
+                GUI.DrawTexture(new Rect(q.x - 7f, q.y - 7f, 14f, 14f), _dot);
+                GUI.color = charger ? HudSkin.Good : HudSkin.Accent;
+                GUI.DrawTexture(new Rect(q.x - 5f, q.y - 5f, 10f, 10f), _dot);
                 GUI.color = Color.white;
                 string label = s.name + (n > 0 ? $" ·{n}" : "");
                 GUI.Label(new Rect(q.x + 7f, q.y - 9f, 70f, 18f), label, _small);
             }
             // Legend: the charger's dot is green.
-            GUI.color = new Color(0.35f, 0.85f, 0.45f);
-            GUI.DrawTexture(new Rect(_mapArea.x + 8f, _mapArea.yMax - 17f, 10f, 10f), _white);
-            GUI.color = Color.white;
-            GUI.Label(new Rect(_mapArea.x + 22f, _mapArea.yMax - 22f, 120f, 18f), $"charger ({_game.Settings.ChargerStop})", _small);
+            Icon(HudIcon.Bolt, new Rect(_mapArea.x + 10f, _mapArea.yMax - 20f, 12f, 12f), HudSkin.Good);
+            GUI.Label(new Rect(_mapArea.x + 24f, _mapArea.yMax - 23f, 140f, 18f), $"charger ({_game.Settings.ChargerStop})", _small);
             var e = Event.current;
             if (e.type == EventType.MouseDown && e.button == 0 && _mapArea.Contains(e.mousePosition))
             {
@@ -231,25 +234,34 @@ namespace RcTwin
         private void BottomBar(float w, float h)
         {
             float bh = BarHeight;
-            var bar = new Rect(0f, h - bh, w, bh);
+            var bar = new Rect(12f, h - bh + 2f, w - 24f, bh - 12f);   // floating inside the bar's band
             GUI.Box(bar, GUIContent.none, _box);
-            float x = 14f, y = h - bh + 10f;
-            // Battery gauge, its label on the line above.
+            float x = 28f, y = bar.y + (bar.height - 40f) / 2f;
+            // Battery: icon, gauge, its label on the line above.
             double soc = _car.State.soc;
-            GUI.Label(new Rect(x, y - 4f, 220f, 18f), $"Battery {100 * soc:0} %" + (_game.Brain.Mode == ShuttleMode.Charging ? " · charging" : ""), _small);
-            var g = new Rect(x, y + 16f, 150f, 14f);
-            GUI.color = new Color(0.2f, 0.22f, 0.26f);
-            GUI.DrawTexture(g, _white);
-            var c = soc > 0.5 ? new Color(0.3f, 0.78f, 0.42f) : soc > 0.25 ? new Color(0.95f, 0.7f, 0.2f) : new Color(0.92f, 0.3f, 0.25f);
-            if (_game.Brain.Mode == ShuttleMode.Charging) c.a = 0.6f + 0.4f * Mathf.Sin(Time.unscaledTime * 4f);
+            bool charging = _game.Brain.Mode == ShuttleMode.Charging;
+            var c = soc > 0.5 ? HudSkin.Good : soc > 0.25 ? HudSkin.Warn : HudSkin.Bad;
+            Icon(charging ? HudIcon.Bolt : HudIcon.Battery, new Rect(x, y + 9f, 24f, 24f), charging ? HudSkin.Good : HudSkin.Text);
+            GUI.Label(new Rect(x + 32f, y - 2f, 220f, 18f), $"Battery {100 * soc:0} %" + (charging ? " · charging" : ""), _caption);
+            var g = new Rect(x + 32f, y + 20f, 150f, 12f);
+            GUI.color = new Color(1f, 1f, 1f, 0.14f);
+            GUI.Box(g, GUIContent.none, _gauge);
+            if (charging) c.a = 0.6f + 0.4f * Mathf.Sin(Time.unscaledTime * 4f);
             GUI.color = c;
-            GUI.DrawTexture(new Rect(g.x, g.y, g.width * (float)Math.Max(0.0, Math.Min(1.0, soc)), g.height), _white);
+            GUI.Box(new Rect(g.x, g.y, Mathf.Max(g.height, g.width * (float)Math.Max(0.0, Math.Min(1.0, soc))), g.height), GUIContent.none, _gauge);
             GUI.color = Color.white;
-            x += 168f;
-            GUI.Label(new Rect(x, y, 90f, 28f), $"Seats {_game.Brain.Aboard.Count}/{_game.Settings.Capacity}", _text);
-            x += 96f;
-            GUI.Label(new Rect(x, y, Mathf.Max(260f, w * 0.26f), 28f), _game.Brain.Status, _text);
+            x += 200f;
+            Divider(x - 10f, bar);
+            // Seats: icon, the count, its label above.
+            Icon(HudIcon.Seat, new Rect(x + 4f, y + 8f, 24f, 24f), HudSkin.Text);
+            GUI.Label(new Rect(x + 34f, y - 2f, 80f, 18f), "Seats", _caption);
+            GUI.Label(new Rect(x + 34f, y + 14f, 80f, 24f), $"{_game.Brain.Aboard.Count}/{_game.Settings.Capacity}", _text);
+            x += 106f;
+            Divider(x - 10f, bar);
+            GUI.Label(new Rect(x, y - 2f, Mathf.Max(260f, w * 0.26f), 18f), "Shuttle", _caption);
+            GUI.Label(new Rect(x, y + 14f, Mathf.Max(260f, w * 0.26f), 24f), _game.Brain.Status, _text);
             x += Mathf.Max(260f, w * 0.26f) + 8f;
+            y += 10f;
             // The request queue, oldest first.
             float chipsEnd = w - 96f;
             foreach (var r in _game.Waiting.OrderBy(r => r.RaisedAt))
@@ -260,7 +272,22 @@ namespace RcTwin
                 GUI.Label(new Rect(x, y + 4f, cw, 22f), t, r.State == RequestState.Assigned ? _chipAssigned : _chip);
                 x += cw + 6f;
             }
-            if (GUI.Button(new Rect(w - 86f, y, 74f, 28f), "Settings", _btn)) _settings = !_settings;
+            if (GUI.Button(new Rect(w - 108f, y - 4f, 80f, 30f), "Settings", _btn)) _settings = !_settings;
+        }
+
+        private void Divider(float x, Rect bar)
+        {
+            GUI.color = new Color(1f, 1f, 1f, 0.1f);
+            GUI.DrawTexture(new Rect(x, bar.y + 12f, 1f, bar.height - 24f), _white);
+            GUI.color = Color.white;
+        }
+
+        private static void Icon(HudIcon icon, Rect r, Color c)
+        {
+            var was = GUI.color;
+            GUI.color = c;
+            GUI.DrawTexture(r, HudSkin.Icon(icon), ScaleMode.ScaleToFit);
+            GUI.color = was;
         }
 
         // ------------------------------------------------- destination picker
@@ -357,30 +384,40 @@ namespace RcTwin
         {
             if (_box != null) return;
             _white = Texture2D.whiteTexture;
-            Texture2D Tex(Color c)
+            _dot = HudSkin.Rounded(8, Color.white, Color.clear);
+            Font regular = HudSkin.Font("Regular"), medium = HudSkin.Font("Medium"), semi = HudSkin.Font("SemiBold"), bold = HudSkin.Font("Bold");
+            GUIStyle Label(Font f, int size, Color c, FontStyle fallback = FontStyle.Normal) => new GUIStyle(GUI.skin.label)
             {
-                var t = new Texture2D(1, 1) { hideFlags = HideFlags.HideAndDontSave };
-                t.SetPixel(0, 0, c);
-                t.Apply();
-                return t;
-            }
-            _box = new GUIStyle { normal = { background = Tex(new Color(0.08f, 0.09f, 0.11f, 0.86f)) }, padding = new RectOffset(12, 12, 8, 8) };
-            _big = new GUIStyle(GUI.skin.label) { fontSize = 20, fontStyle = FontStyle.Bold, normal = { textColor = Color.white } };
-            _text = new GUIStyle(GUI.skin.label) { fontSize = 14, normal = { textColor = new Color(0.92f, 0.93f, 0.95f) } };
-            _small = new GUIStyle(GUI.skin.label) { fontSize = 12, normal = { textColor = new Color(0.85f, 0.87f, 0.9f) } };
-            _chip = new GUIStyle(GUI.skin.label)
-            {
-                fontSize = 12, alignment = TextAnchor.MiddleCenter, padding = new RectOffset(7, 7, 2, 2),
-                normal = { background = Tex(new Color(0.22f, 0.25f, 0.32f)), textColor = Color.white },
+                font = f, fontSize = size, fontStyle = f != null ? FontStyle.Normal : fallback, normal = { textColor = c },
             };
-            _chipAssigned = new GUIStyle(_chip) { normal = { background = Tex(new Color(0.2f, 0.42f, 0.78f)), textColor = Color.white } };
-            _tag = new GUIStyle(GUI.skin.label)
+            GUIStyle Pill(Texture2D bg, int radius, Font f, int size) => new GUIStyle(GUI.skin.label)
             {
-                fontSize = 11, alignment = TextAnchor.MiddleCenter, padding = new RectOffset(6, 6, 2, 2), wordWrap = false,
-                normal = { background = Tex(new Color(0.08f, 0.09f, 0.11f, 0.7f)), textColor = Color.white },
+                font = f, fontSize = size, alignment = TextAnchor.MiddleCenter, wordWrap = false,
+                border = new RectOffset(radius + 1, radius + 1, radius + 1, radius + 1), padding = new RectOffset(9, 9, 3, 3),
+                normal = { background = bg, textColor = Color.white },
             };
-            _btn = new GUIStyle(GUI.skin.button) { fontSize = 13 };
-            _btnOn = new GUIStyle(_btn) { normal = { background = Tex(new Color(0.2f, 0.42f, 0.78f)), textColor = Color.white } };
+            _box = new GUIStyle
+            {
+                normal = { background = HudSkin.Rounded(14, HudSkin.Panel, HudSkin.Edge) },
+                border = new RectOffset(15, 15, 15, 15), padding = new RectOffset(14, 14, 10, 10),
+            };
+            _big = Label(bold, 22, Color.white, FontStyle.Bold);
+            _text = Label(medium, 14, HudSkin.Text);
+            _small = Label(semi, 11, HudSkin.Text);
+            _caption = Label(regular, 11, HudSkin.Muted);
+            _chip = Pill(HudSkin.Rounded(10, new Color(0.22f, 0.27f, 0.35f, 0.92f), new Color(1f, 1f, 1f, 0.1f)), 10, medium, 12);
+            _chipAssigned = Pill(HudSkin.Rounded(10, new Color(0.2f, 0.46f, 0.86f, 0.95f), new Color(1f, 1f, 1f, 0.2f)), 10, medium, 12);
+            _tag = Pill(HudSkin.Rounded(8, new Color(0.05f, 0.07f, 0.1f, 0.78f), new Color(1f, 1f, 1f, 0.12f)), 8, semi, 11);
+            _tag.padding = new RectOffset(8, 8, 3, 3);
+            _gauge = new GUIStyle { normal = { background = HudSkin.Rounded(5, Color.white, Color.clear) }, border = new RectOffset(6, 6, 6, 6) };
+            _btn = new GUIStyle(GUI.skin.button)
+            {
+                font = medium, fontSize = 13, border = new RectOffset(9, 9, 9, 9), padding = new RectOffset(10, 10, 5, 5),
+                normal = { background = HudSkin.Rounded(8, new Color(1f, 1f, 1f, 0.1f), new Color(1f, 1f, 1f, 0.16f)), textColor = HudSkin.Text },
+                hover = { background = HudSkin.Rounded(8, new Color(1f, 1f, 1f, 0.18f), new Color(1f, 1f, 1f, 0.22f)), textColor = Color.white },
+                active = { background = HudSkin.Rounded(8, HudSkin.Accent, new Color(1f, 1f, 1f, 0.25f)), textColor = Color.white },
+            };
+            _btnOn = new GUIStyle(_btn) { normal = { background = HudSkin.Rounded(8, HudSkin.Accent, new Color(1f, 1f, 1f, 0.25f)), textColor = Color.white } };
         }
     }
 }

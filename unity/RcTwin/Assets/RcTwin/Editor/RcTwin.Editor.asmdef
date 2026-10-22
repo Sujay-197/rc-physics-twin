@@ -1,7 +1,7 @@
 {
     "name": "RcTwin.Editor",
     "rootNamespace": "RcTwin.EditorTools",
-    "references": ["RcTwin.Runtime"],
+    "references": ["RcTwin.Runtime", "Unity.RenderPipelines.Core.Runtime", "Unity.RenderPipelines.Universal.Runtime"],
     "includePlatforms": ["Editor"],
     "excludePlatforms": [],
     "autoReferenced": true
