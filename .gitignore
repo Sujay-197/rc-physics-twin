@@ -64,3 +64,8 @@ policies/v2/*.zip
 policies/v2/*.pkl
 policies/twin-car/*.zip
 policies/twin-car/*.pkl
+
+# campus look: third-party source assets (tools/fetch_assets.py) and their prepared versions (tools/prepare_assets.py)
+assets_src/
+unity/**/Generated/Look/
+unity/**/Generated/Look.meta
