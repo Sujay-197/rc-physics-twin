@@ -94,7 +94,12 @@ namespace RcTwin
             _car.showHud = false;
             _pilot.showPanel = false;
             _strikes = _car.KerbStrikes;
+            if (GetComponent<ShuttleHud>() == null) gameObject.AddComponent<ShuttleHud>();
         }
+
+        /// <summary>Re-size the game battery after BatteryMinutesOfDriving changed; the charge stays.</summary>
+        public void ResizeBattery() =>
+            _car.SetPackCapacity(BatteryPolicy.GamePackCapacityAh(Settings, BatteryPolicy.SeedWhPerMetre, _car.Params.packNominalV));
 
         /// <summary>A request the person watching raised.</summary>
         public RideRequest RaiseRequest(string origin, string destination)
