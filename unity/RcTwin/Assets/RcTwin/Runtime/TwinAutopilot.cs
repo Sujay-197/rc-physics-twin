@@ -528,7 +528,7 @@ namespace RcTwin
                                     $"{TripWallContacts} kerb contacts" +
                                     ((Driver as KerbRecovery)?.Backing == true ? ", backing off the kerb" :
                                      TripBackOffs > 0 ? $", {TripBackOffs} back-offs" : "") +
-                                    (CornerCap < targetSpeed ? $", corner: {CornerCap:0.0} m/s" : ""), _text);
+                                    (CornerCap < targetSpeed ? $", plan: {CornerCap:0.0} m/s" : ""), _text);
             }
             if (TurnReport != null) GUILayout.Label(TurnReport, _text);
             GUILayout.Label(Message, _text);

@@ -26,7 +26,7 @@ Policy specs (strings, so worker processes can build them):
   controller:<kind>:<file.json>  tuned gains from another tuning, e.g.
                                policies/controllers_unity_stop.json
   recover:<spec>               <spec> with the kerb recovery (controllers.KerbRecovery)
-  corner:<a_lat>,<a_brake>[,<a_accel>]:<spec>  <spec> with the corner speed plan (controllers.CornerSpeed);
+  corner:<a_lat>,<a_brake>[,<a_accel>[,<v_launch>]]:<spec>  <spec> with the corner speed plan (controllers.CornerSpeed);
   corner:tuned:<spec>          ... with the plan tuned in policies/controllers_unity_stop.json
   cem:<path.json>              sim_py/train_cem.py
   sb3:<prefix>                 sim_py/train_rl.py output (needs the .venv)
@@ -96,7 +96,7 @@ def build_policy(spec: str, env, any_car: bool = False):
             tuned = json.loads((ROOT / "policies" / "controllers_unity_stop.json").read_text(encoding="utf-8"))
             g = tuned["corner_speed"]["gains"]
         else:
-            g = dict(zip(("a_lat", "a_brake", "a_accel"), map(float, plan.split(","))))
+            g = dict(zip(("a_lat", "a_brake", "a_accel", "v_launch"), map(float, plan.split(","))))
         return ctl.CornerSpeed(build_policy(inner, env, any_car), env, **g)
     if kind == "recover":
         ctl = _load("controllers", HERE / "controllers.py")
@@ -281,13 +281,15 @@ def main(argv=None) -> int:
                     help="rc_twin_env.py's cars: bare (the policy study's), unity (the twin's), both")
     ap.add_argument("--any-car", action="store_true",
                     help="let learned policies drive a car they did not train on (to measure the gap)")
+    ap.add_argument("--seed", type=int, default=EVAL_SEED, help="first trip's seed (default %(default)s)")
     ap.add_argument("--out", type=pathlib.Path, help="JSON report (episodes included)")
     ap.add_argument("--lib")
     args = ap.parse_args(argv)
     lib = os.path.abspath(args.lib) if args.lib else None
     t0 = time.perf_counter()
     report = evaluate(args.specs, args.trips, args.conditions, lib, args.workers,
-                      target_speed=args.target_speed, task=args.task, car=args.car, any_car=args.any_car)
+                      seed=args.seed, target_speed=args.target_speed, task=args.task, car=args.car,
+                      any_car=args.any_car)
     report["seconds"] = round(time.perf_counter() - t0, 1)
     print(table(report))
     if args.out:

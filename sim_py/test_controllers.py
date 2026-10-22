@@ -148,6 +148,16 @@ class CornerSpeed(unittest.TestCase):
         self.assertEqual(prof[:100], before[:100])
         self.assertEqual(before[round(11.7 / 0.1)], 4.0)
 
+    def test_with_a_launch_speed_the_car_pulls_away_from_rest_at_a_accel_too(self):
+        heading = lambda s: 0.0 if s < 10.0 else -0.5 * math.pi
+        prof = C.speed_profile(heading, 20.0, 4.0, 3.0, 1.5, a_accel=1.0, v_launch=0.5)
+        at = lambda s: prof[round(s / 0.1)]
+        self.assertEqual(at(0.0), 0.5)
+        self.assertAlmostEqual(at(2.0), math.sqrt(0.5 ** 2 + 2.0 * 1.0 * 2.0), places=6)
+        free = C.speed_profile(heading, 20.0, 4.0, 3.0, 1.5, a_accel=1.0)
+        self.assertEqual(free[0], 4.0, "without it, a trip starts at the target speed's cap")
+        self.assertEqual(prof[100:], free[100:], "after the launch, the same plan")
+
     def test_the_plan_caps_the_drivers_throttle_and_never_raises_it(self):
         env = campus.CampusEnv(seed=0, ranges=envmod.RANGES_NOMINAL, lib_path=LIB, target_speed=4.0, task="stop",
                                car="unity")
@@ -172,7 +182,7 @@ class CornerSpeed(unittest.TestCase):
         eps = rep["policies"][spec]["train"]["episodes"]
         self.assertEqual([e["status"] for e in eps], ["reached_end"] * 3)
         tuned = json.loads((ROOT / "policies" / "controllers_unity_stop.json").read_text(encoding="utf-8"))
-        self.assertEqual(set(tuned["corner_speed"]["gains"]), {"a_lat", "a_brake", "a_accel"})
+        self.assertEqual(set(tuned["corner_speed"]["gains"]), {"a_lat", "a_brake", "a_accel", "v_launch"})
 
 
 class _Params:

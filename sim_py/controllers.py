@@ -353,7 +353,8 @@ class KerbRecovery:
 # --------------------------------------------------------- corner speed plan
 
 def speed_profile(heading_at, length: float, v_max: float, a_lat: float, a_brake: float,
-                  window: float = 1.5, step: float = 0.1, a_accel: float | None = None) -> list:
+                  window: float = 1.5, step: float = 0.1, a_accel: float | None = None,
+                  v_launch: float | None = None) -> list:
     """The speed cap [m/s] every `step` along a route of `length`, from its
     heading `heading_at(s)` [rad]. Curvature at s is the heading change
     across `window` centred on it (clamped to the route) over the window, so
@@ -363,6 +364,9 @@ def speed_profile(heading_at, length: float, v_max: float, a_lat: float, a_brake
     With a_accel, a forward pass then lets the cap rise after each corner
     only as fast as accelerating at a_accel allows: the car is still turning
     as it leaves a junction, and full throttle there spun low-grip cars.
+    With v_launch too, the forward pass starts at the stop from that speed,
+    so the car also pulls away from rest at a_accel: where a turn comes
+    just after the stop, full throttle from rest spun them as well.
     Unity's SpeedProfile (Drivers.cs) is this, line for line."""
     n = int(length / step + 1e-9) + 1
     half = 0.5 * window
@@ -375,6 +379,8 @@ def speed_profile(heading_at, length: float, v_max: float, a_lat: float, a_brake
     for i in range(n - 2, -1, -1):
         cap[i] = min(cap[i], math.sqrt(cap[i + 1] ** 2 + 2.0 * a_brake * step))
     if a_accel is not None:
+        if v_launch is not None:
+            cap[0] = min(cap[0], v_launch)
         for i in range(1, n):
             cap[i] = min(cap[i], math.sqrt(cap[i - 1] ** 2 + 2.0 * a_accel * step))
     return cap
@@ -402,9 +408,10 @@ class CornerSpeed:
     road and arc length s). unity/.../Drivers.cs CornerSpeed is this."""
 
     def __init__(self, inner, env, a_lat: float, a_brake: float, a_accel: float | None = None,
-                 window: float = 1.5, step: float = 0.1, k_speed: float = 3.0):
+                 v_launch: float | None = None, window: float = 1.5, step: float = 0.1, k_speed: float = 3.0):
         self.inner, self.env = inner, env
         self.a_lat, self.a_brake, self.a_accel, self.window, self.step = a_lat, a_brake, a_accel, window, step
+        self.v_launch = v_launch
         self.k_speed = getattr(inner, "k_speed", k_speed)
         self.v_ref = env.target_speed
         self.i_v = env.frame_fields.index("speed_ratio")
@@ -421,7 +428,7 @@ class CornerSpeed:
                                        ctypes.byref(h))
             return h.value
         self.profile = speed_profile(heading_at, env._length, self.v_ref, self.a_lat, self.a_brake,
-                                     self.window, self.step, self.a_accel)
+                                     self.window, self.step, self.a_accel, self.v_launch)
         if hasattr(self.inner, "reset"):
             self.inner.reset()
 

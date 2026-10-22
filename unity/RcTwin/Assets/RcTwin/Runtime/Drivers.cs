@@ -149,11 +149,14 @@ namespace RcTwin
     /// aAccel (not NaN), a forward pass then lets the cap rise after each
     /// corner only as fast as accelerating at aAccel allows: the car is still
     /// turning as it leaves a junction, and full throttle there spun low-grip cars.
+    /// With vLaunch too, the forward pass starts at the stop from that speed, so
+    /// the car also pulls away from rest at aAccel.
     /// </remarks>
     public static class SpeedProfile
     {
         public static double[] Build(Func<double, double> headingAt, double length, double vMax, double aLat,
-                                     double aBrake, double window = 1.5, double step = 0.1, double aAccel = double.NaN)
+                                     double aBrake, double window = 1.5, double step = 0.1, double aAccel = double.NaN,
+                                     double vLaunch = double.NaN)
         {
             int n = (int)(length / step + 1e-9) + 1;
             double half = 0.5 * window;
@@ -168,8 +171,11 @@ namespace RcTwin
             for (int i = n - 2; i >= 0; i--)
                 cap[i] = Math.Min(cap[i], Math.Sqrt(cap[i + 1] * cap[i + 1] + 2.0 * aBrake * step));
             if (!double.IsNaN(aAccel))
+            {
+                if (!double.IsNaN(vLaunch)) cap[0] = Math.Min(cap[0], vLaunch);
                 for (int i = 1; i < n; i++)
                     cap[i] = Math.Min(cap[i], Math.Sqrt(cap[i - 1] * cap[i - 1] + 2.0 * aAccel * step));
+            }
             return cap;
         }
 
@@ -198,8 +204,10 @@ namespace RcTwin
     {
         /// <summary>The plan's gains, set by design (policies/controllers_unity_stop.json "corner_speed").</summary>
         public const double DesignALat = 3.4, DesignABrake = 1.2, DesignAAccel = 1.2;   // [m/s^2]
+        public const double DesignVLaunch = 0.5;                                          // [m/s]
 
         public double ALat = DesignALat, ABrake = DesignABrake, AAccel = DesignAAccel;   // [m/s^2]; AAccel NaN: none
+        public double VLaunch = DesignVLaunch;                                           // [m/s]; NaN: none
         public double Window = 1.5, Step = 0.1;                    // [m]
         public double KSpeed;                                      // throttle per unit speed-ratio error
 
@@ -224,7 +232,7 @@ namespace RcTwin
 
         /// <summary>Plan a route from its heading at arc length s [rad] and its length [m].</summary>
         public void Plan(Func<double, double> headingAt, double length) =>
-            Profile = SpeedProfile.Build(headingAt, length, TargetSpeed, ALat, ABrake, Window, Step, AAccel);
+            Profile = SpeedProfile.Build(headingAt, length, TargetSpeed, ALat, ABrake, Window, Step, AAccel, VLaunch);
 
         /// <summary>The planned speed at arc length s, interpolated [m/s].</summary>
         public double CapAt(double s)
