@@ -94,8 +94,8 @@ MATERIALS = {
 # wood islands smaller than this share of the tree's height dropped: twigs inside the crown,
 # wood vertices closer than this share welded: thin branch tubes the collapse cannot reduce).
 TREE_LODS = {
-    "tree_small_02": [(0.35, 0.45, 0.22, 0.0, 0.0), (0.10, 0.20, 0.12, 0.03, 0.001), (0.03, 0.07, 0.08, 0.08, 0.003)],
-    "jacaranda_tree": [(0.08, 0.35, 0.18, 0.01, 0.0005), (0.025, 0.14, 0.10, 0.04, 0.002), (0.008, 0.05, 0.07, 0.10, 0.005)],
+    "tree_small_02": [(0.35, 0.7, 0.2, 0.0, 0.0), (0.10, 0.35, 0.12, 0.03, 0.001), (0.03, 0.15, 0.08, 0.08, 0.003)],
+    "jacaranda_tree": [(0.08, 0.55, 0.16, 0.01, 0.0005), (0.025, 0.25, 0.10, 0.04, 0.002), (0.008, 0.1, 0.07, 0.10, 0.005)],
 }
 SOLID_LODS = [1.0, 0.35, 0.1]
 
@@ -288,7 +288,7 @@ def thin_leaves(o, leaf_slots: set, keep: float, rng: random.Random):
     np.add.at(sums, inv, co[vs])
     cnt = np.bincount(inv, minlength=len(labels))[:, None]
     centre = sums / cnt
-    scale = min(2.2, keep ** -0.35)   # fewer leaves, each bigger: the crown stays full
+    scale = min(2.5, keep ** -0.5)   # fewer leaves, each bigger by area: the crown stays as full
     co[vs] = centre[inv] + scale * (co[vs] - centre[inv])
     me.vertices.foreach_set("co", co.ravel())
 
@@ -345,6 +345,37 @@ def weld(o, slots: set, dist: float):
     bmesh.ops.remove_doubles(bm, verts=verts, dist=dist)
     bm.to_mesh(o.data)
     bm.free()
+
+
+def foliage_normals(o, slots: set):
+    """Point the normals of `slots`' faces out from the foliage's centre, a little up:
+    two-sided leaf cards then light as one soft volume, the same from either side."""
+    me = o.data
+    mi = np.empty(len(me.polygons), np.int32)
+    me.polygons.foreach_get("material_index", mi)
+    leaf_faces = np.isin(mi, list(slots))
+    if not leaf_faces.any():
+        return
+    tot = np.empty(len(me.polygons), np.int32)
+    me.polygons.foreach_get("loop_total", tot)
+    leaf_loops = np.repeat(leaf_faces, tot)
+    lv = np.empty(len(me.loops), np.int32)
+    me.loops.foreach_get("vertex_index", lv)
+    co = np.empty(len(me.vertices) * 3, np.float32)
+    me.vertices.foreach_get("co", co)
+    co = co.reshape(-1, 3)
+    p = co[lv[leaf_loops]]
+    lo, hi = p.min(0), p.max(0)
+    centre = (lo + hi) / 2
+    half = np.maximum((hi - lo) / 2, 1e-6)
+    d = (p - centre) / half                       # an ellipsoid's shape, not the crown's raw extent
+    d[:, 2] += 0.35                                # and a little up (Blender z), toward the sky
+    d /= np.maximum(np.linalg.norm(d, axis=1, keepdims=True), 1e-6)
+    normals = np.empty(len(me.loops) * 3, np.float32)
+    me.corner_normals.foreach_get("vector", normals)
+    normals = normals.reshape(-1, 3)
+    normals[leaf_loops] = d
+    me.normals_split_custom_set(normals.tolist())
 
 
 def decimate(o, ratio_of_slot):
@@ -412,6 +443,9 @@ def prepare_prop(name: str, seed: int) -> dict:
                 o = decimate(o, {k: (leaf_ratio if k in leaf else solid) for k in range(len(mats))})
             else:
                 o = decimate(o, {k: SOLID_LODS[i] for k in range(len(mats))})
+            if kind in ("tree", "shrub", "plant"):
+                o.data.shade_smooth()
+                foliage_normals(o, {k for k, m in enumerate(mats) if MATERIALS[m][1] == "cutout" and "branch" not in m})
             lod_objs.append(o)
 
     # Scale to the twin, origin at the base (in plan: the bounds' centre, for kit pieces).
@@ -427,7 +461,7 @@ def prepare_prop(name: str, seed: int) -> dict:
         co = (co.reshape(-1, 3) + shift) * scale
         me.vertices.foreach_set("co", co.ravel().astype(np.float32))
         me.update()
-        if kind in ("tree", "shrub", "plant", "rock"):
+        if kind == "rock":
             me.shade_smooth()
 
     for o in list(bpy.data.objects):

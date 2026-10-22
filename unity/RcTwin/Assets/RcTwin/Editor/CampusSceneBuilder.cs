@@ -16,6 +16,9 @@
 //   - each bus stop as a stop line across its node and a post at the kerb;
 //   - the real campus around it, drawn only: buildings, ground and trees
 //     (CampusScenery, tools/campus_scenery.py);
+//   - lane edge lines, and the look: a golden-hour sky and sun, post-
+//     processing, PBR surfaces and the campus dressed with trees, hedges,
+//     lamps, rocks and benches (CampusLook, CampusDressing), drawn only;
 //   - the car at the hub stop, S3, facing along its first edge (R returns it),
 //     with an autopilot that drives it to any stop picked on screen.
 // Unity coordinates: ISO (x, y, z) is Unity (-y, z, x).
@@ -148,9 +151,23 @@ namespace RcTwin.EditorTools
                 }
                 walls.Add((string)w["name"], (bool)w["closed"], xy);
             }
-            MeshObject("Campus sidewalks (drawn only)", "CampusSidewalks", walks,
-                       FlatGroundSceneBuilder.ColourMaterial("Sidewalk", new Color(0.62f, 0.6f, 0.56f)),
-                       collider: false);
+            var sidewalks = MeshObject("Campus sidewalks (drawn only)", "CampusSidewalks", walks,
+                                       FlatGroundSceneBuilder.ColourMaterial("Sidewalk", new Color(0.62f, 0.6f, 0.56f)),
+                                       collider: false);
+
+            // Lane edge lines: white paint just inside each edge of the asphalt,
+            // stopped short of junctions; drawn only, 1.5 mm proud.
+            var lines = new MeshBuilder();
+            float paintOut = 0.5f * width - 0.013f, paintIn = 0.5f * width - 0.025f;
+            foreach (var e in edges)
+            {
+                var pts = Trim(e.pts, degree[e.a] > 2 ? width : 0f, degree[e.b] > 2 ? width : 0f);
+                if (pts == null) continue;
+                lines.Band(pts, -paintOut, -paintIn, 0.0015f);
+                lines.Band(pts, paintIn, paintOut, 0.0015f);
+            }
+            MeshObject("Lane edge lines (drawn only)", "CampusLaneLines", lines,
+                       FlatGroundSceneBuilder.ColourMaterial("LanePaint", new Color(0.9f, 0.9f, 0.86f)), collider: false);
 
             // Buildings: footprint boxes, drawn only.
             var buildingParent = new GameObject("Buildings (drawn only)");
@@ -269,6 +286,17 @@ namespace RcTwin.EditorTools
             var cam = Camera.main;
             if (cam != null) cam.transform.position = car.transform.position - hd * 1.8f + Vector3.up * 0.8f;
 
+            // The look: sky, light, post-processing, PBR surfaces and the
+            // campus dressed with trees, lamps and benches (CampusLook).
+            CampusLook.Apply(new CampusLook.Parts
+            {
+                Asphalt = GameObject.Find(AsphaltName), Sidewalks = sidewalks, Grass = grass,
+                FleetBuildings = buildingParent.transform,
+                Scenery = GameObject.Find(CampusScenery.RootName)?.transform,
+                Layout = CampusLayout.Load(NetworkPath, CampusScenery.SceneryPath),
+                View = hd,
+            });
+
             Directory.CreateDirectory(Path.GetDirectoryName(ScenePath));
             EditorSceneManager.SaveScene(scene, ScenePath);
             FlatGroundSceneBuilder.RegisterScene(ScenePath);
@@ -325,6 +353,27 @@ namespace RcTwin.EditorTools
         }
 
         private static Vector3 Flat(Vector3 v) => new Vector3(v.x, 0f, v.z).normalized;
+
+        // The polyline with `cutA` cut off its start and `cutB` off its end; null if nothing is left.
+        private static List<Vector3> Trim(List<Vector3> pts, float cutA, float cutB)
+        {
+            float length = 0f;
+            for (int i = 1; i < pts.Count; i++) length += Vector3.Distance(pts[i - 1], pts[i]);
+            if (length - cutA - cutB < 0.05f) return null;
+            var o = new List<Vector3>();
+            float s = 0f, from = cutA, to = length - cutB;
+            for (int i = 1; i < pts.Count; i++)
+            {
+                float seg = Vector3.Distance(pts[i - 1], pts[i]);
+                float s0 = s, s1 = s + seg;
+                s = s1;
+                if (s1 < from || s0 > to) continue;
+                if (o.Count == 0) o.Add(Vector3.Lerp(pts[i - 1], pts[i], Mathf.Clamp01((from - s0) / seg)));
+                o.Add(Vector3.Lerp(pts[i - 1], pts[i], Mathf.Clamp01((to - s0) / seg)));
+                if (s1 >= to) break;
+            }
+            return o.Count >= 2 ? o : null;
+        }
 
         private static GameObject MeshObject(string name, string asset, MeshBuilder mb, Material mat, bool collider)
         {
