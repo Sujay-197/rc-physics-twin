@@ -14,6 +14,8 @@ builder's look pass reads (Editor/CampusLook.cs):
   Textures/<set>_normal.png   OpenGL convention (Unity's)
   Textures/<set>_mask.png     URP Lit's metallic map: R metallic,
                               A smoothness = 1 - roughness
+  Models/shuttle.fbx, Resources/RcTwinLook/student.fbx: the shuttle and a
+                      student, modelled in code (tools/make_figures.py)
   Sky/<hdri>.hdr
   Resources/RcTwinLook/Inter-*.ttf (+ LICENSE.txt): the HUD loads them by name
   look.json           what was prepared: props (size, LOD triangles,
@@ -672,6 +674,36 @@ def prepare_bush(name: str) -> dict:
     return info
 
 
+def export(objs, out: pathlib.Path):
+    with bpy.context.temp_override(selected_objects=objs, selected_editable_objects=objs):
+        bpy.ops.export_scene.fbx(filepath=str(out), use_selection=True, object_types={"MESH"},
+                                 apply_scale_options="FBX_SCALE_ALL", axis_forward="-Z", axis_up="Y",
+                                 bake_space_transform=True, mesh_smooth_type="OFF", use_mesh_modifiers=False,
+                                 add_leaf_bones=False, path_mode="STRIP", embed_textures=False)
+
+
+def prepare_figures() -> dict:
+    """The shuttle and the student (tools/make_figures.py), with their plain materials."""
+    sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
+    import make_figures as mf
+    out = {}
+    for name, build, path in (("shuttle", lambda: [mf.shuttle()], OUT / "Models" / "shuttle.fbx"),
+                              ("student", mf.student, OUT / "Resources" / "RcTwinLook" / "student.fbx")):
+        reset()
+        objs = build()
+        export(objs, path)
+        mats = {m.name for o in objs for m in o.data.materials}
+        out[name] = {
+            "kind": name, "fbx": str(path.relative_to(OUT)).replace("\\", "/"),
+            "triangles": sum(tri_count(o.data) for o in objs),
+            "materials": {m: {"color": list(mf.MATERIALS[m][0]), "smoothness": mf.MATERIALS[m][1],
+                              "metallic": mf.MATERIALS[m][2], "emission": list(mf.MATERIALS[m][3] or ())}
+                          for m in sorted(mats)},
+        }
+        log(f"{name}: {out[name]['triangles']} triangles, {len(mats)} materials")
+    return out
+
+
 # ---------------------------------------------------------------------- main
 
 def main():
@@ -694,6 +726,8 @@ def main():
         if only and name not in only:
             continue
         manifest["props"][name] = prepare_bush(name)
+    if not only or "figures" in only:
+        manifest["figures"] = prepare_figures()
     for name in TEXTURE_SETS:
         if only and name not in only:
             continue

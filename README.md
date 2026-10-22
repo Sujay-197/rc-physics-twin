@@ -106,7 +106,7 @@ Where the route leaves the stop the way the car came in, the car first turns rou
 
 `-goto <stop>` runs the one-trip autopilot demo instead of the game. In the editor the game stays off unless `ShuttleGame.RunInEditor` is set (as its Play Mode tests do), so the scene's other tests keep the car. Its rules are plain C# in `Runtime/Shuttle/`, tested in Edit Mode on a fake world.
 
-**The campus look.** A golden-hour sky and sun, hills rising to a mountain range in the haze, post-processing, PBR road, sidewalks and buildings, and the campus dressed with about 1,600 trees, hedges and bushes, street lamps, rocks and benches. Every prop is off the asphalt and none has a collider, so the car and the autopilot are unaffected (`Editor/CampusLook.cs`, `Editor/CampusDressing.cs`). Its CC0 models and textures and the Inter font (THIRD_PARTY.md) are not in git; to get them before building the scene:
+**The campus look.** A golden-hour sky and sun, hills rising to a mountain range in the haze, post-processing, PBR road, sidewalks and buildings, the campus dressed with about 1,600 trees, hedges and bushes, street lamps, rocks and benches, and a modelled pod shuttle and students (`tools/make_figures.py`; without the prepared look, the box shuttle and capsule students). Every prop is off the asphalt and none has a collider, so the car and the autopilot are unaffected (`Editor/CampusLook.cs`, `Editor/CampusDressing.cs`). Its CC0 models and textures and the Inter font (THIRD_PARTY.md) are not in git; to get them before building the scene:
 
 ```
 python tools/fetch_assets.py
