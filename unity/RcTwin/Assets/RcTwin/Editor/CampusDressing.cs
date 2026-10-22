@@ -198,17 +198,17 @@ namespace RcTwin.EditorTools
 
         public static readonly Prop[] Props =
         {
-            new Prop { Name = "tree_small_02", Kind = Kind.Tree, Base = 0.03f, Crown = 0.30f, Room = 0.06f, Height = 0.46f },
-            new Prop { Name = "jacaranda_tree", Kind = Kind.Tree, Base = 0.04f, Crown = 0.66f, Room = 0.08f, Height = 0.98f },
-            new Prop { Name = "shrub_02_a", Kind = Kind.Shrub, Base = 0.08f, Crown = 0.08f, Room = 0.06f, Height = 0.14f },
-            new Prop { Name = "shrub_02_b", Kind = Kind.Shrub, Base = 0.07f, Crown = 0.07f, Room = 0.055f, Height = 0.13f },
-            new Prop { Name = "shrub_02_c", Kind = Kind.Shrub, Base = 0.105f, Crown = 0.105f, Room = 0.08f, Height = 0.11f },
-            new Prop { Name = "shrub_02_d", Kind = Kind.Shrub, Base = 0.065f, Crown = 0.065f, Room = 0.05f, Height = 0.10f },
-            new Prop { Name = "shrub_03_a", Kind = Kind.Plant, Base = 0.012f, Crown = 0.012f, Room = 0.012f, Height = 0.041f },
-            new Prop { Name = "shrub_03_b", Kind = Kind.Plant, Base = 0.012f, Crown = 0.012f, Room = 0.012f, Height = 0.036f },
-            new Prop { Name = "shrub_03_c", Kind = Kind.Plant, Base = 0.01f, Crown = 0.01f, Room = 0.01f, Height = 0.031f },
-            new Prop { Name = "boulder_01", Kind = Kind.Rock, Base = 0.1f, Crown = 0.1f, Room = 0.09f, Height = 0.094f },
-            new Prop { Name = "street_lamp_01", Kind = Kind.Lamp, Base = 0.036f, Crown = 0.036f, Room = 0.05f, Height = 0.388f },
+            new Prop { Name = "tree_small_02", Kind = Kind.Tree, Base = 0.03f, Crown = 0.30f, Room = 0.06f, Height = 0.454f },
+            new Prop { Name = "jacaranda_tree", Kind = Kind.Tree, Base = 0.04f, Crown = 0.66f, Room = 0.08f, Height = 0.968f },
+            new Prop { Name = "shrub_02_a", Kind = Kind.Shrub, Base = 0.08f, Crown = 0.08f, Room = 0.06f, Height = 0.136f },
+            new Prop { Name = "shrub_02_b", Kind = Kind.Shrub, Base = 0.07f, Crown = 0.07f, Room = 0.055f, Height = 0.122f },
+            new Prop { Name = "shrub_02_c", Kind = Kind.Shrub, Base = 0.105f, Crown = 0.105f, Room = 0.08f, Height = 0.105f },
+            new Prop { Name = "shrub_02_d", Kind = Kind.Shrub, Base = 0.065f, Crown = 0.065f, Room = 0.05f, Height = 0.098f },
+            new Prop { Name = "shrub_03_a", Kind = Kind.Plant, Base = 0.012f, Crown = 0.012f, Room = 0.012f, Height = 0.040f },
+            new Prop { Name = "shrub_03_b", Kind = Kind.Plant, Base = 0.012f, Crown = 0.012f, Room = 0.012f, Height = 0.035f },
+            new Prop { Name = "shrub_03_c", Kind = Kind.Plant, Base = 0.01f, Crown = 0.01f, Room = 0.01f, Height = 0.030f },
+            new Prop { Name = "boulder_01", Kind = Kind.Rock, Base = 0.1f, Crown = 0.1f, Room = 0.09f, Height = 0.093f },
+            new Prop { Name = "street_lamp_01", Kind = Kind.Lamp, Base = 0.036f, Crown = 0.036f, Room = 0.05f, Height = 0.387f },
             new Prop { Name = "bench", Kind = Kind.Bench, Base = 0.04f, Crown = 0.04f, Room = 0.13f, Height = 0.087f, HalfLength = 0.125f },
         };
 

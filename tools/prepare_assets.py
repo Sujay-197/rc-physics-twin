@@ -420,6 +420,9 @@ def prepare_prop(name: str, seed: int) -> dict:
     t0 = time.time()
     reset()
     import_fbx(folder)
+    for o in list(bpy.data.objects):   # only this prop's pieces: the source's own LOD names would clash with ours
+        if o.name not in objects:
+            bpy.data.objects.remove(o)
     scale = TWIN_SCALE * extra
 
     if isinstance(lods, list):   # the source ships its own LODs
