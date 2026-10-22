@@ -40,13 +40,14 @@ namespace RcTwin
             var dropFirst = drops.Copy();
             if (dropFirst.Stops.Count == 0 || dropFirst.Stops[dropFirst.Stops.Count - 1].Stop != s.ChargerStop)
                 dropFirst.Stops.Add(new PlanStop { Stop = s.ChargerStop });
+            dropFirst.Stops[dropFirst.Stops.Count - 1].Charge = true;
             if (dropFirst.SocNeeded(c, s, t) <= c.Soc - 0.5 * s.Reserve)
             {
                 next = dropFirst;
                 return LowBattery.DropOffFirst;
             }
             next = new ShuttlePlan();
-            next.Stops.Add(new PlanStop { Stop = s.ChargerStop });
+            next.Stops.Add(new PlanStop { Stop = s.ChargerStop, Charge = true });
             foreach (var st in drops.Stops)
             {
                 if (st.Stop == s.ChargerStop) next.Stops[0].Alight.AddRange(st.Alight);

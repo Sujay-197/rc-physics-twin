@@ -10,9 +10,11 @@ namespace RcTwin
         public string Stop;
         public List<RideRequest> Board = new List<RideRequest>();
         public List<RideRequest> Alight = new List<RideRequest>();
+        /// <summary>A visit to the charger to charge, not only to pick up or drop off.</summary>
+        public bool Charge;
 
         public PlanStop Copy() =>
-            new PlanStop { Stop = Stop, Board = new List<RideRequest>(Board), Alight = new List<RideRequest>(Alight) };
+            new PlanStop { Stop = Stop, Board = new List<RideRequest>(Board), Alight = new List<RideRequest>(Alight), Charge = Charge };
     }
 
     /// <summary>Where a plan starts from.</summary>
