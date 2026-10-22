@@ -34,6 +34,29 @@ namespace RcTwin.Tests
         }
 
         [Test]
+        public void ASmallerBatteryScalesTheEnergyEstimate()
+        {
+            var m = new SocMeter(1e-3);
+            m.Scale(5.0);
+            Assert.AreEqual(5e-3, m.SocPerMetre, 1e-12);
+        }
+
+        [Test]
+        public void AFullShuttleIsNotALowBattery()
+        {
+            // Seven aboard in six seats (the seats setting lowered under them): the
+            // plan is over capacity but the charge covers it easily.
+            var p = ToS6(out var rider);
+            var later = Req("S6", "AB2", RequestState.Assigned);
+            p.Stops.Add(new PlanStop { Stop = "S6", Board = { later } });
+            p.Stops.Add(new PlanStop { Stop = "AB2", Alight = { later } });
+            var d = BatteryPolicy.Decide(p, At("S3", 7, 1.0), new ShuttleSettings(), T, out var next);
+            Assert.AreEqual(LowBattery.Fine, d);
+            Assert.AreSame(p, next);
+            Assert.AreEqual(RequestState.Assigned, later.State, "its pickup stays planned");
+        }
+
+        [Test]
         public void TheGameBatteryLastsTheSetMinutes() =>
             Assert.AreEqual(0.01568, BatteryPolicy.GamePackCapacityAh(new ShuttleSettings(), BatteryPolicy.SeedWhPerMetre, 11.1), 1e-5);
 

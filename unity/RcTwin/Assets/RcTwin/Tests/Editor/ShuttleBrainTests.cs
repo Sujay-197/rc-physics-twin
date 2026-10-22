@@ -13,7 +13,10 @@ namespace RcTwin.Tests
 
         internal sealed class FakeWorld : IShuttleWorld
         {
-            public string AtStop { get; set; }
+            private string _at;
+            /// <summary>Rolling slowly past this stop: AtStop reads null, yet a leg starts from it.</summary>
+            public string RollingAt;
+            public string AtStop { get => RollingAt != null ? null : _at; set => _at = value; }
             public bool Driving { get; private set; }
             public bool LegFailed { get; private set; }
             public string LegFrom { get; private set; }
@@ -39,11 +42,13 @@ namespace RcTwin.Tests
 
             public bool StartLeg(string stop)
             {
-                if (Now < RefuseLegsUntil || AtStop == null || Driving) return false;
-                Legs.Add((AtStop, stop));
-                LegFrom = AtStop;
+                string origin = RollingAt ?? AtStop;
+                RollingAt = null;
+                if (Now < RefuseLegsUntil || origin == null || Driving) return false;
+                Legs.Add((origin, stop));
+                LegFrom = origin;
                 LegTo = stop;
-                _length = _t.Distance(AtStop, stop);
+                _length = _t.Distance(origin, stop);
                 _failAt = FailNextLeg ? 0.5 * _length : double.PositiveInfinity;
                 FailNextLeg = false;
                 LegS = 0.0;
@@ -254,6 +259,37 @@ namespace RcTwin.Tests
             Assert.AreEqual(RequestState.Riding, r.State, "boarded at S3 on the way");
             Assert.AreEqual("S3", sim.W.AtStop, "stopped there");
             Assert.AreEqual(1, sim.W.Legs.Count, "within the first leg, cut short"); 
+        }
+
+        [Test]
+        public void StoppingOnTheWayBoardsOnlyTheSeatsItHas()
+        {
+            // Two seats, one rider to AB1; three students at S3 (on the way) are
+            // planned after AB1. Stopping early at S3 has one seat: one boards
+            // there, the others keep their later pickup, and the battery is fine.
+            var sim = OnTheWayToAB1(2, out _);
+            var rs = Enumerable.Range(0, 3).Select(_ => sim.Raise("S3", "S6")).ToList();
+            sim.Run(100, () => sim.W.EarlyStops.Contains("S3"));
+            CollectionAssert.Contains(sim.W.EarlyStops, "S3");
+            Assert.AreEqual("S3", sim.Brain.Plan.Stops[0].Stop);
+            Assert.LessOrEqual(sim.Brain.Plan.Stops[0].Board.Count, 1, "one free seat at S3");
+            sim.Run(5);
+            Assert.AreEqual(LowBattery.Fine, sim.Brain.Battery, "a full shuttle is not a low battery");
+            sim.Run(600, () => rs.All(r => r.State == RequestState.Delivered));
+            Assert.IsTrue(rs.All(r => r.State == RequestState.Delivered));
+        }
+
+        [Test]
+        public void ALegStartedWhileRollingKnowsWhereItLeft()
+        {
+            // The car creeps past S3 (AtStop null) when a request comes in; the
+            // autopilot still starts the leg from S3.
+            var sim = new Sim("S3");
+            sim.W.RollingAt = "S3";
+            var r = sim.Raise("AB2", "S6");
+            Assert.DoesNotThrow(() => sim.Run(300, () => r.State == RequestState.Delivered));
+            Assert.AreEqual(("S3", "AB2"), sim.W.Legs[0]);
+            Assert.AreEqual(RequestState.Delivered, r.State);
         }
 
         [Test]

@@ -224,7 +224,7 @@ namespace RcTwin
             string from = _w.AtStop;
             if (_w.StartLeg(next.Stop))
             {
-                _legFrom = from;
+                _legFrom = _w.LegFrom ?? from;   // the car may roll at a stop: the world knows where it left
                 _legStartSoc = _w.Soc;
                 _refusedFor = 0.0;
                 _towedThisLeg = false;
@@ -385,17 +385,17 @@ namespace RcTwin
                 if (!(alight || board) || !_w.StopEarlyAt(x)) continue;
                 var here = new PlanStop { Stop = x };
                 foreach (var st in Plan.Stops)
-                {
                     foreach (var r in st.Alight.Where(r => r.Destination == x && Aboard.Contains(r)).ToList())
                     {
                         st.Alight.Remove(r);
                         here.Alight.Add(r);
                     }
-                    if (st.Stop == x)
-                    {
-                        here.Board.AddRange(st.Board);
-                        st.Board.Clear();
-                    }
+                // Pickups planned later at x board here, oldest first, as many as the seats free here.
+                foreach (var r in Plan.Stops.Where(st => st.Stop == x).SelectMany(st => st.Board)
+                             .OrderBy(r => r.RaisedAt).Take(seats).ToList())
+                {
+                    foreach (var st in Plan.Stops) st.Board.Remove(r);
+                    here.Board.Add(r);
                 }
                 Plan.Stops.Insert(0, here);
                 Prune();

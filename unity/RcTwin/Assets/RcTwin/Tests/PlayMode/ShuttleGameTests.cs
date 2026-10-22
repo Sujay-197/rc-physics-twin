@@ -91,6 +91,42 @@ namespace RcTwin.Tests
         }
 
         [UnityTest]
+        public IEnumerator ATowKeepsTheCharge()
+        {
+            yield return Load();
+            _car.SetCharge(0.4);
+            yield return new WaitForFixedUpdate();
+            double before = _car.State.soc;
+            _game.Tow("S3");
+            Assert.AreEqual(before, _car.State.soc, 1e-6, "a tow moves the shuttle, it does not charge it");
+            yield return new WaitForFixedUpdate();
+            Assert.AreEqual(before, _car.State.soc, 0.01);
+        }
+
+        [UnityTest]
+        public IEnumerator ResizingTheBatteryRescalesTheEnergyEstimate()
+        {
+            yield return Load();
+            double spm = _game.Brain.Meter.SocPerMetre;
+            _game.Settings.BatteryMinutesOfDriving = 1.0;
+            _game.ResizeBattery();
+            Assert.AreEqual(5.0 * spm, _game.Brain.Meter.SocPerMetre, 1e-9 * spm, "a fifth of the pack: five times the charge per metre");
+        }
+
+        [UnityTest]
+        public IEnumerator AResetInTheMiddleOfALegDoesNotFreezeTheShuttle()
+        {
+            yield return Load();
+            var r = _game.RaiseRequest("AB2", "S6");
+            yield return Fast(() => _game.Brain.Mode == ShuttleMode.Driving && _game.LegS > 1.0, 60f);
+            Assert.AreEqual(ShuttleMode.Driving, _game.Brain.Mode);
+            var s = _car.State;
+            _car.ResetTo(s.x, s.y, s.yaw);          // R, or anything that resets the car
+            yield return Fast(() => r.State == RequestState.Delivered, 180f);
+            Assert.AreEqual(RequestState.Delivered, r.State, _game.Brain.Status);
+        }
+
+        [UnityTest]
         public IEnumerator StudentsAppearAtTheirStopAndLeaveWhenTheyBoard()
         {
             yield return Load();

@@ -72,7 +72,7 @@ namespace RcTwin
         private Minimap _map;
         private Rect _mapArea;
         private Material _lines;
-        private GUIStyle _box, _big, _text, _small, _chip, _chipAssigned, _btn, _btnOn;
+        private GUIStyle _box, _big, _text, _small, _chip, _chipAssigned, _btn, _btnOn, _tag;
         private Texture2D _white;
         private string _pickFrom;                 // destination picker open for this origin
         private bool _settings;
@@ -114,11 +114,35 @@ namespace RcTwin
             var area = new Rect(w - mapW - 12f, 12f, mapW, mapH);
             if (_map == null || area != _mapArea) { _mapArea = area; _map = new Minimap(_game.Routes, area); }
 
+            WorldLabels();
             ScorePanel();
             MinimapPanel();
             BottomBar(w, h);
             if (_pickFrom != null) Picker(w, h);
             if (_settings) SettingsPanel(w, h);
+        }
+
+        // ------------------------------------------------------ in the world
+
+        // Over each stop's waiting students, their destinations and wait; over the shuttle, its seats.
+        private void WorldLabels()
+        {
+            var cam = Camera.main;
+            if (cam == null || Event.current.type != EventType.Repaint) return;
+            foreach (var g in _game.Waiting.GroupBy(r => r.Origin))
+                Tag(cam, _game.KerbSlot(g.Key, 0) + Vector3.up * 0.3f, WaitLabel(g, _game.Now));
+            Tag(cam, transform.position + Vector3.up * 0.28f, SeatLabel(_game.Brain.Aboard.Count, _game.Settings.Capacity));
+        }
+
+        private void Tag(Camera cam, Vector3 world, string text)
+        {
+            var sp = cam.WorldToScreenPoint(world);
+            if (sp.z <= 0f || string.IsNullOrEmpty(text)) return;
+            var content = new GUIContent(text);
+            var size = _tag.CalcSize(content);
+            var r = new Rect(sp.x - size.x / 2f, Screen.height - sp.y - size.y, size.x, size.y);
+            if (r.Overlaps(_mapArea) || r.yMax > Screen.height - BarHeight) return;
+            GUI.Label(r, content, _tag);
         }
 
         // ------------------------------------------------------------- score
@@ -296,6 +320,17 @@ namespace RcTwin
 
         // ------------------------------------------------------------- helpers
 
+        /// <summary>The label over a stop's waiting students: a line per destination,
+        /// oldest first, with how many and the longest wait.</summary>
+        public static string WaitLabel(IEnumerable<RideRequest> waiting, double now) =>
+            string.Join("\n", waiting.GroupBy(r => r.Destination)
+                .Select(g => (dest: g.Key, n: g.Count(), first: g.Min(r => r.RaisedAt)))
+                .OrderBy(g => g.first)
+                .Select(g => $"{(g.n > 1 ? g.n + " " : "")}\u2192 {g.dest} \u00b7 {Clock(now - g.first)}"));
+
+        /// <summary>The seat count over the shuttle.</summary>
+        public static string SeatLabel(int aboard, int capacity) => $"{aboard}/{capacity}";
+
         private static string Clock(double seconds)
         {
             int s = Math.Max(0, (int)Math.Round(seconds));
@@ -339,6 +374,11 @@ namespace RcTwin
                 normal = { background = Tex(new Color(0.22f, 0.25f, 0.32f)), textColor = Color.white },
             };
             _chipAssigned = new GUIStyle(_chip) { normal = { background = Tex(new Color(0.2f, 0.42f, 0.78f)), textColor = Color.white } };
+            _tag = new GUIStyle(GUI.skin.label)
+            {
+                fontSize = 11, alignment = TextAnchor.MiddleCenter, padding = new RectOffset(6, 6, 2, 2), wordWrap = false,
+                normal = { background = Tex(new Color(0.08f, 0.09f, 0.11f, 0.7f)), textColor = Color.white },
+            };
             _btn = new GUIStyle(GUI.skin.button) { fontSize = 13 };
             _btnOn = new GUIStyle(_btn) { normal = { background = Tex(new Color(0.2f, 0.42f, 0.78f)), textColor = Color.white } };
         }

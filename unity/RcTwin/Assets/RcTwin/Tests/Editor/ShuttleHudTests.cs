@@ -42,6 +42,15 @@ namespace RcTwin.Tests
         }
 
         [Test]
+        public void WaitingStudentsAreLabelledByDestinationAndWait()
+        {
+            RideRequest R(string d, double at) => new RideRequest { Origin = "AB2", Destination = d, RaisedAt = at };
+            var label = ShuttleHud.WaitLabel(new[] { R("S1", 40.0), R("S6", 10.0), R("S6", 30.0) }, 52.0);
+            Assert.AreEqual("2 \u2192 S6 \u00b7 0:42\n\u2192 S1 \u00b7 0:12", label);
+            Assert.AreEqual("3/6", ShuttleHud.SeatLabel(3, 6));
+        }
+
+        [Test]
         public void NorthIsUpAndEastIsRight()
         {
             // ISO x is Unity's +z (into the screen from the chase camera's default),
