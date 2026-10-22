@@ -96,6 +96,16 @@ Open `unity/RcTwin` in Unity Hub with **6000.5.3f1**, run **RcTwin > Build Flat 
 
 Where the route leaves the stop the way the car came in, the car first turns round, driven: a planner (`TurnAround.cs`) finds a multi-point turn of forward and reverse arcs within the steer limit, inside the road (the campus kerbs and buildings as walls, and the network's road width), and the car drives it leg by leg before the trip starts at rest. The panel shows each leg as it is driven, then the turn it made ("Turned round: three-point turn: forward 0.15 m, reverse 0.45 m, forward 0.90 m"). Every turn-round on the campus has a plan, checked in Edit Mode. If no turn can be planned, the car is turned at the stop instead and the panel says "not driven". Reversing is the ESC's: hold a negative throttle at rest and it engages (ADR 0010). **RcTwin > Build Campus Player** builds the campus scene as `build/campus/RcTwinCampus.exe`; `-goto AB1 -speed 3` starts a trip from the command line.
 
+**The campus shuttle game.** The campus player starts as an autonomous shuttle game (`Docs/specs/2026-10-21-campus-shuttle-design.md`):
+- **Requests.** Students appear at the stops, busier stops more often, each wanting a ride to another stop. You can add one: click a stop on the minimap or in the world, then pick where they go.
+- **The shuttle.** It is the twin's car as a white campus shuttle with six seats, and it decides everything itself:
+  - whom to serve and in what order, pooling students along the way and stopping on its way when someone waits there;
+  - when to charge: the battery is sized so that a charge lasts about five minutes of driving, and the shuttle goes to the charger at AB1 before it runs low.
+- **The score** rewards quick pickups and direct rides; students who wait too long give up.
+- **The screen.** The score is top left, the minimap top right, and the battery, seats, what the shuttle is doing and the request queue along the bottom. **Settings** changes the request rate, seats, battery and charging, pauses, and runs the game at ×2 or ×4. F1 shows the car's and the autopilot's debug panels.
+
+`-goto <stop>` runs the one-trip autopilot demo instead of the game. In the editor the game stays off unless `ShuttleGame.RunInEditor` is set (as its Play Mode tests do), so the scene's other tests keep the car. Its rules are plain C# in `Runtime/Shuttle/`, tested in Edit Mode on a fake world.
+
 The autopilot's driver is an `IDriver` (`unity/RcTwin/Assets/RcTwin/Runtime/Drivers.cs`). Each control tick, the driver gets the RL environment's own `"stop"`-task observation (`sim_py/README.md`), computed in C# by `TwinObservation` on the native road. A trip ends as that task's episodes do: stopped within 0.3 m of the destination, or failed. Two drivers come with it, and the panel switches between them:
 
 - the tuned pure pursuit, with its stop plan;

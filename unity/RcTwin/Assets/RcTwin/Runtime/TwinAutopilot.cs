@@ -229,6 +229,45 @@ namespace RcTwin
             return d <= 2.0 ? name : null;
         }
 
+        /// <summary>Braking StopEarlyAt plans with: the stop plan's [m/s^2].</summary>
+        public const double StopEarlyDecel = 1.2;
+
+        /// <summary>End the trip early at `stop`, a stop on the route ahead (the
+        /// campus shuttle stops on its way for a student). Only if there is room to
+        /// brake for it: v^2 / (2 StopEarlyDecel) + 0.5 m. The trip's road and the
+        /// corner plan are cut at the stop; the driving is unchanged.</summary>
+        public bool StopEarlyAt(string stop)
+        {
+            if (State != Status.Driving || TurningRound || _net == null || _road == null) return false;
+            if (!_net.Stops.TryGetValue(stop, out var target) || stop == Destination) return false;
+            var route = _route;
+            int n = route.Length / 3, hit = -1;
+            double cum = 0.0, sStop = 0.0;
+            for (int i = 1; i < n - 1 && hit < 0; i++)
+            {
+                cum += Math.Sqrt((route[3 * i] - route[3 * i - 3]) * (route[3 * i] - route[3 * i - 3]) +
+                                 (route[3 * i + 1] - route[3 * i - 2]) * (route[3 * i + 1] - route[3 * i - 2]));
+                double dx = route[3 * i] - target.nodeX, dy = route[3 * i + 1] - target.nodeY;
+                if (dx * dx + dy * dy < 1e-6) { hit = i; sStop = cum; }
+            }
+            if (hit < 0) return false;
+            var st = _car.State;
+            var (s, _) = _road.Locate(st.x, st.y);
+            double v = Math.Max(0.0, st.vx);
+            if (sStop - s < v * v / (2.0 * StopEarlyDecel) + 0.5) return false;
+            var prefix = new double[3 * (hit + 1)];
+            Array.Copy(route, prefix, prefix.Length);
+            var road = new TwinRoad(prefix, _net.RoadWidth);
+            _road.Dispose();
+            _road = road;
+            _route = prefix;
+            Destination = stop;
+            if (((Driver as KerbRecovery)?.Inner ?? Driver) is CornerSpeed cs) cs.Plan(x => road.Point(x).heading, road.Length);
+            DrawRoute();
+            Message = $"{Origin} to {Destination}, stopping on the way.";
+            return true;
+        }
+
         /// <summary>Drive from the stop the car is at to `destination`.</summary>
         public bool Go(string destination)
         {
