@@ -205,6 +205,17 @@ namespace RcTwin.EditorTools
                 post.transform.localScale = new Vector3(0.04f, 0.2f, 0.04f);
                 post.GetComponent<Renderer>().sharedMaterial = postMat;
 
+                // The shuttle game's shelter behind the post, open to the road; the
+                // charging post beside it at the charger (ShuttleLook, visual only).
+                float face = stop.transform.eulerAngles.y + (sideSign > 0f ? -90f : 90f);
+                var shelter = ShuttleLook.BuildShelter(stop.transform.TransformPoint(new Vector3(sideSign * mid, kerb, -0.3f)), face);
+                shelter.transform.SetParent(stop.transform, true);
+                if (name == new ShuttleSettings().ChargerStop)
+                {
+                    var charger = ShuttleLook.BuildCharger(stop.transform.TransformPoint(new Vector3(sideSign * (mid - 0.03f), kerb, 0.28f)), face);
+                    charger.transform.SetParent(stop.transform, true);
+                }
+
                 var label = new GameObject("Label");
                 label.transform.SetParent(stop.transform, false);
                 label.transform.localPosition = new Vector3(sideSign * mid, kerb + 0.55f, 0f);
@@ -224,6 +235,7 @@ namespace RcTwin.EditorTools
 
             // The car at the hub, facing along its node's first edge.
             var car = FlatGroundSceneBuilder.BuildCar(RcTwinNative.DefaultParams());
+            ShuttleLook.BuildShuttleBody(car.body, RcTwinNative.DefaultParams());
             if (home == null) throw new InvalidOperationException($"no stop {HomeStop} in {NetworkPath}");
             int homeNode = I(home["node"]);
             Vector3 hp = nodes[homeNode], hd = Direction(homeNode, edges);

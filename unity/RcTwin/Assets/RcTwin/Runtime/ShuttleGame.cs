@@ -232,10 +232,19 @@ namespace RcTwin
             return t.position - t.right * 0.2f;
         }
 
-        // Where the i-th student waits at a stop: on the sidewalk to the left of the
-        // road leaving the stop, in a row along it.
+        // Where the i-th student waits at a stop: in its shelter (the campus scene's
+        // "Stop <name> (...)" object, its post on the stop's side), in rows; without
+        // the scene's stops, on the sidewalk left of the road leaving the stop.
         public Vector3 KerbSlot(string stop, int i)
         {
+            if (StopFrame(stop) is (Transform frame, float postX))
+            {
+                float postSide = Mathf.Sign(postX);
+                var local = new Vector3(postX + postSide * (0.03f * (i / 4)), 0.06f, -0.38f + 0.075f * (i % 4));
+                var shelter = frame.TransformPoint(local);
+                shelter.y = 0.06f;
+                return shelter;
+            }
             var net = _pilot.Routes;
             var s = net.Stops[stop];
             string toward = net.StopNames().First(x => net.Stops[x].node != s.node);
@@ -249,6 +258,25 @@ namespace RcTwin
             var p = TwinCar.ToUnity(x, y, 0.0);
             p.y = 0.06f;   // on the sidewalk, at kerb height
             return p;
+        }
+
+        private readonly Dictionary<string, (Transform, float)?> _stopFrames = new Dictionary<string, (Transform, float)?>();
+
+        // The scene's stop object and its post's sideways offset, if the scene has them.
+        private (Transform, float)? StopFrame(string stop)
+        {
+            if (_stopFrames.TryGetValue(stop, out var f)) return f;
+            f = null;
+            var root = GameObject.Find("Bus stops");
+            if (root != null)
+                foreach (Transform c in root.transform)
+                    if (c.name.StartsWith($"Stop {stop} ("))
+                    {
+                        var post = c.Find("Post");
+                        if (post != null) f = (c, post.localPosition.x);
+                    }
+            _stopFrames[stop] = f;
+            return f;
         }
 
         private Vector3 Away(string stop)
