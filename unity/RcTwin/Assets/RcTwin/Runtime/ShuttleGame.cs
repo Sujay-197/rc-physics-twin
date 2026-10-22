@@ -43,6 +43,7 @@ namespace RcTwin
         private RouteTravelModel _travel;
         private double _now;
         private bool _charging;
+        private double _soc;              // the charge before a reset (ResetTo fills the pack)
         private string _legFrom, _legTo;
         private long _strikes;
         private readonly Dictionary<RideRequest, StudentFigure> _figures = new Dictionary<RideRequest, StudentFigure>();
@@ -94,12 +95,31 @@ namespace RcTwin
             _car.showHud = false;
             _pilot.showPanel = false;
             _strikes = _car.KerbStrikes;
+            _soc = _car.State.soc;
+            _car.Resetted += KeepCharge;
             if (GetComponent<ShuttleHud>() == null) gameObject.AddComponent<ShuttleHud>();
         }
 
-        /// <summary>Re-size the game battery after BatteryMinutesOfDriving changed; the charge stays.</summary>
-        public void ResizeBattery() =>
-            _car.SetPackCapacity(BatteryPolicy.GamePackCapacityAh(Settings, BatteryPolicy.SeedWhPerMetre, _car.Params.packNominalV));
+        private void OnDestroy()
+        {
+            if (_car != null) _car.Resetted -= KeepCharge;
+        }
+
+        // A tow, a turn at a stop or R moves the shuttle; it never charges it.
+        private void KeepCharge()
+        {
+            if (Math.Abs(_car.State.vx) < 0.05 && _car.State.soc != _soc) _car.SetCharge(_soc);
+        }
+
+        /// <summary>Re-size the game battery after BatteryMinutesOfDriving changed; the charge
+        /// stays, and the shuttle's energy estimate scales with the pack.</summary>
+        public void ResizeBattery()
+        {
+            double before = _car.Params.packCapacityAh;
+            double ah = BatteryPolicy.GamePackCapacityAh(Settings, BatteryPolicy.SeedWhPerMetre, _car.Params.packNominalV);
+            _car.SetPackCapacity(ah);
+            Brain.Meter.Scale(before / ah);
+        }
 
         /// <summary>A request the person watching raised.</summary>
         public RideRequest RaiseRequest(string origin, string destination)
@@ -135,6 +155,7 @@ namespace RcTwin
             _now += dt;
             if (_charging && Math.Abs(_car.State.vx) < 0.05 && _car.State.soc < 1.0)
                 _car.SetCharge(Math.Min(1.0, _car.State.soc + BatteryPolicy.ChargeRatePerSecond(Settings) * dt));
+            _soc = _car.State.soc;
             foreach (var r in Spawner.Tick(_now, dt)) Offer(r);
             Brain.Tick(dt);
             Dispatcher.Tick(_now, Score);
@@ -155,7 +176,9 @@ namespace RcTwin
             Math.Abs(_car.State.vx) < 0.15 ? _pilot.CurrentStop() : null;
 
         public bool Driving => _pilot.State == TwinAutopilot.Status.Driving || _pilot.State == TwinAutopilot.Status.Paused;
-        public bool LegFailed => _pilot.State == TwinAutopilot.Status.Failed || _pilot.State == TwinAutopilot.Status.Manual;
+        /// <summary>Failed, taken over by the keys (Manual), or cancelled by a car reset (Idle).</summary>
+        public bool LegFailed => _pilot.State == TwinAutopilot.Status.Failed || _pilot.State == TwinAutopilot.Status.Manual ||
+                                 _pilot.State == TwinAutopilot.Status.Idle;
         public string LegFrom => _legFrom;
         public double LegS
         {

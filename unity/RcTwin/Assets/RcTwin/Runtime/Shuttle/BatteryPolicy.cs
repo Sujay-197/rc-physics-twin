@@ -20,12 +20,13 @@ namespace RcTwin
         /// <summary>Charge added per second parked at the charger (10 to 95 % in ChargeSeconds10To95).</summary>
         public static double ChargeRatePerSecond(ShuttleSettings s) => 0.85 / s.ChargeSeconds10To95;
 
-        /// <summary>Fine while the plan is feasible. Otherwise the riders aboard
+        /// <summary>Fine while the charge covers the plan (seats are not its
+        /// business: a plan over capacity is no low battery). Otherwise the riders aboard
         /// are dropped off first if the charge allows (with half the reserve), or
         /// the shuttle charges first; pickups not yet aboard go back to waiting.</summary>
         public static LowBattery Decide(ShuttlePlan plan, PlanContext c, ShuttleSettings s, ITravelModel t, out ShuttlePlan next)
         {
-            if (plan.Feasible(c, s, t)) { next = plan; return LowBattery.Fine; }
+            if (plan.SocNeeded(c, s, t) <= c.Soc - s.Reserve) { next = plan; return LowBattery.Fine; }
             var boardsLater = new System.Collections.Generic.HashSet<RideRequest>();
             foreach (var st in plan.Stops)
                 foreach (var r in st.Board) boardsLater.Add(r);
@@ -65,6 +66,9 @@ namespace RcTwin
         public double SocPerMetre { get; private set; }
 
         public SocMeter(double seedSocPerMetre) => SocPerMetre = seedSocPerMetre;
+
+        /// <summary>The pack was re-sized: the same energy is k times the charge.</summary>
+        public void Scale(double k) => SocPerMetre *= k;
 
         public void Observe(double metres, double socUsed)
         {
