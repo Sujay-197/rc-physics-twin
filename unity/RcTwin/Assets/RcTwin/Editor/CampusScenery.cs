@@ -64,10 +64,12 @@ namespace RcTwin.EditorTools
             var roof = new MeshParts();
             var hide = new HashSet<string>();
             int n = 0;
+            int outside = 0;
             foreach (Dictionary<string, object> b in (List<object>)doc["buildings"])
             {
                 var fp = Points((List<object>)b["footprint"]);
                 if (fp.Count < 3) continue;
+                if (!OnGround(fp)) { outside++; continue; }
                 string kind = (string)b["kind"];
                 if (!walls.TryGetValue(kind, out var mp)) walls[kind] = mp = new MeshParts();
                 float h = F(b["height"]);
@@ -76,6 +78,7 @@ namespace RcTwin.EditorTools
                 foreach (var s in (List<object>)b["stands_for"]) hide.Add((string)s);
                 n++;
             }
+            if (outside > 0) Debug.Log($"Campus scenery: {outside} buildings off the grass left out.");
             var parent = new GameObject("Buildings").transform;
             parent.SetParent(root, false);
             foreach (var kv in walls)
@@ -367,6 +370,17 @@ namespace RcTwin.EditorTools
             if (m.HasProperty("_Smoothness")) m.SetFloat("_Smoothness", 0.1f);
             EditorUtility.SetDirty(m);
             return m;
+        }
+
+        // A footprint (ISO) whose centre is on the grass under the campus (any ground while none is set).
+        private static bool OnGround(List<Vector2> fp)
+        {
+            var g = CampusSceneBuilder.Ground;
+            if (g.width <= 0f) return true;
+            var c = Vector2.zero;
+            foreach (var p in fp) c += p;
+            var u = TwinCar.ToUnity(c.x / fp.Count, c.y / fp.Count, 0.0);
+            return g.Contains(new Vector2(u.x, u.z));
         }
 
         private static List<Vector2> Points(List<object> pts)
