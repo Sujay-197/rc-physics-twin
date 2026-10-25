@@ -1,6 +1,6 @@
 // Copyright 2026 The SlipX Authors
 // SPDX-License-Identifier: Apache-2.0
-// Modified 2026-10-19 and 2026-10-21 by the rc-physics-twin project: see THIRD_PARTY.md.
+// Modified 2026-10-19, 2026-10-21 and 2026-10-25 by the rc-physics-twin project: see THIRD_PARTY.md.
 //
 // L2: double-track with load transfer, MF-lite tyres, relaxation, and the
 // drivetrain: differential, ESC, battery and steering servo (ADR-0031).
@@ -100,9 +100,12 @@
 // and the derivative stays a pure function.
 //
 // Validity: forward motion, as at L1, with params.v_eps flooring the speed in
-// every slip denominator. Below roughly v_eps, use L0. Reversing slowly is
-// valid too (rc-physics-twin ADR 0010): the slip angle is then measured from
-// the wheel's backward direction; above v_eps it yaws as the geometry says.
+// every slip denominator. Below roughly v_eps, use L0, or set
+// params.v_kinematic (rc-physics-twin ADR 0011): the derivatives then blend
+// into a kinematic single-track car's below v_eps, and it creeps round its
+// geometry. Reversing slowly is valid too (rc-physics-twin ADR 0010): the slip
+// angle is then measured from the wheel's backward direction; above v_eps it
+// yaws as the geometry says.
 //
 // ============================================================================
 // Ground (rc-physics-twin ADR 0005)
@@ -1325,16 +1328,19 @@ class DoubleTrackL2 final : public VehicleModel {
 
   // One evaluation of the tyre forces at a given set of vertical loads. Called
   // twice per derivative: see the note on the algebraic loop above.
+  //
+  // Without `lateral` the tyres carry no lateral demand: the longitudinal
+  // forces a kinematic car's tyres deliver (ADR 0011, below).
   void evaluate_forces(const StepConstants& c, const Kinematics& kin,
                        const WheelLoads& loads,
                        const std::array<TyreBudget, kWheelCount>& budget,
-                       Forces* f) const {
+                       Forces* f, bool lateral = true) const {
 
     // Phase one: everything about a wheel that does not depend on how the
     // differential splits the longitudinal demand.
     std::array<WheelPre, kWheelCount> pre{};
     for (unsigned i = 0; i < kWheelCount; ++i) {
-      pre[i].fy_pure = -budget[i].fy_max * kin.wheel[i].shape;
+      pre[i].fy_pure = lateral ? -budget[i].fy_max * kin.wheel[i].shape : 0.0;
       pre[i].fx_max = budget[i].fx_max;
       pre[i].fy_max = budget[i].fy_max;
       pre[i].c_kappa = budget[i].c_kappa;
@@ -1461,6 +1467,12 @@ class DoubleTrackL2 final : public VehicleModel {
     // What both passes agree about, worked out once.
     const Kinematics kin = kinematics(q, c);
 
+    // The loads and budgets the forces were finally evaluated at, which the
+    // kinematic blend evaluates its longitudinal forces at too.
+    const WheelLoads* used_loads = &c.susp_loads;
+    const std::array<TyreBudget, kWheelCount>* used_budget = &c.susp_budget;
+    WheelLoads loads;
+    std::array<TyreBudget, kWheelCount> budget;
     if (c.susp) {
       // The springs' loads, held for the step (ADR 0008): one pass.
       evaluate_forces(c, kin, c.susp_loads, c.susp_budget, f);
@@ -1472,11 +1484,11 @@ class DoubleTrackL2 final : public VehicleModel {
 
       // Pass two: the loads those accelerations imply, and the forces they
       // give. Two passes, always, whatever the residual (ADR-0027).
-      const WheelLoads loads =
-          quasi_static_loads(params_, first.ax, first.ay, c.g_normal);
-      std::array<TyreBudget, kWheelCount> budget;
+      loads = quasi_static_loads(params_, first.ax, first.ay, c.g_normal);
       budget_at(c, loads, &budget);
       evaluate_forces(c, kin, loads, budget, f);
+      used_loads = &loads;
+      used_budget = &budget;
     }
 
     StateVec<kN> d{};
@@ -1517,7 +1529,82 @@ class DoubleTrackL2 final : public VehicleModel {
     d[kY] = q[kVx] * sin_yaw + q[kVy] * cos_yaw;
     d[kYaw] = q[kR];
 
+    const double lambda = dynamic_weight(q[kVx]);
+    if (lambda < 1.0) {
+      blend_kinematic(q, c, kin, *used_loads, *used_budget, lambda, f, &d);
+    }
     return d;
+  }
+
+  // ------------------------------------------- low speed (ADR 0011)
+
+  // The dynamic model's weight in the derivative: 1 from v_eps up, where the
+  // slip denominators are not floored, 0 at and below v_kinematic, linear in
+  // between (Kabzan et al. 2020, eq. 11). Always 1 with the blend off.
+  double dynamic_weight(double vx) const {
+    if (!(params_.v_kinematic > 0.0)) return 1.0;
+    const double speed = std::fabs(vx);
+    if (speed >= params_.v_eps) return 1.0;
+    if (speed <= params_.v_kinematic) return 0.0;
+    return (speed - params_.v_kinematic) /
+           (params_.v_eps - params_.v_kinematic);
+  }
+
+  // d = lambda d_dyn + (1 - lambda) d_kin for vx, vy and r. The kinematic
+  // single-track car at the CoG has r = vx tan(delta) / L and vy = lr r
+  // whatever its speed, forwards or backwards; d_kin differentiates those
+  // (AMZ's model, without its small-angle step) with vx driven by the tyres'
+  // longitudinal forces alone, and pulls a state that is off them back on at
+  // the rate a tyre settles at v_eps, v_eps / sigma. Differentiating alone
+  // would keep any yaw rate the car brought into the kinematic range, and a
+  // car stopped at full lock would keep turning.
+  //
+  // What the wheels and the body see is blended the same way: the lateral
+  // demand on each tyre is the dynamic one weighted by lambda, so a kinematic
+  // car's wheels drive and brake without the floored lateral forces eating
+  // into their friction ellipses.
+  void blend_kinematic(const StateVec<kN>& q, const StepConstants& c,
+                       const Kinematics& kin, const WheelLoads& loads,
+                       const std::array<TyreBudget, kWheelCount>& budget,
+                       double lambda, Forces* f, StateVec<kN>* d) const {
+    Forces lon;
+    evaluate_forces(c, kin, loads, budget, &lon, false);
+
+    double gx = 0.0;
+    double gy = 0.0;
+    if (c.graded) grade_accel(c, q[kYaw], &gx, &gy);
+
+    const double vx = q[kVx];
+    const double tan_d = std::tan(q[kSteer]);
+    const double cos_d = kin.cos_delta;
+    const double wheelbase = params_.lf + params_.lr;
+    const double settle =
+        params_.v_eps / std::fmax(params_.tyre_front.relax_length,
+                                  params_.tyre_rear.relax_length);
+
+    const double vx_dot = lon.ax + gx;
+    const double r_kin = vx * tan_d / wheelbase;
+    const double turn_dot =
+        (vx_dot * tan_d + vx * (*d)[kSteer] / (cos_d * cos_d)) / wheelbase;
+    const double r_dot = turn_dot + settle * (r_kin - q[kR]);
+    const double vy_dot =
+        params_.lr * turn_dot + settle * (params_.lr * r_kin - q[kVy]);
+
+    const double mu = 1.0 - lambda;
+    (*d)[kVx] = lambda * (*d)[kVx] + mu * vx_dot;
+    (*d)[kVy] = lambda * (*d)[kVy] + mu * vy_dot;
+    (*d)[kR] = lambda * (*d)[kR] + mu * r_dot;
+
+    for (unsigned i = 0; i < kWheelCount; ++i) {
+      f->fx[i] = lambda * f->fx[i] + mu * lon.fx[i];
+      f->fy[i] = lambda * f->fy[i];
+      f->fy_pure[i] = lambda * f->fy_pure[i];
+      if (!c.wheels) f->kappa[i] = lambda * f->kappa[i] + mu * lon.kappa[i];
+      f->saturated[i] = (lambda > 0.0 && f->saturated[i]) || lon.saturated[i];
+    }
+    f->ax = (*d)[kVx] - q[kVy] * q[kR] - gx;
+    f->ay = (*d)[kVy] + q[kVx] * q[kR] - gy;
+    f->mz = params_.izz * (*d)[kR];
   }
 
   VehicleParams params_;
