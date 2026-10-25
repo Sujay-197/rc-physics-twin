@@ -24,13 +24,15 @@ namespace RcTwin.Tests
             _net = new CampusRoutes(File.ReadAllText(net));
         }
 
-        // The campus car: TwinCar's wheel inertia and Ackermann (its suspension
-        // does not matter at walking pace on the flat).
+        // The campus car: TwinCar's wheel inertia, Ackermann and low-speed
+        // kinematic blend (its suspension does not matter at walking pace on the
+        // flat).
         private static RcTwinNative.Params Car()
         {
             var p = RcTwinNative.DefaultParams();
             p.wheelInertia = 1e-5;
             p.ackermann = 1.0;
+            p.vKinematic = 0.3;
             return p;
         }
 

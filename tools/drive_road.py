@@ -29,7 +29,7 @@ import pathlib
 import sys
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
-ABI = 7
+ABI = 8
 OK, E_GROUND = 0, -4
 
 
@@ -55,7 +55,7 @@ class Params(ctypes.Structure):
             "steer_max", "steer_rate_max", "steer_bandwidth", "steer_damping",
             "drag_coeff", "roll_resist", "v_eps", "wheel_inertia", "ackermann",
             "wheel_rate_front", "wheel_rate_rear", "damping_front", "damping_rear",
-            "suspension_travel")]
+            "suspension_travel", "v_kinematic")]
     )
 
 
@@ -220,6 +220,7 @@ def car_params(lib: ctypes.CDLL, args: argparse.Namespace) -> Params:
     p.wheel_rate_front = p.wheel_rate_rear = args.wheel_rate
     p.damping_front = p.damping_rear = args.damping
     p.suspension_travel = args.travel
+    p.v_kinematic = getattr(args, "v_kinematic", 0.0)
     # A payload is a point mass at the CoG: it adds mass and, about the CoG,
     # no inertia.
     p.mass += getattr(args, "payload", 0.0)
@@ -351,6 +352,8 @@ def add_car_options(ap: argparse.ArgumentParser) -> None:
     ap.add_argument("--wheel-rate", type=float, default=0.0, help="[N/m] per wheel, both axles (ADR 0008)")
     ap.add_argument("--damping", type=float, default=0.0, help="[N s/m] per wheel")
     ap.add_argument("--travel", type=float, default=0.015, help="[m] to the bump stop")
+    ap.add_argument("--v-kinematic", type=float, default=0.0,
+                    help="[m/s] kinematic at and below, blending up to v_eps (ADR 0011); 0 off")
     ap.add_argument("--breaker-speed", type=float, default=None,
                     help="[m/s] the driver slows to for speed breakers (default: does not slow)")
     ap.add_argument("--comfort-decel", type=float, default=2.0, help="[m/s^2] the driver slows at")

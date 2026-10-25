@@ -220,7 +220,8 @@ class Car(unittest.TestCase):
         _, info = env.reset(seed=0)
         self.assertEqual(info["car"], "bare")
         p = env.params
-        self.assertEqual((p.wheel_inertia, p.ackermann, p.wheel_rate_front, p.damping_front), (0.0, 0.0, 0.0, 0.0))
+        self.assertEqual((p.wheel_inertia, p.ackermann, p.wheel_rate_front, p.damping_front, p.v_kinematic),
+                         (0.0, 0.0, 0.0, 0.0, 0.0))
         env.close()
 
     def test_the_unity_car_is_twincars_defaults(self):
@@ -237,6 +238,7 @@ class Car(unittest.TestCase):
         self.assertAlmostEqual(p.wheel_rate_rear, k)
         self.assertAlmostEqual(p.damping_front, 2.0 * 0.3 * math.sqrt(4.0 * k * m) / 4.0)
         self.assertAlmostEqual(p.suspension_travel, 0.015)
+        self.assertEqual(p.v_kinematic, 0.3)   # TwinCar.vKinematic
         env.close()
 
     def test_the_springs_are_set_for_the_unladen_car(self):

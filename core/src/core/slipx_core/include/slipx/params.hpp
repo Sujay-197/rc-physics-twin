@@ -1,6 +1,6 @@
 // Copyright 2026 The SlipX Authors
 // SPDX-License-Identifier: Apache-2.0
-// Modified 2026-10-19 by the rc-physics-twin project: see THIRD_PARTY.md.
+// Modified 2026-10-19 and 2026-10-25 by the rc-physics-twin project: see THIRD_PARTY.md.
 //
 // VehicleParams: the plain struct through which every parameter enters the
 // core (CORE-01).
@@ -240,6 +240,18 @@ struct VehicleParams {
   // than hidden so that it appears in the manifest hash and so that a caller
   // who changes it knows they have changed the model.
   double v_eps = 0.5;        // [m/s]
+
+  // ------------------------------------------------------- low speed
+  // The speed below which L2 is a kinematic single-track car
+  // (rc-physics-twin ADR 0011). Below v_eps the slip denominators above are
+  // floored, so L2 turns at full lock as if it were doing v_eps. With this
+  // set, the dynamic derivatives blend linearly into kinematic ones between
+  // v_eps and this speed (AMZ Driverless, Kabzan et al. 2020): the car then
+  // creeps round the kinematic turn and stops turning when it stops. Zero,
+  // the default, keeps SlipX's L2 exactly; otherwise it must be below v_eps.
+  // Not physical either: it sets where the floor's error is handed over.
+  // No effect below L2.
+  double v_kinematic = 0.0;  // [m/s]
 
   // ------------------------------------------------------- wheel dynamics
   // Rotational inertia of ONE wheel about its axle, including the drivetrain

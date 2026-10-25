@@ -46,10 +46,12 @@ It also charges `contact` for every tick the car touches a wall, so a car
 pinned against a kerb pays for staying there.
 
 The car (`car`): "bare", the default, is the Core car with the options given
-(wheel_inertia, ackermann, wheel_rate, damping, travel; all off by default),
+(wheel_inertia, ackermann, wheel_rate, damping, travel, v_kinematic; all off by
+default),
 as the policy study trained. "unity" is the Unity twin's car (TwinCar.cs, as
 the campus scene sets it): wheel inertia 1e-5, ideal Ackermann, DEMO
-suspension at 3 Hz, damping ratio 0.3, 15 mm travel. "both" draws one of the
+suspension at 3 Hz, damping ratio 0.3, 15 mm travel, kinematic at and below
+0.3 m/s (ADR 0011). "both" draws one of the
 two per episode, after the randomisation, from the same generator.
 
 Two tasks (`task`):
@@ -159,11 +161,11 @@ STOP_SPEED = 0.1            # ... at under this speed [m/s]
 # The car (`car`): "bare" is the Core's simplest car, quasi-static wheels,
 # parallel steering and a rigid body, as the policy study trained. "unity" is
 # the Unity twin's TwinCar as the campus scene sets it up (TwinCar.cs): wheel
-# inertia, ideal Ackermann and the DEMO suspension, springs set for the unladen
-# car. "both" draws one of the two per episode.
+# inertia, ideal Ackermann, the DEMO suspension, springs set for the unladen
+# car, and the low-speed kinematic blend (TwinCar.vKinematic). "both" draws one of the two per episode.
 CARS = ("bare", "unity", "both")
 UNITY_CAR = {"wheel_inertia": 1e-5, "ackermann": 1.0, "ride_frequency_hz": 3.0, "damping_ratio": 0.3,
-             "travel": 0.015}
+             "travel": 0.015, "v_kinematic": 0.3}
 
 
 def frame_fields(task: str) -> list:
@@ -223,7 +225,7 @@ def unity_car(mass: float) -> dict:
     k = mass * w * w / 4.0
     c = 2.0 * UNITY_CAR["damping_ratio"] * math.sqrt(4.0 * k * mass) / 4.0
     return dict(wheel_inertia=UNITY_CAR["wheel_inertia"], ackermann=UNITY_CAR["ackermann"], wheel_rate=k,
-                damping=c, travel=UNITY_CAR["travel"])
+                damping=c, travel=UNITY_CAR["travel"], v_kinematic=UNITY_CAR["v_kinematic"])
 SUBSTEPS, DT = 10, 0.001
 TICK = SUBSTEPS * DT
 
@@ -254,7 +256,7 @@ class RcTwinEnv:
     def __init__(self, road, target_speed: float = 2.0, history: int = 4,
                  ranges: dict | None = None, max_time: float = 60.0, lib_path=None,
                  wheel_inertia: float = 0.0, ackermann: float = 0.0, wheel_rate: float = 0.0,
-                 damping: float = 0.0, travel: float = 0.015, walls=None,
+                 damping: float = 0.0, travel: float = 0.015, v_kinematic: float = 0.0, walls=None,
                  footprint_margin: float = FOOTPRINT_MARGIN, task: str = "follow", car: str = "bare"):
         if isinstance(road, (str, pathlib.Path)):
             road = json.loads(pathlib.Path(road).read_text(encoding="utf-8"))
@@ -275,7 +277,7 @@ class RcTwinEnv:
                                ROOT / "build" / "bin" / "rc_twin.dll")
         # "bare" takes the car options given; "unity" replaces them.
         bare = dict(wheel_inertia=wheel_inertia, ackermann=ackermann,
-                    wheel_rate=wheel_rate, damping=damping, travel=travel)
+                    wheel_rate=wheel_rate, damping=damping, travel=travel, v_kinematic=v_kinematic)
         mass = dr.car_params(self.lib, type("A", (), {**bare, "payload": 0.0})()).mass
         self._cars = {"bare": bare, "unity": unity_car(mass)}
         self._car_kind = "bare" if car == "bare" else "unity"

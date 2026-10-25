@@ -1,6 +1,6 @@
 // Copyright 2026 The SlipX Authors
 // SPDX-License-Identifier: Apache-2.0
-// Modified 2026-10-19 by the rc-physics-twin project: see THIRD_PARTY.md.
+// Modified 2026-10-19 and 2026-10-25 by the rc-physics-twin project: see THIRD_PARTY.md.
 
 #include "slipx/sim/simulation.hpp"
 
@@ -79,6 +79,7 @@ std::string params_digest(const VehicleParams& p) {
   // wheel dynamics is the digest it always was.
   if (p.wheel_inertia != 0.0) h.update(p.wheel_inertia);
   if (p.ackermann != 0.0) h.update(p.ackermann);  // ADR 0007, likewise
+  if (p.v_kinematic != 0.0) h.update(p.v_kinematic);  // ADR 0011, likewise
   if (p.has_suspension()) {                        // ADR 0008, likewise
     h.update(p.wheel_rate_front);
     h.update(p.wheel_rate_rear);
