@@ -280,6 +280,19 @@ On trips it was never tuned or debugged on, the planned autopilot finished every
 **What the twin uses.** The campus autopilot now wraps pure pursuit in the full corner plan with these gains (`TwinAutopilot.cornerSpeed`, on by default), inside the kerb recovery. The panel shows the plan's speed when it is below the cruise speed ("plan: 1.7 m/s"), at junctions and while pulling away. Unity's Edit Mode tests replay Python's plan for a campus route, and a scripted trace through it, to 1e-9 (`CornerSpeedTests`, `Fixtures/corner_speed.json`).
 
 
+### The low-speed blend (ADR 0011)
+
+Since ADR 0011 the Unity car (`TwinCar`, and `"unity"` in the environment) is a kinematic single-track car at and below 0.3 m/s, blending into the dynamic model up to `v_eps`. Before it, L2's floored slip angles turned the car at full lock as if it were doing 0.5 m/s. Every other run in this document was without it. Re-measured on the same trips (stop task, 4 m/s, 100 trips per condition), against the same trips without the blend:
+
+| Driver | Trips | Without the blend | With it | Trip by trip (held-out; perturbed) | Kerb contact | Trip time |
+|---|---|---|---|---|---|---|
+| autopilot with the corner plan | seed 20000 | 100 / 100 / 100 | 100 / 100 / 100 | - | 0 → 0 % | 1.00 |
+| autopilot with the corner plan | seed 50000 | 100 / 100 / 100 | 100 / 100 / 100 | - | 0 → 0 % | 1.00 |
+| autopilot, no corner plan | seed 20000 | 98 / 82 / 86 | 100 / 88 / 88 | +9 / −3 (p = 0.15); +6 / −4 | 42 → 42 % | 1.00 |
+| autopilot, no corner plan | seed 50000 | 100 / 91 / 87 | 100 / 90 / 92 | +4 / −5; +7 / −2 (p = 0.18) | 34 → 34 % | 1.00 |
+
+What the twin drives is unchanged: every trip, no kerb contact, the same time. Without the corner plan the blend finishes more trips than it fails in three of the four sets, though none of the differences is significant. Learned policies trained on `"unity"` before ADR 0011 were trained without it.
+
 ## A second round on the Unity car: a drivable line and kerb contact
 
 The first round's lessons, applied (branch `rl/twin-car-2`, on the Core with the ESC reverse). The bar is now the autopilot itself: the Unity-car gains with the kerb recovery, 98 / 82 / 86 %.
@@ -401,6 +414,12 @@ The second round (`rl/twin-car-2`, reward v3, the Core with ESC reverse):
 ```
 
 The third round (`rl/twin-car-3`): the same commands as the second, with `--val-edge --val-trips 40` and `-edge-` in the output names.
+
+The low-speed blend's comparison: the shipped autopilot and the one without the corner plan, on seeds 20000 and 50000. The runs without the blend set `UNITY_CAR["v_kinematic"]` to 0 in every loaded copy of `rc_twin_env` (`campus.py` loads its own):
+
+```bash
+.venv/Scripts/python sim_py/evaluate_policies.py recover:controller:pure_pursuit:policies/controllers_unity_stop.json recover:corner:3.4,1.2,1.2,0.5:controller:pure_pursuit:policies/controllers_unity_stop.json --task stop --car unity --trips 100 --target-speed 4 [--seed 50000]
+```
 
 The corner speed plan:
 

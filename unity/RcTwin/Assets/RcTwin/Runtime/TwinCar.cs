@@ -58,6 +58,12 @@ namespace RcTwin
                  "are measured on the real car at a known steer.")]
         [Range(-1f, 1f)] public double ackermann = 1.0;
 
+        [Tooltip("Speed [m/s] at and below which the Core drives as a kinematic single-track car, " +
+                 "blending up to the dynamic model at v_eps (ADR 0011); 0 keeps SlipX's L2, whose " +
+                 "floored slip angles turn the car at full lock as if at v_eps. The default, 0.3, is " +
+                 "0.6 v_eps, AMZ's blend window scaled to this car: numerical, not measured.")]
+        public double vKinematic = 0.3;
+
         [Header("Suspension (ADR 0008)")]
         [Tooltip("Body heave, pitch and roll on springs. The three values below are DEMO TARGETS, " +
                  "not a car: replace them with wheel rates measured on the bench.")]
@@ -131,6 +137,7 @@ namespace RcTwin
             _p = RcTwinNative.DefaultParams();
             _p.wheelInertia = wheelInertia;
             _p.ackermann = ackermann;
+            _p.vKinematic = vKinematic;
             if (suspension)
             {
                 // Per wheel: four equal springs carry the car at the target

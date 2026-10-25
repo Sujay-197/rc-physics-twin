@@ -15,7 +15,7 @@ namespace RcTwin
     public static class RcTwinNative
     {
         public const string Lib = "rc_twin";
-        public const uint AbiVersion = 7;
+        public const uint AbiVersion = 8;
 
         public const int Ok = 0, ENull = -1, EInvalid = -2, EInternal = -3, EGround = -4;
 
@@ -78,6 +78,9 @@ namespace RcTwin
             public double wheelRateFront, wheelRateRear;  // [N/m]
             public double dampingFront, dampingRear;      // [N s/m]
             public double suspensionTravel;               // [m] static to bump stop
+
+            // Low speed (ADR 0011): kinematic at and below this, blending up to vEps. 0 = off.
+            public double vKinematic;                     // [m/s]
         }
 
         /// <summary>Ground under one wheel, world frame, ISO 8855 (ADR 0005).</summary>

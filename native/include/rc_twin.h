@@ -27,6 +27,7 @@
  * v6: roads (rc_twin_road_*), ground from road data for headless hosts.
  * v7: walls (rc_twin_add_wall, rc_twin_contact, rc_twin_wall_report;
  *     ADR 0009).
+ * v8: rc_twin_params.v_kinematic (ADR 0011).
  */
 #ifndef RC_TWIN_H
 #define RC_TWIN_H
@@ -47,7 +48,7 @@
 extern "C" {
 #endif
 
-#define RC_TWIN_ABI_VERSION 7u
+#define RC_TWIN_ABI_VERSION 8u
 
 typedef int32_t rc_twin_status;
 enum {
@@ -139,6 +140,11 @@ typedef struct rc_twin_params {
   double wheel_rate_front, wheel_rate_rear;   /* [N/m]   */
   double damping_front, damping_rear;         /* [N s/m] */
   double suspension_travel;                   /* [m]     */
+
+  /* Low speed at L2 (ADR 0011): below v_eps the dynamic model blends
+   * linearly into a kinematic single-track car, kinematic at and below this
+   * speed [m/s]. 0 (the default) keeps SlipX's L2; otherwise below v_eps. */
+  double v_kinematic;
 } rc_twin_params;
 
 typedef struct rc_twin_vehicle rc_twin_vehicle;

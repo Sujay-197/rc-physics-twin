@@ -164,6 +164,7 @@ const char* to_core(const rc_twin_params& c, slipx::VehicleParams& p) {
   p.damping_front = c.damping_front;
   p.damping_rear = c.damping_rear;
   p.suspension_travel = c.suspension_travel;
+  p.v_kinematic = c.v_kinematic;
   return nullptr;
 }
 
@@ -218,6 +219,7 @@ void from_core(const slipx::VehicleParams& p, rc_twin_params& c) {
   c.damping_front = p.damping_front;
   c.damping_rear = p.damping_rear;
   c.suspension_travel = p.suspension_travel;
+  c.v_kinematic = p.v_kinematic;
 }
 
 void to_core(const rc_twin_state& c, slipx::VehicleState& s) {

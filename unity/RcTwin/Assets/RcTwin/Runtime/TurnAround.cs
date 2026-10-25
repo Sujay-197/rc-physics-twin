@@ -383,8 +383,11 @@ namespace RcTwin
     public sealed class TurnDriver
     {
         /// <summary>Speed along a leg [m/s], braking to the leg's end [m/s^2], and throttle per m/s of speed error.
-        /// The cruise is above the Core's v_eps (0.5 m/s): slower, L2's tyres are outside their
-        /// validity and the car yaws erratically at full lock. The braking stays inside what the
+        /// The cruise trades time for precision. On TwinCar's Core, kinematic at 0.3 m/s and below
+        /// (ADR 0011), every campus turn-round drives clean from 0.2 to 0.7 m/s; at 0.3 they end
+        /// within 1.1 cm and 1.5 deg of the plan, at 0.7 within 1.9 cm and 4.9 deg in half the time
+        /// (5.5 against 11 s a turn). Without that blend the car yawed erratically at full lock below
+        /// 0.4 m/s and touched kerbs, which is why 0.7 was chosen. The braking stays inside what the
         /// motor brake gives (its regen current limit, about 2.3 m/s^2 for the reference car).</summary>
         public double Cruise = 0.7, Decel = 1.8, KSpeed = 1.5;
         /// <summary>Steer feedback [rad] per metre off the planned path and per radian off its heading.</summary>

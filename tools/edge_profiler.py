@@ -146,7 +146,10 @@ def profile(lib, roads: list[dict], args: argparse.Namespace, cache: dict | None
                 "note": "SlipX provisional defaults plus the options below; not a measured car",
                 "options": {"wheel_inertia": args.wheel_inertia, "ackermann": args.ackermann,
                             "wheel_rate": args.wheel_rate, "damping": args.damping,
-                            "suspension_travel": args.travel},
+                            "suspension_travel": args.travel,
+                            # ADR 0011: only when on, so earlier caches keep their options
+                            **({"v_kinematic": args.v_kinematic}
+                               if getattr(args, "v_kinematic", 0.0) else {})},
             }
         },
         "entries": entries,
