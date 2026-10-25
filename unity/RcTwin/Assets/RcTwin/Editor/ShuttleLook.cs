@@ -40,6 +40,15 @@ namespace RcTwin.EditorTools
                 Part(body, $"Tail light {(s < 0 ? "left" : "right")}", new Vector3(0.022f, 0.016f, 0.004f),
                      new Vector3(s * W * 0.36f, 0.045f, -(L - 0.01f) / 2f - 0.002f), Tail);
             }
+            // The modelled shuttle, when tools/prepare_assets.py has made it: it takes the
+            // boxes' place on load, as wide as the car over its tyres, as long as the boxes.
+            var model = CampusLook.Model("shuttle");
+            if (model != null)
+            {
+                var view = body.gameObject.AddComponent<ShuttleModelView>();
+                view.model = model;
+                view.size = new Vector3((float)System.Math.Max(p.trackFront, p.trackRear) + 0.01f, 0f, L);
+            }
         }
 
         /// <summary>A bus shelter at `at`, its open side facing `headingDeg` (Unity yaw).</summary>
