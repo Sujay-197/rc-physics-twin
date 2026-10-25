@@ -1,8 +1,11 @@
-// The campus shuttle game's screen, layout C (Docs/specs/2026-10-21-campus-shuttle-design.md):
-// the score top-left, a minimap top-right, a bottom bar with the battery, the
-// seats, what the shuttle is doing and the request queue. Click a stop, on the
-// minimap or in the world, to raise a request; the gear opens the settings.
-// Its look (Inter, rounded translucent panels, icons) is HudSkin's.
+// The campus shuttle game's screen, layout C (Docs/specs/2026-10-21-campus-shuttle-design.md),
+// for a fleet (Docs/specs/2026-10-25-shuttle-fleet-design.md): the score and a
+// row per bus top-left, the camera mode top centre, a minimap top-right with
+// every bus, a bottom bar with the followed bus's battery, seats and what it
+// is doing, and the request queue. Click a stop, on the minimap or in the
+// world, to raise a request; click a bus's row to follow it; the Settings
+// button opens the settings. Its look (Inter, rounded translucent panels,
+// icons) is HudSkin's.
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -65,26 +68,25 @@ namespace RcTwin
         }
     }
 
-    [RequireComponent(typeof(ShuttleGame))]
+    [RequireComponent(typeof(ShuttleFleet))]
     public sealed class ShuttleHud : MonoBehaviour
     {
-        private ShuttleGame _game;
-        private TwinCar _car;
+        private ShuttleFleet _game;
         private Minimap _map;
         private Rect _mapArea;
         private Material _lines;
         private GUIStyle _box, _big, _text, _small, _chip, _chipAssigned, _btn, _btnOn, _tag, _gauge, _caption;
+        private GUIStyle _textCentred, _smallCentred, _captionCentred;
         private Texture2D _white, _dot;
         private string _pickFrom;                 // destination picker open for this origin
         private bool _settings;
         private float _scale = 1f;
         private bool _paused;
 
-        private void Start()
-        {
-            _game = GetComponent<ShuttleGame>();
-            _car = GetComponent<TwinCar>();
-        }
+        private ShuttleGame Bus => _game.Followed;
+
+
+        private void Start() => _game = GetComponent<ShuttleFleet>();
 
         private void Update()
         {
@@ -92,7 +94,8 @@ namespace RcTwin
             if (_game.Routes == null || Camera.main == null || m == null || !m.leftButton.wasPressedThisFrame) return;
             Vector2 screen = m.position.ReadValue();
             var mouse = new Vector2(screen.x, Screen.height - screen.y);
-            if (_mapArea.Contains(mouse) || mouse.y > Screen.height - BarHeight || _pickFrom != null || _settings) return;
+            if (_mapArea.Contains(mouse) || mouse.y > Screen.height - BarHeight || _pickFrom != null || _settings ||
+                _fleetArea.Contains(mouse) || _chipArea.Contains(mouse)) return;
             // A click on the ground near a stop, in the 3D view.
             var ray = Camera.main.ScreenPointToRay(screen);
             if (Mathf.Abs(ray.direction.y) < 1e-4f) return;
@@ -108,7 +111,7 @@ namespace RcTwin
 
         private void OnGUI()
         {
-            if (_game == null || _game.Brain == null || _game.Routes == null) return;
+            if (_game == null || _game.Routes == null || _game.Buses.Count == 0) return;
             Styles();
             float w = Screen.width, h = Screen.height;
             float mapW = Mathf.Max(220f, w * 0.22f), mapH = mapW * 0.75f;
@@ -117,6 +120,8 @@ namespace RcTwin
 
             WorldLabels();
             ScorePanel();
+            FleetPanel();
+            CameraChip(w);
             MinimapPanel();
             BottomBar(w, h);
             if (_pickFrom != null) Picker(w, h);
@@ -132,7 +137,8 @@ namespace RcTwin
             if (cam == null || Event.current.type != EventType.Repaint) return;
             foreach (var g in _game.Waiting.GroupBy(r => r.Origin))
                 Tag(cam, _game.KerbSlot(g.Key, 0) + Vector3.up * 0.3f, WaitLabel(g, _game.Now));
-            Tag(cam, transform.position + Vector3.up * 0.28f, SeatLabel(_game.Brain.Aboard.Count, _game.Settings.Capacity));
+            foreach (var b in _game.Buses)
+                Tag(cam, b.transform.position + Vector3.up * 0.28f, $"{b.Label} · {SeatLabel(b.Brain.Aboard.Count, _game.Settings.Capacity)}");
         }
 
         private void Tag(Camera cam, Vector3 world, string text)
@@ -160,6 +166,61 @@ namespace RcTwin
                       $"Delivered {s.Delivered} · Avg wait {Clock(s.AverageWait)} · Gave up {s.GaveUp}", _text);
         }
 
+        // ------------------------------------------------------------- fleet
+
+        private Rect _fleetArea, _chipArea;
+
+        // A row per bus: its colour, name, battery, seats, deliveries and what it is doing.
+        // Click one to follow it.
+        private void FleetPanel()
+        {
+            const float rowH = 22f;
+            var buses = _game.Buses;
+            bool faults = _game.StuckTows > 0 || _game.Overlaps > 0;
+            _fleetArea = new Rect(12f, 102f, 440f, 16f + rowH * buses.Count + (faults ? rowH : 0f));
+            GUI.Box(_fleetArea, GUIContent.none, _box);
+            float y = _fleetArea.y + 8f;
+            for (int i = 0; i < buses.Count; i++, y += rowH)
+            {
+                var b = buses[i];
+                var row = new Rect(_fleetArea.x + 6f, y, _fleetArea.width - 12f, rowH);
+                if (b == Bus && _game.Cameras.Current.Kind == CameraKind.Bus)
+                {
+                    GUI.color = new Color(1f, 1f, 1f, 0.08f);
+                    GUI.DrawTexture(row, _white);
+                }
+                GUI.color = b.Colour;
+                GUI.DrawTexture(new Rect(row.x + 6f, y + 6f, 10f, 10f), _dot);
+                GUI.color = Color.white;
+                double soc = b.Car.State.soc;
+                string text = $"{b.Label}   {100 * soc:0} %   {b.Brain.Aboard.Count}/{_game.Settings.Capacity}   {b.BusScore.Delivered} delivered   " +
+                              (b.Brain.Retiring ? "retiring · " : "") + b.Brain.Status;
+                GUI.Label(new Rect(row.x + 22f, y + 2f, row.width - 24f, rowH), text, _small);
+                if (GUI.Button(row, GUIContent.none, GUIStyle.none)) _game.Cameras.Follow(i + 1);
+            }
+            if (faults)
+                GUI.Label(new Rect(_fleetArea.x + 28f, y + 2f, _fleetArea.width - 30f, rowH),
+                          $"Stuck tows {_game.StuckTows} · overlaps {_game.Overlaps}", _small);
+        }
+
+        // The camera's mode, between buttons that step it (C and Shift+C do the same).
+        private void CameraChip(float w)
+        {
+            var modes = _game.Cameras;
+            var m = modes.Current;
+            string name = m.Kind == CameraKind.Bus ? _game.Buses[Math.Min(m.Bus, _game.Buses.Count) - 1].Label
+                : m.Kind == CameraKind.Stop ? $"Stop {Camera.main?.GetComponent<FleetCamera>()?.Stop ?? m.Stop}"
+                : m.Kind == CameraKind.Route ? $"Route ({Bus.Label})" : m.ToString();
+            string label = $"Camera · {name}";
+            float lw = Mathf.Max(170f, _text.CalcSize(new GUIContent(label)).x + 24f);
+            _chipArea = new Rect((w - lw) / 2f - 40f, 12f, lw + 80f, 36f);
+            GUI.Box(_chipArea, GUIContent.none, _box);
+            if (GUI.Button(new Rect(_chipArea.x + 6f, _chipArea.y + 5f, 30f, 26f), "‹", _btn)) modes.Previous();
+            GUI.Label(new Rect(_chipArea.x + 40f, _chipArea.y + 7f, lw, 24f), label, _textCentred);
+            if (GUI.Button(new Rect(_chipArea.xMax - 36f, _chipArea.y + 5f, 30f, 26f), "›", _btn)) modes.Next();
+            GUI.Label(new Rect(_chipArea.x, _chipArea.yMax + 2f, _chipArea.width, 16f), "C · Shift+C · 1–6 follow a bus", _captionCentred);
+        }
+
         // ----------------------------------------------------------- minimap
 
         private void MinimapPanel()
@@ -177,11 +238,10 @@ namespace RcTwin
                             GL.Vertex(_map.ToMap(c[i - 3], c[i - 2]));
                             GL.Vertex(_map.ToMap(c[i], c[i + 1]));
                         }
-                    // The shuttle's planned path, stop to stop along the routes.
-                    GL.Color(HudSkin.Accent);
-                    var st = _car.State;
-                    string at = _game.AtStop ?? _game.LegFrom;
-                    foreach (var ps in _game.Brain.Plan.Stops)
+                    // The followed bus's planned path, stop to stop along the routes.
+                    GL.Color(Bus.Colour);
+                    string at = Bus.AtStop ?? Bus.LegFrom;
+                    foreach (var ps in Bus.Brain.Plan.Stops)
                     {
                         if (at != null && at != ps.Stop && net.Stops[at].node != net.Stops[ps.Stop].node)
                         {
@@ -194,22 +254,31 @@ namespace RcTwin
                         }
                         at = ps.Stop;
                     }
-                    // The shuttle: an arrow along its heading.
-                    var p = _map.ToMap(st.x, st.y);
-                    var f = _map.ToMap(st.x + Math.Cos(st.yaw) * 1.2, st.y + Math.Sin(st.yaw) * 1.2) - p;
-                    var side = new Vector2(-f.y, f.x) * 0.5f;
-                    GL.Color(Color.white);
-                    GL.Vertex(p + f); GL.Vertex(p - f * 0.6f + side);
-                    GL.Vertex(p + f); GL.Vertex(p - f * 0.6f - side);
-                    GL.Vertex(p - f * 0.6f + side); GL.Vertex(p - f * 0.6f - side);
+                    // Each bus: an arrow along its heading, in its colour.
+                    foreach (var b in _game.Buses)
+                    {
+                        var st = b.Car.State;
+                        var p = _map.ToMap(st.x, st.y);
+                        var f = _map.ToMap(st.x + Math.Cos(st.yaw) * 1.2, st.y + Math.Sin(st.yaw) * 1.2) - p;
+                        var side = new Vector2(-f.y, f.x) * 0.5f;
+                        GL.Color(b.Colour);
+                        GL.Vertex(p + f); GL.Vertex(p - f * 0.6f + side);
+                        GL.Vertex(p + f); GL.Vertex(p - f * 0.6f - side);
+                        GL.Vertex(p - f * 0.6f + side); GL.Vertex(p - f * 0.6f - side);
+                    }
                 });
+            }
+            foreach (var b in _game.Buses)
+            {
+                var q = _map.ToMap(b.Car.State.x, b.Car.State.y);
+                GUI.Label(new Rect(q.x - 18f, q.y + 4f, 36f, 16f), b.Number.ToString(), _smallCentred);
             }
             var waiting = _game.Waiting;
             foreach (var s in net.Stops.Values)
             {
                 var q = _map.ToMap(s.nodeX, s.nodeY);
                 int n = waiting.Count(r => r.Origin == s.name);
-                bool charger = s.name == _game.Settings.ChargerStop;
+                bool charger = Array.IndexOf(_game.Settings.Chargers, s.name) >= 0;
                 GUI.color = new Color(1f, 1f, 1f, 0.9f);
                 GUI.DrawTexture(new Rect(q.x - 7f, q.y - 7f, 14f, 14f), _dot);
                 GUI.color = charger ? HudSkin.Good : HudSkin.Accent;
@@ -220,7 +289,7 @@ namespace RcTwin
             }
             // Legend: the charger's dot is green.
             Icon(HudIcon.Bolt, new Rect(_mapArea.x + 10f, _mapArea.yMax - 20f, 12f, 12f), HudSkin.Good);
-            GUI.Label(new Rect(_mapArea.x + 24f, _mapArea.yMax - 23f, 140f, 18f), $"charger ({_game.Settings.ChargerStop})", _small);
+            GUI.Label(new Rect(_mapArea.x + 24f, _mapArea.yMax - 23f, 180f, 18f), $"chargers ({string.Join(", ", _game.Settings.Chargers)})", _small);
             var e = Event.current;
             if (e.type == EventType.MouseDown && e.button == 0 && _mapArea.Contains(e.mousePosition))
             {
@@ -238,8 +307,8 @@ namespace RcTwin
             GUI.Box(bar, GUIContent.none, _box);
             float x = 28f, y = bar.y + (bar.height - 40f) / 2f;
             // Battery: icon, gauge, its label on the line above.
-            double soc = _car.State.soc;
-            bool charging = _game.Brain.Mode == ShuttleMode.Charging;
+            double soc = Bus.Car.State.soc;
+            bool charging = Bus.Brain.Mode == ShuttleMode.Charging;
             var c = soc > 0.5 ? HudSkin.Good : soc > 0.25 ? HudSkin.Warn : HudSkin.Bad;
             Icon(charging ? HudIcon.Bolt : HudIcon.Battery, new Rect(x, y + 9f, 24f, 24f), charging ? HudSkin.Good : HudSkin.Text);
             GUI.Label(new Rect(x + 32f, y - 2f, 220f, 18f), $"Battery {100 * soc:0} %" + (charging ? " · charging" : ""), _caption);
@@ -255,11 +324,11 @@ namespace RcTwin
             // Seats: icon, the count, its label above.
             Icon(HudIcon.Seat, new Rect(x + 4f, y + 8f, 24f, 24f), HudSkin.Text);
             GUI.Label(new Rect(x + 34f, y - 2f, 80f, 18f), "Seats", _caption);
-            GUI.Label(new Rect(x + 34f, y + 14f, 80f, 24f), $"{_game.Brain.Aboard.Count}/{_game.Settings.Capacity}", _text);
+            GUI.Label(new Rect(x + 34f, y + 14f, 80f, 24f), $"{Bus.Brain.Aboard.Count}/{_game.Settings.Capacity}", _text);
             x += 106f;
             Divider(x - 10f, bar);
-            GUI.Label(new Rect(x, y - 2f, Mathf.Max(260f, w * 0.26f), 18f), "Shuttle", _caption);
-            GUI.Label(new Rect(x, y + 14f, Mathf.Max(260f, w * 0.26f), 24f), _game.Brain.Status, _text);
+            GUI.Label(new Rect(x, y - 2f, Mathf.Max(260f, w * 0.26f), 18f), Bus.Label, _caption);
+            GUI.Label(new Rect(x, y + 14f, Mathf.Max(260f, w * 0.26f), 24f), Bus.Brain.Status, _text);
             x += Mathf.Max(260f, w * 0.26f) + 8f;
             y += 10f;
             // The request queue, oldest first.
@@ -316,14 +385,20 @@ namespace RcTwin
         private void SettingsPanel(float w, float h)
         {
             var s = _game.Settings;
-            float pw = 340f, ph = 330f;
+            float pw = 340f, ph = 372f;
             GUILayout.BeginArea(new Rect(w - pw - 12f, h - BarHeight - ph - 8f, pw, ph), _box);
             GUILayout.Label("Settings", _big);
+            int buses = (int)Math.Round(Slider($"Buses {s.Buses}", s.Buses, 1, ShuttleSettings.MaxBuses));
+            if (buses != s.Buses) _game.SetBuses(buses);
             s.RequestInterval = Slider($"A request every {s.RequestInterval:0} s", s.RequestInterval, 5.0, 60.0);
             _game.Spawner.RatePerSecond = 1.0 / s.RequestInterval;
             s.Capacity = (int)Math.Round(Slider($"Seats {s.Capacity}", s.Capacity, 1, 12));
             double minutes = Slider($"A charge lasts {s.BatteryMinutesOfDriving:0.0} min of driving", s.BatteryMinutesOfDriving, 1.0, 15.0);
-            if (Math.Abs(minutes - s.BatteryMinutesOfDriving) > 1e-9) { s.BatteryMinutesOfDriving = minutes; _game.ResizeBattery(); }
+            if (Math.Abs(minutes - s.BatteryMinutesOfDriving) > 1e-9)
+            {
+                s.BatteryMinutesOfDriving = minutes;
+                foreach (var b in _game.Buses) b.ResizeBattery();
+            }
             s.ChargeSeconds10To95 = Slider($"Charging 10 → 95 % takes {s.ChargeSeconds10To95:0} s", s.ChargeSeconds10To95, 5.0, 120.0);
             s.GiveUpAfter = Slider($"Students give up after {s.GiveUpAfter:0} s", s.GiveUpAfter, 30.0, 600.0);
             GUILayout.Space(6f);
@@ -405,6 +480,9 @@ namespace RcTwin
             _text = Label(medium, 14, HudSkin.Text);
             _small = Label(semi, 11, HudSkin.Text);
             _caption = Label(regular, 11, HudSkin.Muted);
+            _textCentred = new GUIStyle(_text) { alignment = TextAnchor.MiddleCenter };
+            _smallCentred = new GUIStyle(_small) { alignment = TextAnchor.UpperCenter };
+            _captionCentred = new GUIStyle(_caption) { alignment = TextAnchor.UpperCenter };
             _chip = Pill(HudSkin.Rounded(10, new Color(0.22f, 0.27f, 0.35f, 0.92f), new Color(1f, 1f, 1f, 0.1f)), 10, medium, 12);
             _chipAssigned = Pill(HudSkin.Rounded(10, new Color(0.2f, 0.46f, 0.86f, 0.95f), new Color(1f, 1f, 1f, 0.2f)), 10, medium, 12);
             _tag = Pill(HudSkin.Rounded(8, new Color(0.05f, 0.07f, 0.1f, 0.78f), new Color(1f, 1f, 1f, 0.12f)), 8, semi, 11);

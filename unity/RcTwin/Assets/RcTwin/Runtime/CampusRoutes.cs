@@ -176,6 +176,9 @@ namespace RcTwin
             return pts.ToArray();
         }
 
+        /// <summary>How many roads meet at the stop's node: 3 or more is a junction.</summary>
+        public int Roads(string stop) => _adj[Stops[stop].node].Count;
+
         /// <summary>The stop whose node (on the road) is nearest (x, y), and how far it is [m].</summary>
         public (string name, double distance) Nearest(double x, double y)
         {

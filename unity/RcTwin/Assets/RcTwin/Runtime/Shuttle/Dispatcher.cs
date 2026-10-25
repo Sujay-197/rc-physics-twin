@@ -1,6 +1,7 @@
 // Who serves a request: each shuttle quotes the cost of fitting it into its
 // plan, and the cheapest takes it. With one shuttle it simply goes to that
-// one; this is the seam for several (Docs/specs/2026-10-21-campus-shuttle-design.md).
+// one; a fleet adds and removes shuttles as it grows and shrinks
+// (Docs/specs/2026-10-25-shuttle-fleet-design.md).
 // It also keeps the open requests: retrying those still waiting, and letting
 // students who waited too long give up.
 using System.Collections.Generic;
@@ -19,11 +20,30 @@ namespace RcTwin
         private readonly List<RideRequest> _open = new List<RideRequest>();
         private double _lastRetry = double.NegativeInfinity;
 
+        public IReadOnlyList<ShuttleBrain> Shuttles => _shuttles;
+
         public Dispatcher(IReadOnlyList<ShuttleBrain> shuttles)
         {
-            _shuttles = new List<ShuttleBrain>(shuttles);
-            foreach (var b in _shuttles)
-                b.WaitingAt = stop => _open.Where(r => r.State == RequestState.Waiting && r.Origin == stop);
+            _shuttles = new List<ShuttleBrain>();
+            foreach (var b in shuttles) Add(b);
+        }
+
+        public void Add(ShuttleBrain b)
+        {
+            if (_shuttles.Contains(b)) return;
+            _shuttles.Add(b);
+            b.WaitingAt = stop => _open.Where(r => r.State == RequestState.Waiting && r.Origin == stop);
+        }
+
+        /// <summary>A shuttle leaving the fleet: whatever it still had planned waits again.</summary>
+        public void Remove(ShuttleBrain b)
+        {
+            if (!_shuttles.Remove(b)) return;
+            foreach (var r in b.Plan.Stops.SelectMany(st => st.Board).ToList())
+            {
+                b.Release(r);
+                r.State = RequestState.Waiting;
+            }
         }
 
         public void Offer(RideRequest r)

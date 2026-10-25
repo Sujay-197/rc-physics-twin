@@ -227,7 +227,7 @@ namespace RcTwin.EditorTools
                 float face = stop.transform.eulerAngles.y + (sideSign > 0f ? -90f : 90f);
                 var shelter = ShuttleLook.BuildShelter(stop.transform.TransformPoint(new Vector3(sideSign * mid, kerb, -0.3f)), face);
                 shelter.transform.SetParent(stop.transform, true);
-                if (name == new ShuttleSettings().ChargerStop)
+                if (Array.IndexOf(new ShuttleSettings().Chargers, name) >= 0)
                 {
                     var charger = ShuttleLook.BuildCharger(stop.transform.TransformPoint(new Vector3(sideSign * (mid - 0.03f), kerb, 0.28f)), face);
                     charger.transform.SetParent(stop.transform, true);

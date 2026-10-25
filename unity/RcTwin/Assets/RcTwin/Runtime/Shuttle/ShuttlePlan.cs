@@ -12,9 +12,11 @@ namespace RcTwin
         public List<RideRequest> Alight = new List<RideRequest>();
         /// <summary>A visit to the charger to charge, not only to pick up or drop off.</summary>
         public bool Charge;
+        /// <summary>A visit only to wait there: an idle bus making room for another (fleet).</summary>
+        public bool Park;
 
         public PlanStop Copy() =>
-            new PlanStop { Stop = Stop, Board = new List<RideRequest>(Board), Alight = new List<RideRequest>(Alight), Charge = Charge };
+            new PlanStop { Stop = Stop, Board = new List<RideRequest>(Board), Alight = new List<RideRequest>(Alight), Charge = Charge, Park = Park };
     }
 
     /// <summary>Where a plan starts from.</summary>
@@ -63,7 +65,7 @@ namespace RcTwin
             return cost;
         }
 
-        /// <summary>Charge the plan needs, with the way from its last stop to the charger.</summary>
+        /// <summary>Charge the plan needs, with the way from its last stop to the nearest charger.</summary>
         public double SocNeeded(PlanContext c, ShuttleSettings s, ITravelModel t)
         {
             double metres = 0.0;
@@ -73,7 +75,7 @@ namespace RcTwin
                 metres += t.Distance(at, st.Stop);
                 at = st.Stop;
             }
-            metres += t.Distance(at, s.ChargerStop);
+            metres += t.Distance(at, BatteryPolicy.NearestCharger(s, t, at));
             return metres * c.SocPerMetre * s.EnergySafety;
         }
 
