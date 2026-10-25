@@ -127,6 +127,7 @@ namespace RcTwin
             bool any = false;
             foreach (var r in body.GetComponentsInChildren<Renderer>())
             {
+                if (!r.enabled) continue;   // the boxes, hidden under the shuttle model
                 var lb = r.bounds;
                 var p = body.InverseTransformPoint(lb.center + Vector3.up * lb.extents.y);
                 if (!any) { b = new Bounds(p, Vector3.zero); any = true; } else b.Encapsulate(p);
