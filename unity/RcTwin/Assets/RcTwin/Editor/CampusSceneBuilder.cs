@@ -49,6 +49,11 @@ namespace RcTwin.EditorTools
             public List<Vector3> pts;   // Unity frame
         }
 
+        /// <summary>The grass under the campus in plan (Unity x, z), set while the scene is built: the
+        /// scenery and the dressing are only placed on it, since beyond it they are only drawn and
+        /// cost the GPU (from above, most of them).</summary>
+        public static Rect Ground { get; private set; }
+
         public static string PlayerPath =>
             Path.GetFullPath(Path.Combine(Application.dataPath, "..", "..", "..", "build", "campus", "RcTwinCampus.exe"));
 
@@ -109,6 +114,7 @@ namespace RcTwin.EditorTools
             grass.name = "Grass (off the road: drivable here, ends an RL episode)";
             grass.transform.position = new Vector3(0.5f * (lo.x + hi.x), -0.001f, 0.5f * (lo.z + hi.z));
             grass.transform.localScale = new Vector3((hi.x - lo.x + 12f) / 10f, 1f, (hi.z - lo.z + 12f) / 10f);
+            Ground = Rect.MinMaxRect(lo.x - 6f, lo.z - 6f, hi.x + 6f, hi.z + 6f);
             grass.GetComponent<Renderer>().sharedMaterial =
                 FlatGroundSceneBuilder.ColourMaterial("Grass", new Color(0.36f, 0.5f, 0.3f));
 
@@ -227,7 +233,7 @@ namespace RcTwin.EditorTools
                 float face = stop.transform.eulerAngles.y + (sideSign > 0f ? -90f : 90f);
                 var shelter = ShuttleLook.BuildShelter(stop.transform.TransformPoint(new Vector3(sideSign * mid, kerb, -0.3f)), face);
                 shelter.transform.SetParent(stop.transform, true);
-                if (name == new ShuttleSettings().ChargerStop)
+                if (Array.IndexOf(new ShuttleSettings().Chargers, name) >= 0)
                 {
                     var charger = ShuttleLook.BuildCharger(stop.transform.TransformPoint(new Vector3(sideSign * (mid - 0.03f), kerb, 0.28f)), face);
                     charger.transform.SetParent(stop.transform, true);

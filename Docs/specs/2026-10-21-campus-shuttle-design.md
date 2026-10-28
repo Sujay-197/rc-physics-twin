@@ -1,6 +1,6 @@
 # Campus shuttle: an autonomous bus game on the twin
 
-Status: design, 2026-10-21. Builds on the campus player (`build/campus/RcTwinCampus.exe`) and its autopilot (`TwinAutopilot`).
+Status: design, 2026-10-21; several shuttles and a second charger since: [`2026-10-25-shuttle-fleet-design.md`](2026-10-25-shuttle-fleet-design.md). Builds on the campus player (`build/campus/RcTwinCampus.exe`) and its autopilot (`TwinAutopilot`).
 
 ## Intent
 

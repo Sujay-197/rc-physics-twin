@@ -422,6 +422,16 @@ namespace RcTwin
 
         public TurnLeg Current => Done ? null : Plan.Legs[Leg];
 
+        /// <summary>The planned poses still to drive: the current leg from where the car is, then the rest.</summary>
+        public IEnumerable<TurnPoint> Ahead()
+        {
+            for (int l = Leg; l < Plan.Legs.Count; l++)
+            {
+                var path = Plan.Legs[l].Path;
+                for (int k = l == Leg ? _i : 0; k < path.Count; k++) yield return path[k];
+            }
+        }
+
         public (double steer, double throttle) Act(in RcTwinNative.State st, double dt)
         {
             LegEnded = false;

@@ -2,8 +2,10 @@
 // keeps a plan of stops, takes requests by cheapest insertion, drives each
 // leg through the world (ShuttleGame: TwinAutopilot and TwinCar), stops on
 // the way for students when it can, boards and drops off, and keeps its
-// battery: charging at the charger, going there first when it must, never
-// running flat on purpose. Free of UnityEngine; tested on a fake world.
+// battery: charging at a charger, going there first when it must, never
+// running flat on purpose. In a fleet it may retire, and an idle one makes
+// room for another (Docs/specs/2026-10-25-shuttle-fleet-design.md). Free of
+// UnityEngine; tested on a fake world.
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -46,6 +48,15 @@ namespace RcTwin
         public SocMeter Meter { get; }
         /// <summary>Students waiting (unassigned) at a stop: set by the Dispatcher.</summary>
         public Func<string, IEnumerable<RideRequest>> WaitingAt = _ => Enumerable.Empty<RideRequest>();
+        /// <summary>The charger to go to from a stop: by default the nearest; a fleet passes over the taken ones.</summary>
+        public Func<string, string> PickCharger;
+        /// <summary>The charger it is charging at or going to, or null.</summary>
+        public string Charger => Mode == ShuttleMode.Charging || Mode == ShuttleMode.Towed ? _charger
+            : Plan.Stops.FirstOrDefault(st => st.Charge)?.Stop;
+        /// <summary>Taking no new requests; it leaves the fleet once everyone aboard is delivered.</summary>
+        public bool Retiring { get; private set; }
+        public bool Retired => Retiring && Aboard.Count == 0 && Plan.Stops.Count == 0 &&
+                               Mode != ShuttleMode.Driving && Mode != ShuttleMode.Towed;
 
         public event Action<RideRequest> Boarded, Alighted;
         public event Action PlanChanged;
@@ -56,6 +67,7 @@ namespace RcTwin
         private string _legFrom, _arrivedFrom;
         private double _legStartSoc, _dwellLeft, _refusedFor, _towLeft;
         private bool _chargeHere, _towedThisLeg;
+        private string _charger;
 
         public ShuttleBrain(IShuttleWorld w, ShuttleSettings s, ITravelModel t, ShuttleScore score, double seedSocPerMetre)
         {
@@ -64,6 +76,18 @@ namespace RcTwin
             _t = t;
             _score = score;
             Meter = new SocMeter(seedSocPerMetre);
+            PickCharger = from => BatteryPolicy.NearestCharger(Settings, _t, from);
+        }
+
+        // The charger to head for from `from` with `soc` left there: PickCharger's choice
+        // if the charge reaches it (with half the reserve, as the low-battery plans
+        // allow), else the nearest; queueing at a taken charger beats running flat.
+        private string ChargerFrom(string from, double soc)
+        {
+            string c = PickCharger(from);
+            string n = BatteryPolicy.NearestCharger(Settings, _t, from);
+            if (c == n || from == null) return c;
+            return _t.Distance(from, c) * Meter.SocPerMetre * Settings.EnergySafety <= soc - 0.5 * Settings.Reserve ? c : n;
         }
 
         /// <summary>The bottom bar's sentence.</summary>
@@ -74,15 +98,17 @@ namespace RcTwin
                 var s = Settings;
                 switch (Mode)
                 {
-                    case ShuttleMode.Towed: return $"Flat battery: towing to {s.ChargerStop}";
-                    case ShuttleMode.Charging: return $"Charging at {s.ChargerStop}, {100 * _w.Soc:0} %";
+                    case ShuttleMode.Towed: return $"Flat battery: towing to {_charger}";
+                    case ShuttleMode.Charging: return $"Charging at {_charger}, {100 * _w.Soc:0} %";
                 }
                 if (Battery == LowBattery.DropOffFirst)
                     return $"Battery low: dropping off {Aboard.Count}, then charging";
                 if (Battery == LowBattery.ChargeNow) return "Battery low: charging first";
-                if (Plan.Stops.Count == 0) return _w.AtStop != null ? $"Waiting at {_w.AtStop}" : "Waiting";
+                if (Plan.Stops.Count == 0)
+                    return Retiring ? "Leaving the fleet" : _w.AtStop != null ? $"Waiting at {_w.AtStop}" : "Waiting";
                 var next = Plan.Stops[0];
                 if (next.Charge) return $"To {next.Stop}: charge";
+                if (next.Park && next.Board.Count == 0 && next.Alight.Count == 0) return $"To {next.Stop}: making room";
                 var parts = new List<string>();
                 if (next.Board.Count > 0) parts.Add($"pick up {next.Board.Count}");
                 if (next.Alight.Count > 0) parts.Add($"drop off {next.Alight.Count}");
@@ -96,19 +122,49 @@ namespace RcTwin
         /// <summary>The added cost of taking r [s], or null if it cannot.</summary>
         public double? QuoteInsertion(RideRequest r)
         {
-            if (Battery != LowBattery.Fine || Mode == ShuttleMode.Towed) return null;
+            if (Battery != LowBattery.Fine || Mode == ShuttleMode.Towed || Retiring) return null;
             var c = Context(out var sub, out _);
+            DropParking(sub);
             return sub.TryInsert(r, c, Settings, _t, out double added) == null ? (double?)null : added;
         }
 
         public void Accept(RideRequest r)
         {
             var c = Context(out var sub, out var committed);
+            DropParking(sub);
             var cand = sub.TryInsert(r, c, Settings, _t, out _);
             if (cand == null) return;
             Plan = Merge(committed, cand);
             r.State = RequestState.Assigned;
             PlanChanged?.Invoke();
+        }
+
+        /// <summary>Take no new requests and give back the pickups not yet aboard
+        /// (they wait again); deliver everyone aboard, then leave the fleet.</summary>
+        public void Retire()
+        {
+            if (Retiring) return;
+            Retiring = true;
+            foreach (var r in Plan.Stops.SelectMany(st => st.Board).ToList())
+            {
+                foreach (var st in Plan.Stops) { st.Board.Remove(r); st.Alight.Remove(r); }
+                r.State = RequestState.Waiting;
+            }
+            foreach (var st in Plan.Stops) st.Park = false;
+            Prune();
+            PlanChanged?.Invoke();
+        }
+
+        /// <summary>Back in service after Retire.</summary>
+        public void Unretire() => Retiring = false;
+
+        /// <summary>Idle with nothing to do, drive to `stop` and wait there: another bus needs the way.</summary>
+        public bool MakeRoom(string stop)
+        {
+            if (Mode != ShuttleMode.Idle || Plan.Stops.Count > 0 || stop == _w.AtStop) return false;
+            Plan.Stops.Add(new PlanStop { Stop = stop, Park = true });
+            PlanChanged?.Invoke();
+            return true;
         }
 
         /// <summary>Drop r from the plan (it gave up).</summary>
@@ -128,9 +184,9 @@ namespace RcTwin
                 _towLeft -= dt;
                 if (_towLeft <= 0.0)
                 {
-                    _w.Tow(s.ChargerStop);
+                    _w.Tow(_charger);
                     _arrivedFrom = null;
-                    if (Plan.Stops.Count > 0 && Plan.Stops[0].Stop == s.ChargerStop) Plan.Stops.RemoveAt(0);
+                    if (Plan.Stops.Count > 0 && Plan.Stops[0].Stop == _charger) Plan.Stops.RemoveAt(0);
                     BeginCharging();
                 }
                 return;
@@ -140,7 +196,8 @@ namespace RcTwin
                 _score.OnFlat();
                 var c0 = Context(out var sub0, out var committed0);
                 var keep = new ShuttlePlan();
-                keep.Stops.Add(new PlanStop { Stop = s.ChargerStop, Charge = true });
+                _charger = BatteryPolicy.NearestCharger(Settings, _t, _w.AtStop ?? (Plan.Stops.Count > 0 ? Plan.Stops[0].Stop : _legFrom));
+                keep.Stops.Add(new PlanStop { Stop = _charger, Charge = true });
                 foreach (var st in Plan.Stops)
                     foreach (var r in st.Board) r.State = RequestState.Waiting;
                 foreach (var st in Plan.Stops)
@@ -157,17 +214,19 @@ namespace RcTwin
                 return;
             }
             if (Mode != ShuttleMode.Charging && Battery == LowBattery.Fine) CheckBattery();
+            else if (Mode != ShuttleMode.Charging && Battery != LowBattery.Fine) RecheckLow();
 
             switch (Mode)
             {
                 case ShuttleMode.Idle:
                     if (Plan.Stops.Count > 0) StartNext(dt);
-                    else if (_w.Soc < s.IdleTopUpBelow && _w.AtStop != null)
+                    else if (_w.Soc < s.IdleTopUpBelow && _w.AtStop != null && !Retiring)
                     {
-                        if (_w.AtStop == s.ChargerStop) BeginCharging();
+                        string charger = ChargerFrom(_w.AtStop, _w.Soc);
+                        if (_w.AtStop == charger) { _charger = charger; BeginCharging(); }
                         else
                         {
-                            Plan.Stops.Add(new PlanStop { Stop = s.ChargerStop, Charge = true });
+                            Plan.Stops.Add(new PlanStop { Stop = charger, Charge = true });
                             StartNext(dt);
                         }
                     }
@@ -261,6 +320,7 @@ namespace RcTwin
             var stop = Plan.Stops[0];
             Plan.Stops.RemoveAt(0);
             _chargeHere |= stop.Charge;
+            if (stop.Charge) _charger = stop.Stop;
             int moved = 0;
             foreach (var r in stop.Alight)
             {
@@ -291,7 +351,7 @@ namespace RcTwin
         private int BoardWaitingHere()
         {
             string here = _w.AtStop;
-            if (here == null) return 0;
+            if (here == null || Retiring) return 0;
             int n = 0;
             foreach (var r in WaitingAt(here).Where(x => x.State == RequestState.Waiting).OrderBy(x => x.RaisedAt).ToList())
             {
@@ -339,7 +399,7 @@ namespace RcTwin
                 if (al.Count > 0) trial.Stops.Add(new PlanStop { Stop = st.Stop, Alight = al });
             }
             trial.Stops.Add(new PlanStop { Stop = r.Destination, Alight = { r } });
-            trial.Stops.Add(new PlanStop { Stop = Settings.ChargerStop, Charge = true });
+            trial.Stops.Add(new PlanStop { Stop = BatteryPolicy.NearestCharger(Settings, _t, r.Destination), Charge = true });
             var c = new PlanContext
             {
                 From = _w.AtStop, ArrivedFrom = _arrivedFrom, Now = _w.Now, Onboard = Aboard.Count + 1,
@@ -361,9 +421,34 @@ namespace RcTwin
         private void CheckBattery()
         {
             var c = Context(out var sub, out var committed);
-            var d = BatteryPolicy.Decide(sub, c, Settings, _t, out var next);
+            DropParking(sub);
+            var d = BatteryPolicy.Decide(sub, c, Settings, _t, out var next, from => ChargerFrom(from, c.Soc - sub.SocNeeded(c, Settings, _t)));
             if (d == LowBattery.Fine) return;
             Battery = d;
+            Plan = Merge(committed, next);
+            PlanChanged?.Invoke();
+        }
+
+        // With the battery low, the plan must still reach its charger with what is left (the
+        // reserve may go): the estimate per metre grows as the shuttle measures turns and
+        // waits. When it no longer does, it charges first, at the nearest charger.
+        private void RecheckLow()
+        {
+            var c = Context(out var sub, out var committed);
+            if (sub.Stops.Count == 0 || sub.SocNeeded(c, Settings, _t) <= c.Soc) return;
+            string charger = BatteryPolicy.NearestCharger(Settings, _t, c.From);
+            if (Battery == LowBattery.ChargeNow && sub.Stops[0].Charge && sub.Stops[0].Stop == charger) return;
+            var next = new ShuttlePlan();
+            next.Stops.Add(new PlanStop { Stop = charger, Charge = true });
+            foreach (var st in sub.Stops)
+            {
+                foreach (var r in st.Board) r.State = RequestState.Waiting;   // pickups go back to waiting
+                var al = st.Alight.FindAll(r => Aboard.Contains(r));
+                if (al.Count == 0) continue;
+                if (st.Stop == charger) next.Stops[0].Alight.AddRange(al);
+                else next.Stops.Add(new PlanStop { Stop = st.Stop, Alight = al });
+            }
+            Battery = LowBattery.ChargeNow;
             Plan = Merge(committed, next);
             PlanChanged?.Invoke();
         }
@@ -379,7 +464,7 @@ namespace RcTwin
                 if (sx <= _w.LegS) continue;
                 bool alight = Aboard.Any(r => r.Destination == x);
                 int seats = Settings.Capacity - Aboard.Count + Aboard.Count(r => r.Destination == x);
-                bool board = Battery == LowBattery.Fine && seats > 0 &&
+                bool board = Battery == LowBattery.Fine && !Retiring && seats > 0 &&
                              (WaitingAt(x).Any(r => r.State == RequestState.Waiting) ||
                               Plan.Stops.Skip(1).Any(st => st.Stop == x && st.Board.Count > 0));
                 if (!(alight || board) || !_w.StopEarlyAt(x)) continue;
@@ -431,7 +516,7 @@ namespace RcTwin
                 ? Math.Max(0.0, s.LeaveChargerAt - _w.Soc) / BatteryPolicy.ChargeRatePerSecond(s) : 0.0;
             return new PlanContext
             {
-                From = _w.AtStop ?? (Plan.Stops.Count > 0 ? Plan.Stops[0].Stop : s.ChargerStop),
+                From = _w.AtStop ?? (Plan.Stops.Count > 0 ? Plan.Stops[0].Stop : _legFrom ?? s.Chargers[0]),
                 ArrivedFrom = _arrivedFrom, Now = _w.Now + extra, Onboard = Aboard.Count,
                 Soc = Mode == ShuttleMode.Charging ? Math.Max(_w.Soc, s.LeaveChargerAt) : _w.Soc, SocPerMetre = spm,
             };
@@ -461,8 +546,15 @@ namespace RcTwin
             {
                 var st = Plan.Stops[i];
                 if (i == 0 && Mode == ShuttleMode.Driving) continue;
-                if (st.Board.Count == 0 && st.Alight.Count == 0 && !st.Charge) Plan.Stops.RemoveAt(i);
+                if (st.Board.Count == 0 && st.Alight.Count == 0 && !st.Charge && !st.Park) Plan.Stops.RemoveAt(i);
             }
+        }
+
+        // A stop only to make room is given up for real work.
+        private static void DropParking(ShuttlePlan p)
+        {
+            foreach (var st in p.Stops) st.Park = false;
+            p.Stops.RemoveAll(st => st.Board.Count == 0 && st.Alight.Count == 0 && !st.Charge);
         }
     }
 }

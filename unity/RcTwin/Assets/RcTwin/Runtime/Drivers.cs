@@ -282,6 +282,10 @@ namespace RcTwin
         /// <summary>Back-offs this trip.</summary>
         public int BackOffs { get; private set; }
         public bool Backing => _backing;
+        /// <summary>Held up by another bus (the fleet's traffic rules): not moving is no stall.</summary>
+        public bool Held { get; set; }
+        /// <summary>A hold allowing less than this is a hold [m/s]: twice what the stall test calls moving (StallDistance in StallTime).</summary>
+        public const double HeldBelow = 0.2;
 
         private double _stalled, _moved;   // how long the driver has asked for throttle, how far the car went in that time
         private bool _backing;
@@ -315,7 +319,7 @@ namespace RcTwin
                 if (_backT < BackTime && _backS < BackDistance) return (_backSteer, BackThrottle);
                 _backing = false;
             }
-            if (throttle > MinThrottle)
+            if (throttle > MinThrottle && !Held)
             {
                 _stalled += Tick;
                 _moved += v * Tick;

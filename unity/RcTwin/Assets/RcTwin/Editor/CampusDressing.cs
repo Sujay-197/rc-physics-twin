@@ -447,7 +447,10 @@ namespace RcTwin.EditorTools
                 models.Add(new CampusDressingView.Model { prefab = m, kind = (DressingKind)(int)prop.Kind, height = prop.Height });
             }
             if (models.Count == 0) return null;
-            var keep = plan.FindAll(p => index.ContainsKey(p.Prop));
+            // Only on the grass under the campus: beyond it a prop is only drawn, mostly seen from above.
+            var ground = CampusSceneBuilder.Ground;
+            var keep = plan.FindAll(p => index.ContainsKey(p.Prop) && (ground.width <= 0f || ground.Contains(p.At)));
+            if (keep.Count < plan.Count) Debug.Log($"Campus dressing: {plan.Count - keep.Count} props off the grass left out.");
             var root = new GameObject(RootName);
             var view = root.AddComponent<CampusDressingView>();
             view.models = models.ToArray();

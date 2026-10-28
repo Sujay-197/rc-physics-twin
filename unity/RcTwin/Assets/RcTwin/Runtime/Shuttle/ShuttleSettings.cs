@@ -9,6 +9,10 @@ namespace RcTwin
         public double RequestInterval = 20.0;      // one new request this often across the campus [s]
         public double GiveUpAfter = 180.0;         // a student waits this long, then leaves [s]
 
+        // The fleet (Docs/specs/2026-10-25-shuttle-fleet-design.md)
+        public int Buses = 3;
+        public const int MaxBuses = 6;
+
         // The shuttle
         public int Capacity = 6;
         public double Cruise = 2.0;                // [m/s]
@@ -22,7 +26,8 @@ namespace RcTwin
         public double Reserve = 0.10;              // of a full charge, never planned into
         public double EnergySafety = 1.15;
         public double IdleTopUpBelow = 0.60;
-        public string ChargerStop = "AB1";
+        /// <summary>Stops with a charger, one bus at a time each: AB1, and AB3, the dead end on the far side.</summary>
+        public string[] Chargers = { "AB1", "AB3" };
 
         // Score
         public int DeliverBase = 100, DeliverMin = 20, DirectBonus = 20;

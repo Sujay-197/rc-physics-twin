@@ -168,5 +168,41 @@ namespace RcTwin.Tests
             Assert.Greater(seen.Count, 10, "the campus has turn-rounds to plan");
             Assert.IsEmpty(missing, "no turn found");
         }
+
+        [Test, Timeout(300000)]
+        public void EveryTurnRoundAndLineUpBetweenTheLanesIsPlanned()
+        {
+            // The shuttle fleet keeps left (ADR 0012): it arrives at the end of the
+            // left lane and turns into the left lane of the way out, or, where the
+            // road bends at the stop, lines up with it first.
+            double lane = ShuttleFleet.LaneOffset;
+            using var car = new TwinVehicle(RcTwinNative.Tier.L2DoubleTrack, Car());
+            var planner = Planner(car);
+            planner.GoalSMax = TwinAutopilot.LaneGoalSMax;
+            var seen = new HashSet<string>();
+            var missing = new List<string>();
+            foreach (var o in _net.StopNames())
+                foreach (var d in _net.StopNames())
+                {
+                    if (_net.Stops[o].node == _net.Stops[d].node) continue;
+                    var outR = Lanes.Offset(_net.Route(o, d), lane);
+                    double hOut = Heading(outR);
+                    foreach (var a in _net.StopNames())
+                    {
+                        if (_net.Stops[a].node == _net.Stops[o].node) continue;
+                        var inR = Lanes.Offset(_net.Route(a, o), lane);
+                        // At a junction stop the bus waits short of the crossing road (TwinAutopilot.junctionSetback).
+                        if (_net.Roads(o) >= 3) inR = Lanes.Shorten(inR, 0.5 * _net.RoadWidth + Footprint(car).halfLength);
+                        int n = inR.Length;
+                        double hIn = Math.Atan2(inR[n - 2] - inR[n - 5], inR[n - 3] - inR[n - 6]);
+                        if (!TurnPlanner.FacesAway(hIn, hOut, TwinAutopilot.HandOverHeading)) continue;
+                        if (!seen.Add($"{o} {Math.Round(hIn, 1)} {outR[3]:0.0} {outR[4]:0.0}")) continue;
+                        if (planner.Plan(inR[n - 3], inR[n - 2], hIn, outR) == null)
+                            missing.Add($"{a} to {o} to {d}");
+                    }
+                }
+            Assert.Greater(seen.Count, 10, "the campus has turn-rounds to plan");
+            Assert.IsEmpty(missing, "no turn found");
+        }
     }
 }

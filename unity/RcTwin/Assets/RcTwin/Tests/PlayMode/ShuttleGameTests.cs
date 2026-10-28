@@ -1,5 +1,6 @@
 // Play Mode: the campus shuttle game on the Campus scene, on the Unity twin's
-// own physics (Docs/specs/2026-10-21-campus-shuttle-design.md).
+// own physics (Docs/specs/2026-10-21-campus-shuttle-design.md), with one bus;
+// FleetGameTests runs several.
 using System.Collections;
 using System.Linq;
 using NUnit.Framework;
@@ -17,18 +18,25 @@ namespace RcTwin.Tests
         private IEnumerator Load()
         {
             ShuttleGame.RunInEditor = true;
+            ShuttleFleet.BusesOverride = 1;
             SceneManager.LoadScene("Campus");
             yield return null;
             yield return null;
             yield return new WaitForFixedUpdate();
-            _game = Object.FindFirstObjectByType<ShuttleGame>();
-            Assert.IsNotNull(_game, "the campus car runs the shuttle game");
+            var fleet = Object.FindFirstObjectByType<ShuttleFleet>();
+            Assert.IsNotNull(fleet, "the campus runs the shuttle game");
+            Assert.AreEqual(1, fleet.Buses.Count);
+            _game = fleet.Buses[0];
             _car = _game.GetComponent<TwinCar>();
             _game.Spawner.RatePerSecond = 0.0;   // only the requests a test raises
         }
 
         [TearDown]
-        public void Off() => ShuttleGame.RunInEditor = false;
+        public void Off()
+        {
+            ShuttleGame.RunInEditor = false;
+            ShuttleFleet.BusesOverride = 0;
+        }
 
         private static IEnumerator Fast(System.Func<bool> until, float gameSeconds)
         {
@@ -49,7 +57,8 @@ namespace RcTwin.Tests
             SceneManager.LoadScene("Campus");
             yield return null;
             yield return null;
-            Assert.IsNull(Object.FindFirstObjectByType<ShuttleGame>(), "the autopilot demo and its tests keep the car");
+            Assert.IsNull(Object.FindFirstObjectByType<ShuttleFleet>(), "the autopilot demo and its tests keep the car");
+            Assert.IsNull(Object.FindFirstObjectByType<ShuttleGame>());
         }
 
         [UnityTest]
