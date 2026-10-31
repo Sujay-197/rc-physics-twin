@@ -82,6 +82,7 @@
 
 - [x] **Vertical faces in the scene (ramp sides, plateau edges) were not obstacles.** Fixed by ADR 0009: walls are contact segments resolved after every Core step with SlipX's `segment_contact` (ABI v7, `rc_twin_add_wall`), and `RaycastGround` climbs only steps under half a wheel radius. The flat-ground scene walls the hill's sides and the bank; the campus walls its kerb lines and buildings. Reported 2026-10-19, fixed 2026-10-20.
 - [x] Walls in the RL environment. `RcTwinEnv(walls=...)` gives the car walls and charges each strike (`REWARD["wall"]`, speed lost to the wall); `CampusEnv` uses the campus's kerbs and buildings by default, so a kerb strike bounces and costs reward instead of ending the episode. The kerb lines and sidewalk runs are computed once by `tools/campus_import.py` and shared with the Unity scene.
+- [ ] Nothing fails the build if a native binary needs more than the baseline CPU: `slipx_assert_determinism_flags()` only scans the flags for `-march=native`, and the toolchain's pin (`x86_64_v2`, `tools/bootstrap_toolchain.py`) is not checked. A post-build check for EVEX code in `rc_twin.dll`, or running `test_capi` on a baseline CPU in CI, would catch it.
 - [ ] Walls are planar and infinitely tall (ADR 0009): a car on the plateau is held in by the plateau's own side walls. A wall with a height range, and walls extracted from arbitrary colliders, are follow-ups.
 
 ## Housekeeping

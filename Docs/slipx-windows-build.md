@@ -10,7 +10,7 @@ This machine has Visual Studio Build Tools 2026 (MSVC 14.51) but no Windows SDK,
 
 | Tool | Version | Source |
 |---|---|---|
-| Compiler | Zig 0.16.0 (`zig c++`, Clang 21.1.0), target `x86_64-windows-gnu`, C runtime UCRT | PyPI `ziglang` |
+| Compiler | Zig 0.16.0 (`zig c++`, Clang 21.1.0), target `x86_64-windows-gnu`, CPU `x86_64_v2` (pinned so the binaries run on machines other than the builder), C runtime UCRT | PyPI `ziglang` |
 | CMake | 4.4.4 | PyPI `cmake` |
 | Ninja | 1.13.2 | PyPI `ninja` |
 | GoogleTest | v1.14.0 | fetched by upstream's CMake (`cmake/SlipxTesting.cmake`) |

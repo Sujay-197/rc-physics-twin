@@ -4,8 +4,10 @@
 Creates a venv with pinned CMake, Ninja and Zig from PyPI, then writes
 one-line .cmd wrappers around `zig cc`, `zig c++`, `zig ar`, `zig ranlib`
 and `zig rc`, plus a CMake toolchain file pointing at them. Zig targets
-x86_64-windows-gnu (Clang + mingw-w64, UCRT). See Docs/slipx-windows-build.md
-for why this is used instead of MSVC for now.
+x86_64-windows-gnu (Clang + mingw-w64, UCRT) on a fixed baseline CPU, not the
+build machine's: left to itself Zig compiles for the host, and a DLL built on
+an AVX-512 machine then faults on one without it. See
+Docs/slipx-windows-build.md for why this is used instead of MSVC for now.
 
 Usage (from the repo root):
     python tools/bootstrap_toolchain.py
@@ -21,6 +23,7 @@ import venv
 from pathlib import Path
 
 PINS = ["cmake==4.4.4", "ninja==1.13.2", "ziglang==0.16.0"]
+CPU = "-target x86_64-windows-gnu -mcpu=x86_64_v2"
 
 ROOT = Path(__file__).resolve().parent.parent
 TC = ROOT / ".toolchain"
@@ -42,7 +45,7 @@ def main() -> int:
         print(f"zig not found at {zig}", file=sys.stderr)
         return 1
 
-    tools = {"cc": "cc", "c++": "c++", "ar": "ar", "ranlib": "ranlib", "rc": "rc"}
+    tools = {"cc": f"cc {CPU}", "c++": f"c++ {CPU}", "ar": "ar", "ranlib": "ranlib", "rc": "rc"}
     for name, sub in tools.items():
         (TC / f"zig-{name}.cmd").write_text(
             f'@echo off\r\n"{zig}" {sub} %*\r\n', encoding="ascii"
