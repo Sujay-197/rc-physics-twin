@@ -39,9 +39,13 @@ A physics-first digital twin of a 1/10-scale electric RC car, driving a campus s
               road edge, for a fleet sim such as campus_fleet_man_unity
 ```
 
+## Try it
+
+**[Download the Windows build](https://github.com/Sujay-197/rc-physics-twin/releases/latest)** (220 MB), unzip it and run `RcTwinCampus.exe`. Nothing needs installing, and you don't need Unity. The exe isn't signed, so Windows may say "Windows protected your PC": click **More info**, then **Run anyway**.
+
 ## Getting started
 
-Tested on Windows 11 only. CI builds on Windows, and the core has not been tried on other platforms from this repo.
+To build from source. Tested on Windows 11 only. CI builds on Windows, and the core has not been tried on other platforms from this repo.
 
 You need Python 3.12 or newer and Git. No admin rights or Visual Studio are needed for the native build: the bootstrap installs Zig (Clang 21), CMake and Ninja into `.toolchain/`.
 
