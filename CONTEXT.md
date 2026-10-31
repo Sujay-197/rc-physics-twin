@@ -13,6 +13,6 @@ Pinned vocabulary so docs, code and issues stay consistent.
 | **Edge profiler** | Batch job that produces edge profiles by running the Core headlessly. |
 | **SoC** | Battery state of charge, 0 to 1. |
 | **Provenance label** | `measured`, `identified` or `provisional` tag on every parameter set. |
-| **Oracle** | Independent model (gymkhana single-track drift) used to cross-check the Core in planar scenarios. |
+| **Oracle** | Independent model (gymkhana single-track drift) to cross-check the Core in planar scenarios. Planned, not yet in the repo. |
 | **Fleet sim** | The separate demand/dispatch simulation (`campus_fleet_man_unity`). Consumes edge profiles, never runs the Core in its hot loop. |
 | **Manual control** | Keyboard/gamepad writing into the same action vector the RL policy uses. |

@@ -6,7 +6,7 @@ Phase 1, first item: build `slipx_core` standalone and run the conformance check
 
 ## Toolchain
 
-This machine has Visual Studio Build Tools 2026 (MSVC 14.51) but no Windows SDK, so MSVC cannot compile or link yet. This run used a self-contained toolchain in a scratch Python venv instead, with no admin rights needed:
+The machine this first ran on had Visual Studio Build Tools 2026 (MSVC 14.51) but no Windows SDK, so MSVC cannot compile or link yet. This run used a self-contained toolchain in a scratch Python venv instead, with no admin rights needed:
 
 | Tool | Version | Source |
 |---|---|---|

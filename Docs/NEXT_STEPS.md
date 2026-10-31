@@ -1,13 +1,6 @@
-# Next Steps
+# Roadmap
 
-## Decisions needed before Phase 1
-
-- [x] Sign off ADR 0003 (Unity instead of Isaac Sim for the twin). Accepted 2026-10-19.
-- [x] Choose the target car: generic 1/10 electric Ackermann, `provisional`, until real numbers come from `hardware-bom.md`.
-- [x] Fork `ibrahimsel/slipx` on GitHub and decide: vendor into `core/` or git submodule. Forked ([Sujay-197/slipx](https://github.com/Sujay-197/slipx)); **vendored** into `core/` at `ebdbf3f`.
-- [ ] Verify upstream `LICENSE` files (SlipX, Gym-Khana) and fill `THIRD_PARTY.md`. SlipX done 2026-10-19; Gym-Khana still open.
-- [x] Confirm Unity version and whether it can load a C++ native plugin on the dev machine (Windows). Unity 6000.5.3f1 loads `rc_twin.dll`; Edit and Play Mode suites run in batch mode.
-- [ ] Open `rc_transit/docs/hardware-bom.md` in the fleet repo; extract any real mass, wheelbase, motor, battery numbers.
+What has been done and what is open, phase by phase. Open items (`- [ ]`) are all up for grabs; see [`CONTRIBUTING.md`](../CONTRIBUTING.md).
 
 ## Phase 1: Foundation
 
@@ -75,6 +68,8 @@
 
 ## Phase 6: Empirical (optional)
 
+The project is simulation-only today, so these need a real car.
+
 - [ ] Coast-down, skidpad and acceleration tests on the real RC car.
 - [ ] Identify parameters; promote labels from `provisional` to `identified`.
 
@@ -88,4 +83,5 @@
 ## Housekeeping
 
 - [x] CI: build, unit tests, determinism hash check per build. `.github/workflows/ci.yml` on the reference toolchain: rc_twin and its suites, the C# bindings, every SlipX layer's tests, and `tools/check_determinism.py` against `conformance/reference_hashes.tsv`. Unity's suites need a licensed editor and stay local.
-- [ ] Decide public/private and set GitHub repo description and topics.
+- [x] Public: the repo is open source under Apache-2.0, with `CONTRIBUTING.md` and a README for newcomers.
+- [ ] Builds other than Windows. CI and all testing are on Windows.

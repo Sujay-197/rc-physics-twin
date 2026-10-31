@@ -18,4 +18,4 @@ Rules:
 - Never present a `provisional` set as validated.
 - Numbers must come from a datasheet, a measurement, or a cited source. Do not invent them.
 
-First car (to be created in Phase 1): `reference_1_10_electric`, parameters sourced from the Gym-Khana F1TENTH defaults and a named motor/battery datasheet, all labeled `provisional`.
+There are no car directories yet. The twin runs SlipX's reference car with the settings in `native/` and the Unity project, all labelled `provisional`.
