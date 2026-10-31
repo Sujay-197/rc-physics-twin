@@ -1,13 +1,10 @@
 # Third-party code
 
-Status of each upstream. **SlipX is vendored in `core/`**; nothing else is. Before vendoring anything else, confirm the upstream `LICENSE` file and copy it in alongside the code.
+What this repository contains from others, and under what terms. **SlipX is the only code vendored here**, in `core/`. Before vendoring anything else, confirm the upstream `LICENSE` file and copy it in alongside the code.
 
 | Upstream | License (as read) | Where read | Plan | Verified against LICENSE file |
 |---|---|---|---|---|
 | SlipX (ibrahimsel/slipx) | Apache-2.0 | Upstream `LICENSE` and `NOTICE` at pinned commit `ebdbf3f` (see below) | **Vendored** in `core/` at `ebdbf3f` with upstream `LICENSE` and `NOTICE` (see below); upstream PRs go through the fork [Sujay-197/slipx](https://github.com/Sujay-197/slipx) | **Yes**, 2026-10-19 |
-| Gym-Khana (TeoIlie/Gym-Khana) | MIT | PyPI metadata | Dependency or fork under `sim_py/`; keep copyright notice | No |
-| ApexSim (pzimbrod/apexsim) | Apache-2.0 | GitHub README | Reference only | No |
-| TLabVehiclePhysics (TLabAltoh) | MIT | Third-party directory listing | Reference only | No |
 | OpenStreetMap data (campus extract) | ODbL 1.0 | [openstreetmap.org/copyright](https://www.openstreetmap.org/copyright) | **Included**: `campus/osm/amrita.osm.json` and what `tools/campus_scenery.py` derives from it (`campus/scenery.json`, the campus scenery meshes); attribution in the files and below | Yes, 2026-10-20 |
 
 ## SlipX: pinned commit and what its license files say
@@ -46,24 +43,21 @@ Checked 2026-10-19 against the upstream repository, not package metadata.
 | `core/src/core/slipx_core/tests/test_low_speed.cpp` (new), `tests/CMakeLists.txt` | 12 tests for the above | Ours (ADR 0011); not sent |
 | (none: `slipx/contact.hpp` used unchanged) | `native/src/rc_twin.cpp` calls SlipX's `segment_contact` and `resolve_contact` (ADR-0055) for walls; the header is not modified | Ours (ADR 0009) |
 
-Upstream lineage note: Gym-Khana says it is based on the UPenn `f1tenth_gym`. Check that lineage's license before copying code that may originate there.
-
 ## Apache-2.0 obligations (SlipX fork)
 
 - Keep the upstream `LICENSE` and any `NOTICE` text.
 - Carry prominent notices in every file you modify.
 - Do not use upstream names or marks to endorse this project.
 
-## MIT obligations (Gym-Khana)
+## Read but not included
 
-- Keep the copyright and permission notice in copies or substantial portions.
+[Gym-Khana](https://github.com/TeoIlie/Gym-Khana), [ApexSim](https://github.com/pzimbrod/apexsim) and [TLabVehiclePhysics](https://github.com/tlabaltoh/tlabvehiclephysics) were read as references (`Docs/references.md`). No code from them is in this repository, and their licences have not been checked against their `LICENSE` files. Check them before copying anything. Gym-Khana also says it is based on the UPenn `f1tenth_gym`, so check that lineage too.
 
 ## OpenStreetMap (campus scenery)
 
 `campus/osm/amrita.osm.json` is an OpenStreetMap extract of the Amrita Vishwa Vidyapeetham campus, Coimbatore (Overpass API, 2026-10-20). `campus/scenery.json` and the scenery meshes in `unity/RcTwin/Assets/RcTwin/Generated/Campus/` are derived from it. Map data (c) OpenStreetMap contributors, available under the Open Database License (ODbL) 1.0, https://www.openstreetmap.org/copyright. A derived database shared publicly must stay under the ODbL.
 
-Map screenshots used as references for tree cover and bare ground are third-party imagery. They and everything made from them (`campus/reference/`, `Generated/Campus/Local/`) stay local and out of git.
-
+`tools/campus_scenery.py --images` can use local map screenshots as references for tree cover and bare ground. Those are third-party imagery: they and everything made from them (`campus/reference/`, `Generated/Campus/Local/`) stay local and out of git, and have never been in this repository. To share a player, build it from a checkout without them.
 
 ## Campus look (Poly Haven, Inter)
 

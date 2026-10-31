@@ -16,7 +16,7 @@ Links gathered 2026-10-19. Licenses noted as read from metadata; verify against 
 
 ## Our own repos
 
-- Fleet sim: https://github.com/Sujay-197/campus_fleet_man_unity (see `Docs/NEXT_STEPS.md`, `rc_transit/`, `Docs/specs/2026-08-16-physical-rc-transit-design.md`)
+- Fleet sim: https://github.com/Sujay-197/campus_fleet_man_unity (see `Docs/NEXT_STEPS.md`)
 
 ## Concepts to learn or cite
 

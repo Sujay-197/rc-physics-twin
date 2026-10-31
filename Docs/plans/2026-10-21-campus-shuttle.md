@@ -1,7 +1,5 @@
 # Campus Shuttle Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
-
 **Goal:** Turn the campus player into an endless autonomous-shuttle sandbox: students request rides between stops, one shuttle plans, pools, drives itself with the existing autopilot, charges at AB1, and scores.
 
 **Architecture:** The game's rules live in plain C# free of `UnityEngine` (requests, travel times, the shuttle's plan, battery policy, score, the shuttle's state machine), tested in Edit Mode like `Drivers.cs`. A `ShuttleGame` MonoBehaviour connects them to the scene: it drives `TwinAutopilot.Go`, reads and sets the car's battery through `TwinCar`, and moves the student figures. `ShuttleHud` draws layout C. `CampusSceneBuilder` adds the game, the shuttle body, shelters and the charger, so the campus player is the game.

@@ -295,7 +295,7 @@ What the twin drives is unchanged: every trip, no kerb contact, the same time. W
 
 ## A second round on the Unity car: a drivable line and kerb contact
 
-The first round's lessons, applied (branch `rl/twin-car-2`, on the Core with the ESC reverse). The bar is now the autopilot itself: the Unity-car gains with the kerb recovery, 98 / 82 / 86 %.
+The first round's lessons, applied (on the Core with the ESC reverse). The bar is now the autopilot itself: the Unity-car gains with the kerb recovery, 98 / 82 / 86 %.
 
 **What changed.**
 
@@ -330,7 +330,7 @@ The first round's lessons, applied (branch `rl/twin-car-2`, on the Core with the
 
 ## A third round: selecting on the hardest training cars
 
-The second round's first candidate (branch `rl/twin-car-3`). Validation drove only ordinary training cars, which the residual's controller already finishes, so selection could only rank checkpoints by return. Each seed kept a checkpoint from its first 1 to 3M steps.
+The second round's first candidate. Validation drove only ordinary training cars, which the residual's controller already finishes, so selection could only rank checkpoints by return. Each seed kept a checkpoint from its first 1 to 3M steps.
 
 **What changed.** `train_rl.py --val-edge` adds a second validation set at every validation point. It uses `RANGES_TRAIN_EDGE`, the hard quarter of each training range: grip 0.8 to 0.9, payload 0.75 to 1 kg, servo bandwidth 0.7 to 0.85, motor torque 0.8 to 0.9, tyre stiffness 0.8 to 0.9, battery resistance 1.6 to 2. These cars are inside the training ranges and apart from the held-out ones, and use seeds of their own (45000 onward). Checkpoints rank on the two sets' mean success, then their mean return. Each set had 40 trips. Everything else is as in the second round: reward v3, the Unity car, the residual on the Unity-car gains, 20M steps for the residual and 45M for PPO + history.
 

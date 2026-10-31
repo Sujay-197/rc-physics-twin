@@ -2,5 +2,15 @@ rc-physics-twin
 Copyright 2026 The rc-physics-twin authors
 
 This product includes software developed by third parties. See THIRD_PARTY.md
-for the upstream projects, their licenses, and the modifications made. Upstream
-copyright and license notices are preserved in third_party/.
+for the upstream projects, their licenses, and the modifications made.
+
+core/ is SlipX, Copyright 2026 The SlipX Authors, under the Apache License 2.0.
+Its LICENSE and NOTICE are in core/, and the files we changed say so.
+
+Map data (c) OpenStreetMap contributors, available under the Open Database
+License 1.0, https://www.openstreetmap.org/copyright. This covers
+campus/osm/amrita.osm.json, campus/scenery.json and the scenery meshes derived
+from them, which are not under the Apache License.
+
+The Inter typeface, used by built players, is under the SIL Open Font License
+1.1 (third_party/inter/OFL.txt).
