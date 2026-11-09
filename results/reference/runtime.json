@@ -1,0 +1,1177 @@
+{
+  "schema": "rc-physics-twin runtime benchmark 1",
+  "started": "2026-11-09T19:10:51+0530",
+  "machine": {
+    "cpu": "AMD Ryzen 7 9700X 8-Core Processor",
+    "physical_cores": 8,
+    "logical_processors": 16,
+    "cpu_base_clock_mhz": 3800,
+    "ram_gib": 31.1,
+    "gpus": [
+      "NVIDIA GeForce RTX 5060 Ti (driver 32.0.16.1088)",
+      "AMD Radeon(TM) Graphics (driver 32.0.21042.62)"
+    ],
+    "os": "Microsoft Windows 11 Pro 10.0.26300 (build 26300)",
+    "power_scheme": "Power Scheme GUID: 381b4222-f694-41f0-9685-ff5bb260df2e  (Balanced)",
+    "python": "CPython 3.14.6 (C:\\Users\\work\\work\\clg\\funda\\rc-physics-twin\\.venv\\Scripts\\python.exe)",
+    "compiler": {
+      "cmake_build_type": "Release",
+      "cxx_flags_release": "-O3 -DNDEBUG",
+      "cxx_compiler": "C:/Users/work/work/clg/funda/rc-physics-twin/.toolchain/zig-c++.cmd",
+      "wrapper": "\"C:\\Users\\work\\work\\clg\\funda\\rc-physics-twin\\.toolchain\\venv\\Lib\\site-packages\\ziglang\\zig.exe\" c++ -target x86_64-windows-gnu -mcpu=x86_64_v2 %*",
+      "zig": "0.16.0",
+      "clang": "clang version 21.1.0",
+      "flags_rc_twin": "-DRC_TWIN_BUILDING -Drc_twin_EXPORTS -O3 -DNDEBUG -std=c++17 -fvisibility=hidden -fvisibility-inlines-hidden -ffp-contract=off -Wall -Wextra -Wpedantic -Wconversion",
+      "flags_bench_step": "-O3 -DNDEBUG -std=c++17 -ffp-contract=off"
+    }
+  },
+  "settings": {
+    "steps": 200000,
+    "reps": 9,
+    "episodes": 20,
+    "py_reps": 5,
+    "profiler_reps": 9,
+    "idle_threshold": 0.1,
+    "idle_timeout": 1800.0,
+    "retries": 3
+  },
+  "load_metric": "1 - idle/total over all logical CPUs (GetSystemTimes); load_others_during subtracts this benchmark's one thread",
+  "native_scenario": {
+    "route": "AB3 -> S4",
+    "route_length_m": 69.008,
+    "driver_path_points": 1397,
+    "road_centreline_points": 28,
+    "road_width_m": 1.409060192,
+    "walls": 18,
+    "wall_segments_max": 176,
+    "unity_car": {
+      "wheel_inertia": 1e-05,
+      "ackermann": 1.0,
+      "wheel_rate": 310.8925386343148,
+      "damping": 9.89601685880785,
+      "travel": 0.015,
+      "v_kinematic": 0.3
+    },
+    "footprint_margin_m": 0.0175,
+    "controller": "pure pursuit, 0.6 m lookahead, speed hold at 2 m/s, updated every 10 steps",
+    "dt_s": 0.001,
+    "integrator": "RK4"
+  },
+  "native": [
+    {
+      "case": "l0",
+      "mode": "core",
+      "steps_per_run": 200000,
+      "ns_per_step": {
+        "median": 81.683,
+        "q1": 81.511,
+        "q3": 81.984,
+        "iqr": 0.472999999999999,
+        "n": 9
+      },
+      "real_time_factor": {
+        "median": 12242.449469289815,
+        "q1": 12197.501951600312,
+        "q3": 12268.2828084553,
+        "iqr": 70.78085685498809,
+        "n": 9
+      },
+      "samples_ns": [
+        81.984,
+        81.446,
+        81.466,
+        81.564,
+        81.683,
+        82.02,
+        81.511,
+        81.936,
+        84.959
+      ],
+      "resets_per_run": 5,
+      "wall_contacts_per_run": 0,
+      "conditions": {
+        "load_before": 0.0878,
+        "load_during": 0.15,
+        "load_others_during": 0.0875,
+        "waited_s": 26.0,
+        "attempts": 2,
+        "idle": true
+      }
+    },
+    {
+      "case": "l0",
+      "mode": "abi1",
+      "steps_per_run": 200000,
+      "ns_per_step": {
+        "median": 99.018,
+        "q1": 98.079,
+        "q3": 101.629,
+        "iqr": 3.5500000000000114,
+        "n": 9
+      },
+      "real_time_factor": {
+        "median": 10099.173887575997,
+        "q1": 9839.711106081924,
+        "q3": 10195.862518989794,
+        "iqr": 356.1514129078696,
+        "n": 9
+      },
+      "samples_ns": [
+        102.041,
+        102.067,
+        99.239,
+        101.629,
+        98.07,
+        99.018,
+        98.079,
+        98.031,
+        98.785
+      ],
+      "resets_per_run": 5,
+      "wall_contacts_per_run": 0,
+      "conditions": {
+        "load_before": 0.0737,
+        "load_during": 0.1058,
+        "load_others_during": 0.0433,
+        "waited_s": 2.0,
+        "attempts": 1,
+        "idle": true
+      }
+    },
+    {
+      "case": "l0",
+      "mode": "abi10",
+      "steps_per_run": 200000,
+      "ns_per_step": {
+        "median": 83.65,
+        "q1": 83.216,
+        "q3": 86.834,
+        "iqr": 3.618000000000009,
+        "n": 9
+      },
+      "real_time_factor": {
+        "median": 11954.57262402869,
+        "q1": 11516.22636294539,
+        "q3": 12016.91982311094,
+        "iqr": 500.6934601655503,
+        "n": 9
+      },
+      "samples_ns": [
+        88.207,
+        86.834,
+        86.936,
+        85.534,
+        83.354,
+        83.65,
+        83.216,
+        83.117,
+        83.164
+      ],
+      "resets_per_run": 5,
+      "wall_contacts_per_run": 0,
+      "conditions": {
+        "load_before": 0.034,
+        "load_during": 0.0739,
+        "load_others_during": 0.0114,
+        "waited_s": 2.0,
+        "attempts": 1,
+        "idle": true
+      }
+    },
+    {
+      "case": "l1",
+      "mode": "core",
+      "steps_per_run": 200000,
+      "ns_per_step": {
+        "median": 163.772,
+        "q1": 163.31,
+        "q3": 167.251,
+        "iqr": 3.9410000000000025,
+        "n": 9
+      },
+      "real_time_factor": {
+        "median": 6106.049874215373,
+        "q1": 5979.037494544128,
+        "q3": 6123.32374012614,
+        "iqr": 144.28624558201227,
+        "n": 9
+      },
+      "samples_ns": [
+        169.879,
+        171.642,
+        163.31,
+        163.035,
+        162.951,
+        163.518,
+        163.772,
+        167.251,
+        164.69
+      ],
+      "resets_per_run": 5,
+      "wall_contacts_per_run": 0,
+      "conditions": {
+        "load_before": 0.0265,
+        "load_during": 0.0887,
+        "load_others_during": 0.0262,
+        "waited_s": 2.0,
+        "attempts": 1,
+        "idle": true
+      }
+    },
+    {
+      "case": "l1",
+      "mode": "abi1",
+      "steps_per_run": 200000,
+      "ns_per_step": {
+        "median": 175.338,
+        "q1": 175.06,
+        "q3": 177.172,
+        "iqr": 2.1119999999999948,
+        "n": 9
+      },
+      "real_time_factor": {
+        "median": 5703.2702551643115,
+        "q1": 5644.232723003635,
+        "q3": 5712.327202102137,
+        "iqr": 68.09447909850132,
+        "n": 9
+      },
+      "samples_ns": [
+        182.857,
+        181.093,
+        175.338,
+        174.804,
+        174.548,
+        175.299,
+        175.951,
+        175.06,
+        177.172
+      ],
+      "resets_per_run": 5,
+      "wall_contacts_per_run": 0,
+      "conditions": {
+        "load_before": 0.0356,
+        "load_during": 0.0946,
+        "load_others_during": 0.0321,
+        "waited_s": 2.0,
+        "attempts": 1,
+        "idle": true
+      }
+    },
+    {
+      "case": "l1",
+      "mode": "abi10",
+      "steps_per_run": 200000,
+      "ns_per_step": {
+        "median": 166.812,
+        "q1": 166.451,
+        "q3": 167.532,
+        "iqr": 1.0810000000000173,
+        "n": 9
+      },
+      "real_time_factor": {
+        "median": 5994.772558329137,
+        "q1": 5969.008905761287,
+        "q3": 6007.774059633166,
+        "iqr": 38.76515387187919,
+        "n": 9
+      },
+      "samples_ns": [
+        173.231,
+        173.806,
+        166.812,
+        167.532,
+        166.236,
+        167.475,
+        166.274,
+        166.451,
+        166.593
+      ],
+      "resets_per_run": 5,
+      "wall_contacts_per_run": 0,
+      "conditions": {
+        "load_before": 0.0298,
+        "load_during": 0.0769,
+        "load_others_during": 0.0144,
+        "waited_s": 2.0,
+        "attempts": 1,
+        "idle": true
+      }
+    },
+    {
+      "case": "l2",
+      "mode": "core",
+      "steps_per_run": 200000,
+      "ns_per_step": {
+        "median": 1187.818,
+        "q1": 1183.823,
+        "q3": 1189.099,
+        "iqr": 5.27599999999984,
+        "n": 9
+      },
+      "real_time_factor": {
+        "median": 841.8798166049007,
+        "q1": 840.9728710561526,
+        "q3": 844.7208746577824,
+        "iqr": 3.7480036016297618,
+        "n": 9
+      },
+      "samples_ns": [
+        1193.46,
+        1182.53,
+        1191.237,
+        1183.823,
+        1185.397,
+        1187.818,
+        1181.871,
+        1189.099,
+        1188.626
+      ],
+      "resets_per_run": 5,
+      "wall_contacts_per_run": 0,
+      "conditions": {
+        "load_before": 0.0275,
+        "load_during": 0.0976,
+        "load_others_during": 0.0351,
+        "waited_s": 2.0,
+        "attempts": 1,
+        "idle": true
+      }
+    },
+    {
+      "case": "l2",
+      "mode": "abi1",
+      "steps_per_run": 200000,
+      "ns_per_step": {
+        "median": 1214.097,
+        "q1": 1209.494,
+        "q3": 1247.321,
+        "iqr": 37.827,
+        "n": 9
+      },
+      "real_time_factor": {
+        "median": 823.6574178175221,
+        "q1": 801.7182425374062,
+        "q3": 826.7920303862608,
+        "iqr": 25.073787848854522,
+        "n": 9
+      },
+      "samples_ns": [
+        1209.494,
+        1211.668,
+        1299.801,
+        1207.851,
+        1206.332,
+        1244.964,
+        1214.097,
+        1294.162,
+        1247.321
+      ],
+      "resets_per_run": 5,
+      "wall_contacts_per_run": 0,
+      "conditions": {
+        "load_before": 0.0906,
+        "load_during": 0.1515,
+        "load_others_during": 0.089,
+        "waited_s": 2.0,
+        "attempts": 1,
+        "idle": true
+      }
+    },
+    {
+      "case": "l2",
+      "mode": "abi10",
+      "steps_per_run": 200000,
+      "ns_per_step": {
+        "median": 1256.235,
+        "q1": 1222.046,
+        "q3": 1275.004,
+        "iqr": 52.957999999999856,
+        "n": 9
+      },
+      "real_time_factor": {
+        "median": 796.0294053262328,
+        "q1": 784.3112649058356,
+        "q3": 818.2998021351078,
+        "iqr": 33.9885372292722,
+        "n": 9
+      },
+      "samples_ns": [
+        1258.657,
+        1222.046,
+        1482.698,
+        1227.985,
+        1256.235,
+        1221.903,
+        1275.004,
+        1409.667,
+        1220.495
+      ],
+      "resets_per_run": 5,
+      "wall_contacts_per_run": 0,
+      "conditions": {
+        "load_before": 0.0901,
+        "load_during": 0.1453,
+        "load_others_during": 0.0828,
+        "waited_s": 2.0,
+        "attempts": 1,
+        "idle": true
+      }
+    },
+    {
+      "case": "l2_road",
+      "mode": "abi1",
+      "steps_per_run": 200000,
+      "ns_per_step": {
+        "median": 1483.752,
+        "q1": 1480.42,
+        "q3": 1521.3,
+        "iqr": 40.87999999999988,
+        "n": 9
+      },
+      "real_time_factor": {
+        "median": 673.9670780561711,
+        "q1": 657.3325445342799,
+        "q3": 675.4839842747328,
+        "iqr": 18.15143974045293,
+        "n": 9
+      },
+      "samples_ns": [
+        1480.42,
+        1476.511,
+        1521.3,
+        1531.899,
+        1621.528,
+        1518.802,
+        1481.435,
+        1483.752,
+        1475.289
+      ],
+      "resets_per_run": 5,
+      "wall_contacts_per_run": 0,
+      "conditions": {
+        "load_before": 0.0869,
+        "load_during": 0.1532,
+        "load_others_during": 0.0907,
+        "waited_s": 14.0,
+        "attempts": 1,
+        "idle": true
+      }
+    },
+    {
+      "case": "l2_road",
+      "mode": "abi10",
+      "steps_per_run": 200000,
+      "ns_per_step": {
+        "median": 1493.194,
+        "q1": 1473.0,
+        "q3": 1536.918,
+        "iqr": 63.91799999999989,
+        "n": 9
+      },
+      "real_time_factor": {
+        "median": 669.7053430431679,
+        "q1": 650.652799954194,
+        "q3": 678.8866259334691,
+        "iqr": 28.233825979275025,
+        "n": 9
+      },
+      "samples_ns": [
+        1659.243,
+        1473.0,
+        1536.918,
+        1493.194,
+        1466.63,
+        1479.534,
+        1499.703,
+        1578.658,
+        1465.415
+      ],
+      "resets_per_run": 5,
+      "wall_contacts_per_run": 0,
+      "conditions": {
+        "load_before": 0.0931,
+        "load_during": 0.1508,
+        "load_others_during": 0.0883,
+        "waited_s": 2.0,
+        "attempts": 1,
+        "idle": true
+      }
+    },
+    {
+      "case": "l2_unity",
+      "mode": "abi1",
+      "steps_per_run": 200000,
+      "ns_per_step": {
+        "median": 1234.405,
+        "q1": 1230.562,
+        "q3": 1237.575,
+        "iqr": 7.013000000000147,
+        "n": 9
+      },
+      "real_time_factor": {
+        "median": 810.1068936046112,
+        "q1": 808.0318364543563,
+        "q3": 812.6368277258684,
+        "iqr": 4.604991271512176,
+        "n": 9
+      },
+      "samples_ns": [
+        1224.928,
+        1226.121,
+        1237.575,
+        1234.405,
+        1260.175,
+        1235.352,
+        1278.772,
+        1230.562,
+        1232.16
+      ],
+      "resets_per_run": 5,
+      "wall_contacts_per_run": 0,
+      "conditions": {
+        "load_before": 0.0884,
+        "load_during": 0.1513,
+        "load_others_during": 0.0888,
+        "waited_s": 2.0,
+        "attempts": 1,
+        "idle": true
+      }
+    },
+    {
+      "case": "l2_unity",
+      "mode": "abi10",
+      "steps_per_run": 200000,
+      "ns_per_step": {
+        "median": 1237.815,
+        "q1": 1226.319,
+        "q3": 1258.565,
+        "iqr": 32.246000000000095,
+        "n": 9
+      },
+      "real_time_factor": {
+        "median": 807.8751671291751,
+        "q1": 794.5557043140402,
+        "q3": 815.448508911629,
+        "iqr": 20.892804597588793,
+        "n": 9
+      },
+      "samples_ns": [
+        1242.39,
+        1314.131,
+        1237.815,
+        1231.072,
+        1214.668,
+        1258.565,
+        1217.92,
+        1274.265,
+        1226.319
+      ],
+      "resets_per_run": 5,
+      "wall_contacts_per_run": 0,
+      "conditions": {
+        "load_before": 0.0982,
+        "load_during": 0.1484,
+        "load_others_during": 0.0859,
+        "waited_s": 14.0,
+        "attempts": 1,
+        "idle": true
+      }
+    },
+    {
+      "case": "l2_unity_walls",
+      "mode": "abi1",
+      "steps_per_run": 200000,
+      "ns_per_step": {
+        "median": 1372.104,
+        "q1": 1361.391,
+        "q3": 1377.703,
+        "iqr": 16.311999999999898,
+        "n": 9
+      },
+      "real_time_factor": {
+        "median": 728.807728860203,
+        "q1": 725.8458463108522,
+        "q3": 734.5428315597796,
+        "iqr": 8.69698524892749,
+        "n": 9
+      },
+      "samples_ns": [
+        1346.201,
+        1372.954,
+        1516.388,
+        1354.485,
+        1386.313,
+        1361.391,
+        1363.035,
+        1377.703,
+        1372.104
+      ],
+      "resets_per_run": 5,
+      "wall_contacts_per_run": 0,
+      "conditions": {
+        "load_before": 0.0889,
+        "load_during": 0.1598,
+        "load_others_during": 0.0973,
+        "waited_s": 2.0,
+        "attempts": 1,
+        "idle": true
+      }
+    },
+    {
+      "case": "l2_unity_walls",
+      "mode": "abi10",
+      "steps_per_run": 200000,
+      "ns_per_step": {
+        "median": 1320.623,
+        "q1": 1316.168,
+        "q3": 1323.86,
+        "iqr": 7.692000000000007,
+        "n": 9
+      },
+      "real_time_factor": {
+        "median": 757.2183734495007,
+        "q1": 755.366881694439,
+        "q3": 759.7814260793456,
+        "iqr": 4.414544384906549,
+        "n": 9
+      },
+      "samples_ns": [
+        1310.156,
+        1321.053,
+        1312.639,
+        1320.623,
+        1688.195,
+        1329.719,
+        1323.86,
+        1320.438,
+        1316.168
+      ],
+      "resets_per_run": 5,
+      "wall_contacts_per_run": 0,
+      "conditions": {
+        "load_before": 0.0959,
+        "load_during": 0.155,
+        "load_others_during": 0.0925,
+        "waited_s": 2.0,
+        "attempts": 1,
+        "idle": true
+      }
+    }
+  ],
+  "python": [
+    {
+      "env": "RcTwinEnv follow, roads/samples/hill_breaker_bend.json",
+      "policy": "rc_twin_env.pure_pursuit_policy",
+      "ranges": "RANGES_TRAIN",
+      "control_hz": 100,
+      "core_steps_per_env_step": 10,
+      "episodes_per_round": 20,
+      "rounds": 5,
+      "env_steps_per_s": {
+        "median": 40035.41193195263,
+        "q1": 39999.96169720559,
+        "q3": 40136.3255794636,
+        "iqr": 136.36388225801056,
+        "n": 5
+      },
+      "episode_real_time_factor": {
+        "median": 390.57127411699133,
+        "q1": 390.3296904099903,
+        "q3": 391.8100262184043,
+        "iqr": 1.4803358084139973,
+        "n": 5
+      },
+      "episode_wall_s": {
+        "median": 0.047915450000800774,
+        "q1": 0.047690799999145383,
+        "q3": 0.04839129999982106,
+        "iqr": 0.0007005000006756745,
+        "n": 100
+      },
+      "episode_sim_s": {
+        "median": 18.8,
+        "q1": 18.8,
+        "q3": 18.8,
+        "iqr": 0.0,
+        "n": 20
+      },
+      "episode_env_steps": {
+        "median": 1880.0,
+        "q1": 1880.0,
+        "q3": 1880.0,
+        "iqr": 0.0,
+        "n": 20
+      },
+      "statuses_round0": {
+        "reached_end": 20
+      },
+      "conditions": {
+        "load_before": 0.0928,
+        "load_during": 0.1168,
+        "load_others_during": 0.0543,
+        "waited_s": 2.0,
+        "attempts": 1,
+        "idle": true
+      }
+    },
+    {
+      "env": "CampusEnv follow, campus walls",
+      "policy": "rc_twin_env.pure_pursuit_policy",
+      "ranges": "RANGES_TRAIN",
+      "control_hz": 100,
+      "core_steps_per_env_step": 10,
+      "episodes_per_round": 20,
+      "rounds": 5,
+      "env_steps_per_s": {
+        "median": 37168.880183407084,
+        "q1": 37016.41496691639,
+        "q3": 37252.23391848503,
+        "iqr": 235.81895156863902,
+        "n": 5
+      },
+      "episode_real_time_factor": {
+        "median": 361.7026765493238,
+        "q1": 360.16703021810724,
+        "q3": 362.73095993387534,
+        "iqr": 2.563929715768097,
+        "n": 5
+      },
+      "episode_wall_s": {
+        "median": 0.0347407999997813,
+        "q1": 0.016667675000462623,
+        "q3": 0.04757447500105627,
+        "iqr": 0.03090680000059365,
+        "n": 100
+      },
+      "episode_sim_s": {
+        "median": 12.620000000000001,
+        "q1": 6.14,
+        "q3": 17.2,
+        "iqr": 11.059999999999999,
+        "n": 20
+      },
+      "episode_env_steps": {
+        "median": 1262.0,
+        "q1": 614.0,
+        "q3": 1720.0,
+        "iqr": 1106.0,
+        "n": 20
+      },
+      "statuses_round0": {
+        "reached_end": 20
+      },
+      "conditions": {
+        "load_before": 0.0269,
+        "load_during": 0.0945,
+        "load_others_during": 0.032,
+        "waited_s": 2.0,
+        "attempts": 1,
+        "idle": true
+      }
+    },
+    {
+      "env": "CampusEnv stop task, campus walls",
+      "policy": "rc_twin_env.pure_pursuit_policy",
+      "ranges": "RANGES_TRAIN",
+      "control_hz": 100,
+      "core_steps_per_env_step": 10,
+      "episodes_per_round": 20,
+      "rounds": 5,
+      "env_steps_per_s": {
+        "median": 30699.350544137018,
+        "q1": 30616.90759433557,
+        "q3": 30756.351206856743,
+        "iqr": 139.44361252117233,
+        "n": 5
+      },
+      "episode_real_time_factor": {
+        "median": 299.8858402997674,
+        "q1": 298.80771283518357,
+        "q3": 300.4705231132941,
+        "iqr": 1.6628102781105554,
+        "n": 5
+      },
+      "episode_wall_s": {
+        "median": 0.04395384999952512,
+        "q1": 0.020861799999693176,
+        "q3": 0.05869645000075252,
+        "iqr": 0.037834650001059345,
+        "n": 100
+      },
+      "episode_sim_s": {
+        "median": 13.04,
+        "q1": 6.5575,
+        "q3": 17.61,
+        "iqr": 11.052499999999998,
+        "n": 20
+      },
+      "episode_env_steps": {
+        "median": 1304.0,
+        "q1": 655.75,
+        "q3": 1761.0,
+        "iqr": 1105.25,
+        "n": 20
+      },
+      "statuses_round0": {
+        "overshot": 20
+      },
+      "conditions": {
+        "load_before": 0.0308,
+        "load_during": 0.1221,
+        "load_others_during": 0.0596,
+        "waited_s": 2.0,
+        "attempts": 1,
+        "idle": true
+      }
+    }
+  ],
+  "edge_profiler": {
+    "command": "python -I tools/edge_profiler.py roads/campus/*.json --out <fresh file> --speeds 1 2 3 --payloads 0 1 --soc 0.8 0.4",
+    "edges": 37,
+    "sweep": "speeds 1 2 3 m/s x payloads 0 1 kg x soc 0.8 0.4",
+    "combinations_per_edge": 12,
+    "entries": 444,
+    "wall_s": {
+      "median": 1.6079852000002575,
+      "q1": 1.5963946999982,
+      "q3": 1.6190590000005614,
+      "iqr": 0.022664300002361415,
+      "n": 9
+    },
+    "samples_s": [
+      1.5991557000015746,
+      1.5887932999976329,
+      1.5963946999982,
+      1.5950381999973615,
+      1.6190590000005614,
+      1.6122505000021192,
+      1.6574360000013257,
+      1.638880500002415,
+      1.6079852000002575
+    ],
+    "ms_per_entry": {
+      "median": 3.6215882882888684,
+      "q1": 3.595483558554504,
+      "q3": 3.6465292792805437,
+      "iqr": 0.05104572072603952,
+      "n": 9
+    },
+    "simulated_driving_s": 904.88,
+    "edges_with_breakers": 0,
+    "entry_statuses": {
+      "reached_end": 444
+    },
+    "real_time_factor": {
+      "median": 562.7414978694177,
+      "q1": 558.8925419022322,
+      "q3": 566.8272389033992,
+      "iqr": 7.934697001167024,
+      "n": 9
+    },
+    "note": "each entry is two drives of the edge (with and without its speed breakers) where the edge has breakers; process start-up and JSON I/O are included",
+    "conditions": [
+      {
+        "load_before": 0.0447,
+        "load_during": 0.0907,
+        "load_others_during": 0.0282,
+        "waited_s": 2.0,
+        "attempts": 1,
+        "idle": true
+      },
+      {
+        "load_before": 0.041,
+        "load_during": 0.093,
+        "load_others_during": 0.0305,
+        "waited_s": 2.0,
+        "attempts": 1,
+        "idle": true
+      },
+      {
+        "load_before": 0.0465,
+        "load_during": 0.0958,
+        "load_others_during": 0.0333,
+        "waited_s": 2.0,
+        "attempts": 1,
+        "idle": true
+      },
+      {
+        "load_before": 0.0273,
+        "load_during": 0.0905,
+        "load_others_during": 0.028,
+        "waited_s": 2.0,
+        "attempts": 1,
+        "idle": true
+      },
+      {
+        "load_before": 0.024,
+        "load_during": 0.1335,
+        "load_others_during": 0.071,
+        "waited_s": 2.0,
+        "attempts": 1,
+        "idle": true
+      },
+      {
+        "load_before": 0.0909,
+        "load_during": 0.1466,
+        "load_others_during": 0.0841,
+        "waited_s": 2.0,
+        "attempts": 1,
+        "idle": true
+      },
+      {
+        "load_before": 0.0947,
+        "load_during": 0.1521,
+        "load_others_during": 0.0896,
+        "waited_s": 2.0,
+        "attempts": 1,
+        "idle": true
+      },
+      {
+        "load_before": 0.0879,
+        "load_during": 0.1553,
+        "load_others_during": 0.0928,
+        "waited_s": 2.0,
+        "attempts": 1,
+        "idle": true
+      },
+      {
+        "load_before": 0.0981,
+        "load_during": 0.1542,
+        "load_others_during": 0.0917,
+        "waited_s": 2.0,
+        "attempts": 1,
+        "idle": true
+      }
+    ]
+  },
+  "finished": "2026-11-09T19:17:39+0530",
+  "section_times": {
+    "profiler": [
+      "2026-11-09T19:19:55+0530",
+      "2026-11-09T19:22:53+0530"
+    ],
+    "native": [
+      "2026-11-09T19:19:55+0530",
+      "2026-11-09T19:22:53+0530"
+    ]
+  },
+  "native_unity_feature_ablation": [
+    {
+      "features": "none",
+      "ns_per_step": {
+        "median": 1505.088,
+        "q1": 1490.758,
+        "q3": 1511.301,
+        "iqr": 20.542999999999893,
+        "n": 9
+      },
+      "real_time_factor": {
+        "median": 664.4129778458137,
+        "q1": 661.6815578101252,
+        "q3": 670.7996871390259,
+        "iqr": 9.118129328900636,
+        "n": 9
+      },
+      "samples_ns": [
+        1534.813,
+        1495.983,
+        1509.084,
+        1511.301,
+        1523.215,
+        1476.215,
+        1505.088,
+        1470.075,
+        1490.758
+      ],
+      "conditions": {
+        "load_before": 0.0998,
+        "load_during": 0.1515,
+        "load_others_during": 0.089,
+        "waited_s": 2.0,
+        "attempts": 1,
+        "idle": true
+      }
+    },
+    {
+      "features": "wheel_inertia",
+      "ns_per_step": {
+        "median": 1543.307,
+        "q1": 1541.84,
+        "q3": 1584.39,
+        "iqr": 42.55000000000018,
+        "n": 9
+      },
+      "real_time_factor": {
+        "median": 647.9592200385276,
+        "q1": 631.1577326289613,
+        "q3": 648.5757277019666,
+        "iqr": 17.417995073005272,
+        "n": 9
+      },
+      "samples_ns": [
+        1539.007,
+        1543.307,
+        1584.39,
+        1598.397,
+        1544.166,
+        1585.341,
+        1539.967,
+        1543.174,
+        1541.84
+      ],
+      "conditions": {
+        "load_before": 0.0902,
+        "load_during": 0.1561,
+        "load_others_during": 0.0936,
+        "waited_s": 2.0,
+        "attempts": 1,
+        "idle": true
+      }
+    },
+    {
+      "features": "ackermann",
+      "ns_per_step": {
+        "median": 1591.047,
+        "q1": 1578.514,
+        "q3": 1611.252,
+        "iqr": 32.738000000000056,
+        "n": 9
+      },
+      "real_time_factor": {
+        "median": 628.5169451310992,
+        "q1": 620.635381678347,
+        "q3": 633.5072099455564,
+        "iqr": 12.871828267209366,
+        "n": 9
+      },
+      "samples_ns": [
+        1591.047,
+        1578.514,
+        1567.98,
+        1562.313,
+        1586.018,
+        1603.355,
+        1611.252,
+        1710.42,
+        1614.978
+      ],
+      "conditions": {
+        "load_before": 0.0906,
+        "load_during": 0.1555,
+        "load_others_during": 0.093,
+        "waited_s": 2.0,
+        "attempts": 1,
+        "idle": true
+      }
+    },
+    {
+      "features": "suspension",
+      "ns_per_step": {
+        "median": 1087.775,
+        "q1": 1086.457,
+        "q3": 1089.464,
+        "iqr": 3.0069999999998345,
+        "n": 9
+      },
+      "real_time_factor": {
+        "median": 919.3077612557744,
+        "q1": 917.882555091311,
+        "q3": 920.4229895890954,
+        "iqr": 2.5404344977844175,
+        "n": 9
+      },
+      "samples_ns": [
+        1087.775,
+        1087.295,
+        1089.464,
+        1086.457,
+        1109.534,
+        1084.899,
+        1088.681,
+        1113.681,
+        1078.197
+      ],
+      "conditions": {
+        "load_before": 0.0884,
+        "load_during": 0.1526,
+        "load_others_during": 0.0901,
+        "waited_s": 14.0,
+        "attempts": 1,
+        "idle": true
+      }
+    },
+    {
+      "features": "v_kinematic",
+      "ns_per_step": {
+        "median": 1481.904,
+        "q1": 1480.665,
+        "q3": 1483.274,
+        "iqr": 2.6089999999999236,
+        "n": 9
+      },
+      "real_time_factor": {
+        "median": 674.8075448881979,
+        "q1": 674.1842707416163,
+        "q3": 675.3722145117227,
+        "iqr": 1.1879437701064717,
+        "n": 9
+      },
+      "samples_ns": [
+        1487.12,
+        1481.904,
+        1473.83,
+        1480.665,
+        1483.274,
+        1481.16,
+        1475.2,
+        1486.123,
+        1482.584
+      ],
+      "conditions": {
+        "load_before": 0.0874,
+        "load_during": 0.1591,
+        "load_others_during": 0.0966,
+        "waited_s": 2.0,
+        "attempts": 1,
+        "idle": true
+      }
+    },
+    {
+      "features": "all",
+      "ns_per_step": {
+        "median": 1216.584,
+        "q1": 1215.264,
+        "q3": 1218.422,
+        "iqr": 3.158000000000129,
+        "n": 9
+      },
+      "real_time_factor": {
+        "median": 821.9736573882279,
+        "q1": 820.7337031012244,
+        "q3": 822.8664718118862,
+        "iqr": 2.1327687106618214,
+        "n": 9
+      },
+      "samples_ns": [
+        1223.905,
+        1216.584,
+        1227.011,
+        1214.341,
+        1215.264,
+        1218.422,
+        1216.599,
+        1215.62,
+        1214.605
+      ],
+      "conditions": {
+        "load_before": 0.0288,
+        "load_during": 0.0959,
+        "load_others_during": 0.0334,
+        "waited_s": 2.0,
+        "attempts": 1,
+        "idle": true
+      }
+    }
+  ]
+}

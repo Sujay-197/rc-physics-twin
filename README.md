@@ -132,6 +132,7 @@ Then rebuild the scene. The screenshots above show this look.
 
 - [The campus player](Docs/campus-player.md): the autopilot, shuttle game, cameras, look and replay player
 - [Policy study](Docs/policy-study.md): every controller and policy compared, with methods and results
+- [Performance](Docs/performance.md): step cost, real-time factor, Python and edge-profiler throughput
 - [Roadmap](Docs/NEXT_STEPS.md): what's done and what's open
 - [Architecture decision records](Docs/adr/) and [design specs](Docs/specs/)
 - [Glossary](CONTEXT.md) and [references](Docs/references.md)

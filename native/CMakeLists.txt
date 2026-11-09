@@ -96,3 +96,12 @@ add_custom_target(unity_plugin
   COMMAND ${CMAKE_COMMAND} -E copy_if_different $<TARGET_FILE:rc_twin> "${RC_TWIN_UNITY_PLUGIN_DIR}"
   DEPENDS rc_twin
   COMMENT "Copying rc_twin.dll to ${RC_TWIN_UNITY_PLUGIN_DIR}")
+
+# Step-cost benchmark (tools/bench.py, Docs/performance.md). Off by default and
+# never a ctest case: timings belong on an idle machine, not in the test run.
+option(RC_TWIN_BENCH "Build native/bench/bench_step" OFF)
+if(RC_TWIN_BENCH)
+  add_executable(bench_step bench/bench_step.cpp)
+  target_link_libraries(bench_step PRIVATE rc_twin slipx_core)
+  slipx_apply_determinism_flags(bench_step)
+endif()
