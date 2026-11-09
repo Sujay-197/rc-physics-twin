@@ -56,7 +56,6 @@ is model against model.
 from __future__ import annotations
 
 import argparse
-import copy
 import ctypes
 import datetime
 import importlib.metadata
