@@ -69,6 +69,20 @@ namespace RcTwin
         public int Overlaps => Traffic.Overlaps;
         /// <summary>The longest any bus has been held to a standstill [s].</summary>
         public double LongestHold { get; private set; }
+        /// <summary>Times a bus was held to a standstill by another, and the time held so [s] (counted only).</summary>
+        public int GiveWayStops { get; private set; }
+        public double HeldSeconds { get; private set; }
+        /// <summary>Stops served from behind a parked bus.</summary>
+        public int ServedFromBehind { get; private set; }
+
+        // The fleet-level experiment (tools/fleet_experiment.py); all off unless on the command line.
+        /// <summary>-metrics &lt;file.json&gt;: what the run measured, written when it ends.</summary>
+        public FleetMetrics Metrics { get; private set; }
+        /// <summary>Every leg driven, kept with -metrics (null otherwise).</summary>
+        public List<LegRecord> Legs { get; private set; }
+        private string _metricsPath;
+        private double _duration = double.PositiveInfinity;
+        private bool _written;
 
         /// <summary>The bus the camera follows (or last followed): the bottom bar's.</summary>
         public ShuttleGame Followed =>
@@ -110,6 +124,27 @@ namespace RcTwin
                 .FirstOrDefault(p => p.network != null && p.GetComponent<ShuttleGame>() == null);
             if (first == null || first.Routes == null) { enabled = false; return; }
             Routes = first.Routes;
+            var inv = CultureInfo.InvariantCulture;
+            if (int.TryParse(Arg("-seed"), NumberStyles.Integer, inv, out int sd)) seed = sd;
+            if (double.TryParse(Arg("-request-interval"), NumberStyles.Float, inv, out double ri) && ri > 0) Settings.RequestInterval = ri;
+            if (double.TryParse(Arg("-duration"), NumberStyles.Float, inv, out double du) && du > 0) _duration = du;
+            double warm = double.TryParse(Arg("-warmup"), NumberStyles.Float, inv, out double wu) && wu >= 0 ? wu : 0.0;
+            if (Arg("-metrics") is string mp)
+            {
+                _metricsPath = mp;
+                Metrics = new FleetMetrics(warm, _duration);
+                Legs = new List<LegRecord>();
+            }
+            if (double.TryParse(Arg("-fast"), NumberStyles.Float, inv, out double fk) && fk >= 1)
+            {
+                // A fixed number of physics ticks per frame, as fast as the machine runs them: the
+                // ticks and the 1 ms core steps inside them are the same as at normal speed.
+                Application.runInBackground = true;
+                Application.targetFrameRate = -1;
+                QualitySettings.vSyncCount = 0;
+                Time.captureDeltaTime = (float)(fk * TwinAutopilot.ControlTick);
+                Time.maximumDeltaTime = Mathf.Max(Time.maximumDeltaTime, Time.captureDeltaTime);
+            }
             Travel = new RouteTravelModel(Routes, Settings.Cruise);
             Score = new ShuttleScore(Settings);
             Dispatcher = new Dispatcher(new ShuttleBrain[0]);
@@ -131,6 +166,15 @@ namespace RcTwin
             Join(first, CampusSceneHome);
             while (_buses.Count < Settings.Buses) Spawn();
 
+            if (Metrics != null)
+            {
+                var c0 = Metrics.Config;
+                c0["buses"] = Settings.Buses; c0["seed"] = seed; c0["request_interval_s"] = Settings.RequestInterval;
+                c0["duration_s"] = _duration; c0["warmup_s"] = warm; c0["fast"] = Arg("-fast");
+                c0["give_up_s"] = Settings.GiveUpAfter; c0["capacity"] = Settings.Capacity; c0["cruise_mps"] = Settings.Cruise;
+                c0["battery_minutes"] = Settings.BatteryMinutesOfDriving; c0["control_tick_s"] = TwinAutopilot.ControlTick;
+                c0["core_dt_s"] = first.GetComponent<TwinCar>().coreDt;
+            }
             Cameras = new CameraModes(_buses.Count);
             if (Arg("-camera") is string cam && CameraModes.TryParse(cam, out var m)) Cameras.Set(m);
             gameObject.AddComponent<ShuttleHud>();
@@ -240,6 +284,7 @@ namespace RcTwin
             Dispatcher.Tick(Now, Score);
             TrafficTick(dt);
             RemoveRetired();
+            Measure(dt);
             foreach (var kv in _figures.Where(kv => kv.Key.State == RequestState.GaveUp).ToList())
             {
                 if (kv.Value != null) kv.Value.WalkTo(kv.Value.transform.position + kv.Value.transform.right * 0.6f, vanish: true);
@@ -278,6 +323,8 @@ namespace RcTwin
                 pilot.HoldShort = Traffic.Hold[i];
                 bool standing = pilot.State == TwinAutopilot.Status.Driving && Math.Abs(b.Car.State.vx) < 0.05 &&
                                 Traffic.Hold[i] < TwinAutopilot.TurnHoldDistance;
+                if (standing && _heldFor[i] == 0.0) GiveWayStops++;
+                if (standing) HeldSeconds += dt;
                 _heldFor[i] = standing ? _heldFor[i] + dt : 0.0;
                 LongestHold = Math.Max(LongestHold, _heldFor[i]);
                 int j = Traffic.HeldBy[i];
@@ -287,6 +334,7 @@ namespace RcTwin
                     (pilot.Remaining <= Berth || other.AtStop == pilot.Destination && pilot.CurrentStop() == pilot.Destination))
                 {
                     pilot.ArriveHere($"Arrived at {pilot.Destination}, behind {other.Label}.");
+                    ServedFromBehind++;
                     _heldFor[i] = 0.0;
                 }
                 else if (_heldFor[i] > MakeRoomAfter && other.Brain.Mode == ShuttleMode.Idle && other.Brain.Plan.Stops.Count == 0)
@@ -305,6 +353,45 @@ namespace RcTwin
                                      $"{Describe(b)}; {Describe(other)}; held by {(Traffic.HeldBy[j] >= 0 ? _buses[Traffic.HeldBy[j]].Label : "none")}");
                 }
             }
+        }
+
+        // ------------------------------------------------------------ metrics
+
+        public Dictionary<string, double> Counters() => new Dictionary<string, double>
+        {
+            ["delivered"] = Score.Delivered, ["gave_up"] = Score.GaveUp, ["flats"] = Score.Flats,
+            ["kerb_strikes"] = Score.KerbStrikes, ["overlaps"] = Overlaps, ["stuck_tows"] = StuckTows,
+            ["made_room"] = MadeRoom, ["crossings"] = Traffic.Crossings, ["cycles_broken"] = Traffic.CyclesBroken,
+            ["give_way_stops"] = GiveWayStops, ["held_s"] = HeldSeconds, ["served_from_behind"] = ServedFromBehind,
+            ["tows"] = _buses.Sum(b => b.Tows), ["leg_fail_tows"] = _buses.Sum(b => b.LegFailTows),
+            ["longest_hold_s"] = LongestHold,
+        };
+
+        private void Measure(double dt)
+        {
+            foreach (var b in _buses) b.SocAfterTick = b.Car.State.soc;
+            if (Metrics != null)
+            {
+                foreach (var b in _buses) Metrics.Observe(Now, dt, b.Number, b.Brain.Mode, b.Brain.Aboard.Count, b.StepMetres, b.StepWh);
+                Metrics.Mark(Now, Counters());
+            }
+            if (Now >= _duration && !_written)
+            {
+                WriteMetrics();
+                Application.Quit();
+            }
+        }
+
+        private void OnApplicationQuit() => WriteMetrics();
+
+        private void WriteMetrics()
+        {
+            if (_written || Metrics == null || _metricsPath == null) return;
+            _written = true;
+            var rep = Metrics.Report(Now, Counters(), Spawner.All, r => (Travel.Distance(r.Origin, r.Destination), Travel.DriveTime(r.Origin, r.Destination)),
+                                     Legs, Time.realtimeSinceStartup);
+            System.IO.File.WriteAllText(_metricsPath, FleetMetrics.ToJson(rep));
+            Debug.Log($"ShuttleFleet: metrics written to {_metricsPath} at {Now:0.0} s.");
         }
 
         private static string Describe(ShuttleGame b)

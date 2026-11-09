@@ -52,6 +52,17 @@ namespace RcTwin
         private string _legFrom, _legTo;
         private long _strikes;
         private readonly Queue<string> _log = new Queue<string>();   // the last few events, for a flat battery's warning
+        private LegRecord _leg;   // the leg being driven, when the fleet keeps a log of them
+
+        // Measured for the fleet's metrics (FleetMetrics); none of it steers the game.
+        /// <summary>The charge after the fleet's last tick, before the car's physics stepped (NaN before the first).</summary>
+        internal double SocAfterTick = double.NaN;
+        /// <summary>Energy the car drew from its pack over the last physics step [Wh], and the distance it went [m].</summary>
+        public double StepWh { get; private set; }
+        public double StepMetres { get; private set; }
+        /// <summary>Tows after a failed leg (left the route, timed out, cancelled), and every tow.</summary>
+        public int LegFailTows { get; private set; }
+        public int Tows { get; private set; }
 
         private void Note(string what)
         {
@@ -150,6 +161,11 @@ namespace RcTwin
         /// <summary>One physics step: charging, the brain, kerb strikes (the fleet calls it).</summary>
         internal void Step(double dt)
         {
+            // What the physics did since the fleet's last tick: charging and tows happen inside the tick.
+            var s0 = _car.State;
+            StepWh = double.IsNaN(SocAfterTick) ? 0.0 : (SocAfterTick - s0.soc) * _car.Params.packCapacityAh * s0.packV;
+            StepMetres = Math.Abs(s0.vx) * dt;
+            if (_leg != null && !Driving) CloseLeg();
             if (_charging && Math.Abs(_car.State.vx) < 0.05 && _car.State.soc < 1.0)
                 _car.SetCharge(Math.Min(1.0, _car.State.soc + BatteryPolicy.ChargeRatePerSecond(Settings) * dt));
             _soc = _car.State.soc;
@@ -198,8 +214,14 @@ namespace RcTwin
         {
             string from = _pilot.CurrentStop();
             if (!_pilot.Go(stop)) return false;
+            if (_leg != null) CloseLeg();
             _legFrom = from;
             _legTo = stop;
+            if (Fleet.Legs != null)
+            {
+                _leg = new LegRecord { Bus = Number, From = from, To = stop, Start = Fleet.Now };
+                Fleet.Legs.Add(_leg);
+            }
             Note($"leg {from} to {stop}");
             return true;
         }
@@ -208,6 +230,7 @@ namespace RcTwin
         {
             if (!_pilot.StopEarlyAt(stop)) return false;
             _legTo = stop;
+            if (_leg != null) { _leg.To = stop; _leg.Early = true; }
             return true;
         }
 
@@ -220,12 +243,24 @@ namespace RcTwin
                 : net.StopNames().First(s => net.Stops[s].node != net.Stops[stop].node);
             var (x, y, yaw) = Fleet.FreeBerth(this, stop, toward);
             _soc = _car.State.soc;
+            Tows++;
+            if (LegFailed && _leg != null) LegFailTows++;
+            if (_leg != null) CloseLeg();
             Note($"tow to {stop}");
             _car.ResetTo(x, y, yaw);
             _strikes = _car.KerbStrikes;
         }
 
         public void SetCharging(bool on) => _charging = on;
+
+        private void CloseLeg()
+        {
+            _leg.End = Fleet.Now;
+            _leg.Outcome = _pilot.State.ToString();
+            _leg.Held = _pilot.HeldTime;
+            _leg.Turn = _pilot.TurnTime;
+            _leg = null;
+        }
 
         /// <summary>The shuttle's door: the left side, at the kerb.</summary>
         public Vector3 Door()
