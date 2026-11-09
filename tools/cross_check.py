@@ -838,7 +838,7 @@ def figures(res: dict, out_dir: pathlib.Path, p) -> None:
         c, ls = STYLE[name]
         b1.plot(t, s[key], ls, color=c, label=LABEL[name])
     g5 = linear_bicycle(p, STEP["speed"])["yaw_gain"]
-    b1.plot(t, g5 * np.array(s["L2_steer"]), (0, (4, 1.5, 1, 1.5)), color="#8a8984",
+    b1.plot(t, g5 * np.array(s["L2_steer"]), ls=(0, (4, 1.5, 1, 1.5)), color="#8a8984",
             label=r"L2 achieved steer $\times$ linear gain")
     b1.set_xlim(-20, 420)
     b1.set_xlabel("time after the steer step [ms]")
