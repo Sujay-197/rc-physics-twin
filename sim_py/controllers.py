@@ -78,11 +78,17 @@ class _Base:
     """Shared plumbing: the observation's fields and the speed loop."""
 
     def __init__(self, envmod, nominal: Nominal, half_width: float, k_speed: float = 3.0,
-                 a_lat: float | None = None, a_stop: float = 1.2, stop_margin: float = 0.1):
+                 a_lat: float | None = None, a_stop: float = 1.2, stop_margin: float = 0.1,
+                 stop_plan: str = "brake"):
         self.i = _idx(envmod)
         # "stop" task: planned braking [m/s^2], below what the weakest (held-out)
         # cars can do, aimed stop_margin [m] short of the end. Provisional car.
-        self.a_stop, self.stop_margin = a_stop, stop_margin
+        # stop_plan "linear" is the ablation's simpler stop (tools/ablation.py):
+        # the speed falls in proportion to the distance left over the last
+        # REMAINING_SCALE_M, with no braking rate planned.
+        if stop_plan not in ("brake", "linear"):
+            raise ValueError(f"unknown stop_plan {stop_plan!r}")
+        self.a_stop, self.stop_margin, self.stop_plan = a_stop, stop_margin, stop_plan
         self.remaining_scale = getattr(envmod, "REMAINING_SCALE_M", None)
         self.i_rem = None      # set by build() for the "stop" task
         self.car = nominal
@@ -113,7 +119,10 @@ class _Base:
         if s["remaining"] is not None:
             # Stop at the end: no faster than braking at a_stop allows.
             rem = max(0.0, s["remaining"] - self.stop_margin)
-            goal = min(goal, math.sqrt(2.0 * self.a_stop * rem) / self.v_ref * s["v_ref_ratio"])
+            if self.stop_plan == "linear":
+                goal = min(goal, rem / self.remaining_scale * s["v_ref_ratio"])
+            else:
+                goal = min(goal, math.sqrt(2.0 * self.a_stop * rem) / self.v_ref * s["v_ref_ratio"])
         if self.a_lat:
             k = abs(path_curvature(*s["pts"]))
             if k > 1e-6:

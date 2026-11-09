@@ -113,6 +113,24 @@ class Driving(unittest.TestCase):
         self.assertEqual(free(obs)[1], 0.0, "at the target: hold")
         self.assertLess(limited(obs)[1], -0.5, "brake for the corner")
 
+    def test_the_stop_plan_brakes_at_a_stop_and_the_linear_one_slows_with_the_distance_left(self):
+        car = nominal()
+        idx = C._idx(envmod)
+        obs = [0.0] * len(envmod.STOP_FIELDS)
+        obs[idx["speed_ratio"]] = obs[idx["target_speed_ratio"]] = 1.0
+        for k, x in (("0.5", 0.5), ("1.0", 1.0), ("2.0", 2.0)):
+            obs[idx[f"ahead_{k}_x"]] = x
+        obs[envmod.STOP_FIELDS.index("remaining_ratio")] = 5.0 / envmod.REMAINING_SCALE_M   # 5 m to go
+        mk = lambda **kw: C.build("pure_pursuit", envmod, _Params(car), 0.7, 4.0, task="stop", k_speed=1.0, **kw)
+        brake, linear = mk(), mk(stop_plan="linear")
+        self.assertEqual(brake(obs), mk(stop_plan="brake")(obs), "the default is the planned stop")
+        self.assertAlmostEqual(brake(obs)[1], math.sqrt(2.0 * 1.2 * 4.9) / 4.0 - 1.0, places=12)
+        self.assertAlmostEqual(linear(obs)[1], 4.9 / envmod.REMAINING_SCALE_M - 1.0, places=12)
+        obs[envmod.STOP_FIELDS.index("remaining_ratio")] = 1.0                              # out of sight
+        self.assertEqual(linear(obs), brake(obs))
+        with self.assertRaises(ValueError):
+            mk(stop_plan="coast")
+
 
 class CornerSpeed(unittest.TestCase):
     """The corner speed plan: slow for the route's corners before they come into view."""
@@ -203,6 +221,13 @@ class Statistics(unittest.TestCase):
         m, lo, hi = ev.mean_ci([1.0, 2.0, 3.0, 4.0])
         self.assertAlmostEqual(m, 2.5)
         self.assertAlmostEqual(hi - m, 1.96 * math.sqrt(5 / 3) / 2, places=12)
+
+    def test_the_sign_test_is_exact_and_two_sided(self):
+        self.assertEqual(ev.sign_test(0, 0), 1.0)
+        self.assertEqual(ev.sign_test(9, 0), 2.0 / 2 ** 9)
+        self.assertEqual(ev.sign_test(0, 9), ev.sign_test(9, 0))
+        self.assertAlmostEqual(ev.sign_test(6, 2), 2.0 * (1 + 8 + 28) / 256, places=15)
+        self.assertEqual(ev.sign_test(3, 3), 1.0)
 
     def test_the_harness_is_deterministic(self):
         a = ev.evaluate(["controller:lqr"], trips=3, conditions=("perturbed",), lib=LIB, workers=1, target_speed=4.0)
