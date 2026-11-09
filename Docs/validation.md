@@ -12,7 +12,7 @@ Reproduce (about 95 s on one core; the venv is described in [`sim_py/requirement
 .venv-validation/Scripts/python tools/cross_check.py
 ```
 
-Outputs: [`results/reference/cross_check.json`](../results/reference/cross_check.json) (every number below, the parameters, the mapping, the settings, the commit and the package versions) and two figures, `results/reference/cross_check_steady.{pdf,png}` and `results/reference/cross_check_transient.{pdf,png}`, sized for a single-column LNCS page (122 mm). Two runs of the same build give byte-identical files. The numbers below are from commit `aa7211c` (Core: SlipX 0.2.0 through `rc_twin` ABI 8; commonroad-vehicle-models 3.0.2, numpy 2.5.4, scipy 1.18.1, Python 3.14.6, Windows 11).
+Outputs: [`results/reference/cross_check.json`](../results/reference/cross_check.json) (every number below, the parameters, the mapping, the settings, the commit and the package versions) and two figures, `results/reference/cross_check_steady.{pdf,png}` and `results/reference/cross_check_transient.{pdf,png}`, sized for a single-column LNCS page (122 mm). Two runs of the same build give byte-identical files. The numbers below are from a run at commit `59457e0` (Core: SlipX 0.2.0 through `rc_twin` ABI 8; commonroad-vehicle-models 3.0.2, numpy 2.5.4, scipy 1.18.1, Python 3.14.6, Windows 11).
 
 ## Key numbers
 

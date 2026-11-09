@@ -1,7 +1,7 @@
 {
  "what": "Model-to-model cross-check of the rc_twin Core against analytic linear single-track theory and the CommonRoad vehicle models. Not a validation against a car: every parameter is provisional.",
  "meta": {
-  "commit": "676e384ad3788e7b3ed0d6325000d43b7994d3fd",
+  "commit": "59457e0a4465899be68fcd5b39317fe1e1a804b1",
   "date": "2026-11-09",
   "rc_twin_abi": 8,
   "slipx_core": "0.2.0",
