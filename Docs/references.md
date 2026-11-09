@@ -9,6 +9,7 @@ Links gathered 2026-10-19. Licenses noted as read from metadata; verify against 
 - F1TENTH simulator: lightweight 2D simulator of the UPenn racecar, ROS 2 containerized variant at https://github.com/f1tenth/f1tenth_gym_ros
 - ApexSim: lap-time simulation library with track CSV (x, y, elevation, banking), Apache-2.0. https://github.com/pzimbrod/apexsim
 - TLabVehiclePhysics: Unity wheel collider with Pacejka and look-up tables, MIT. https://github.com/tlabaltoh/tlabvehiclephysics
+- CommonRoad vehicle models: KS, ST, STD and MB vehicle models in Python, BSD-3-Clause; the independent reference of [`validation.md`](validation.md). https://pypi.org/project/commonroad-vehicle-models/ and https://gitlab.lrz.de/tum-cps/commonroad-vehicle-models (Althoff and Würsching, CommonRoad: Vehicle Models, TU Munich, 2020)
 
 ## Hardware reference
 

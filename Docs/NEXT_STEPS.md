@@ -26,7 +26,7 @@ What has been done and what is open, phase by phase. Open items (`- [ ]`) are al
 - [x] The real campus around the roads: buildings, land use and side roads from OpenStreetMap (ODbL), fitted to the fleet sim's schematic network by a similarity and a thin-plate-spline warp. Trees and ground cover come from local map screenshots. Drawn only (`campus/README.md`, `tools/campus_scenery.py`).
 - [x] Watch policies drive: the replay player (`build/replay/RcTwinReplay.exe`, `tools/record_drives.py --pairs`) shows every recorded policy on any stop-to-stop route.
 - [ ] Elevation and features in the fleet sim's `RoadGraph` itself (the campus is flat today; the polylines carry z, so grades come through the importer once the fleet sim has them).
-- [ ] Validate against gymkhana (planar) plus coast-down and skidpad tests.
+- [ ] Validate against gymkhana (planar) plus coast-down and skidpad tests. A first model-to-model cross-check is in [`validation.md`](validation.md): L0, L1, L2 and the Unity car against linear single-track theory and the CommonRoad KS, ST and STD models (`tools/cross_check.py`). Still open: gymkhana, and every test against a real car.
 
 ## Phase 4: Fleet coupling
 
