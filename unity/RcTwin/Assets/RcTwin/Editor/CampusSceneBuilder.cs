@@ -80,6 +80,25 @@ namespace RcTwin.EditorTools
             Debug.Log($"Built {PlayerPath}.");
         }
 
+        /// <summary>The campus player from the committed scene as it is, not rebuilt first, at
+        /// -buildPath (default build/campus/RcTwinCampus.exe): the fleet experiment's player
+        /// (tools/fleet_experiment.py), the same scene whether or not the look's assets are here.</summary>
+        public static void BuildPlayerAsIsBatch()
+        {
+            var args = Environment.GetCommandLineArgs();
+            int i = Array.IndexOf(args, "-buildPath");
+            string path = i >= 0 && i + 1 < args.Length ? Path.GetFullPath(args[i + 1]) : PlayerPath;
+            Directory.CreateDirectory(Path.GetDirectoryName(path));
+            var report = BuildPipeline.BuildPlayer(new BuildPlayerOptions
+            {
+                scenes = new[] { ScenePath }, locationPathName = path,
+                target = BuildTarget.StandaloneWindows64, options = BuildOptions.None,
+            });
+            if (report.summary.result != UnityEditor.Build.Reporting.BuildResult.Succeeded)
+                throw new Exception($"campus player build {report.summary.result}: {report.summary.totalErrors} errors");
+            Debug.Log($"Built {path}.");
+        }
+
         [MenuItem("RcTwin/Build Campus Scene")]
         public static void Build()
         {

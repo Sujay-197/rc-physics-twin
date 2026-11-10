@@ -129,6 +129,10 @@ namespace RcTwin
         public int[] HeldBy { get; private set; } = new int[0];
         /// <summary>New overlaps of two buses' bare footprints, since the start (an incident).</summary>
         public int Overlaps { get; private set; }
+        /// <summary>Times two buses' paths came to cross and one was told to give way, since the start (counted only).</summary>
+        public int Crossings { get; private set; }
+        /// <summary>Cycles of buses waiting on each other broken by a change of who gives way, since the start (counted only).</summary>
+        public int CyclesBroken { get; private set; }
 
         private readonly Dictionary<(int, int), int> _yield = new Dictionary<(int, int), int>();   // (lo, hi) id pair -> the id that gives way
         private readonly HashSet<(int, int)> _touching = new HashSet<(int, int)>();
@@ -158,7 +162,10 @@ namespace RcTwin
                     // Paths that cross ahead: one gives way, and keeps giving way while they cross.
                     if (!Crossing(a[i], a[j], out int ci, out int cj)) { _yield.Remove(key); continue; }
                     if (!_yield.TryGetValue(key, out int loserId))
+                    {
                         _yield[key] = loserId = Loser(a[i], ci, a[j], cj);
+                        Crossings++;
+                    }
                     int lo = loserId == a[i].Id ? i : j, c = lo == i ? ci : cj;
                     waits.Add((lo, lo == i ? j : i, Math.Max(0.0, a[lo].Path[c].S - Step(a[lo], c)), true));
                 }
@@ -177,7 +184,9 @@ namespace RcTwin
                 int k = waits.FindIndex(w => w.who == first && w.path && cycle.Contains(w.on));
                 var lifted = waits[k];
                 waits.RemoveAt(k);
-                _yield[Key(a[first], a[lifted.on])] = a[lifted.on].Id;
+                var lk = Key(a[first], a[lifted.on]);
+                if (!_yield.TryGetValue(lk, out int was) || was != a[lifted.on].Id) CyclesBroken++;   // a new break, not the same one again
+                _yield[lk] = a[lifted.on].Id;
                 broke = true;
             }
             foreach (var w in waits)
