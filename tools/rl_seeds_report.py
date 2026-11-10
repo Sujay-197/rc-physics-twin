@@ -71,6 +71,30 @@ def time_ratio(eps, base_by_seed):
     return statistics.median(r) if r else float("nan")
 
 
+def trip_level(per_seed_eps, base_by_seed, boot: int = 10000) -> dict:
+    """The method against the baseline with the trip as the unit, so a trip
+    counts once however many seeds drove it: per trip, the share of seeds that
+    finished it minus whether the baseline did. A sign test on the trips where
+    that differs from 0; a paired sign-flip permutation test of the mean of
+    those per-trip differences (two-sided, 20000 flips, fixed seed); and a
+    bootstrap 95 % interval (trips resampled, fixed seed) on the difference in
+    success rate."""
+    import random
+    trips = sorted(base_by_seed)
+    share = {t: statistics.mean(ok(next(e for e in eps if e["seed"] == t)) for eps in per_seed_eps) for t in trips}
+    d = [share[t] - ok(base_by_seed[t]) for t in trips]
+    plus, minus = sum(x > 0 for x in d), sum(x < 0 for x in d)
+    rng = random.Random(0)
+    means = sorted(statistics.mean(rng.choice(d) for _ in d) for _ in range(boot))
+    obs = abs(sum(d))
+    nz = [x for x in d if x]
+    flips = 20000
+    hits = sum(abs(sum(x if rng.random() < 0.5 else -x for x in nz)) >= obs - 1e-12 for _ in range(flips))
+    return {"plus": plus, "minus": minus, "p": sign_test(plus, minus), "diff": statistics.mean(d),
+            "p_perm": (hits + 1) / (flips + 1) if nz else 1.0,
+            "ci": [means[int(0.025 * boot)], means[int(0.975 * boot) - 1]]}
+
+
 def analyse(report: dict, baseline: str) -> dict:
     pol = report["policies"]
     conds = report["protocol"]["conditions"]
@@ -84,10 +108,11 @@ def analyse(report: dict, baseline: str) -> dict:
         order = sorted(seeds, key=lambda s: -1 if s is None else s)
         m = {"seeds": [s for s in order if s is not None], "specs": [seeds[s] for s in order], "conditions": {}}
         for c in conds:
-            per_seed, all_eps = [], []
+            per_seed, all_eps, seed_eps = [], [], []
             for s in order:
                 eps = pol[seeds[s]][c]["episodes"]
                 all_eps += eps
+                seed_eps.append(eps)
                 p, q = compare(eps, base[c])
                 per_seed.append({"seed": s, "success": sum(map(ok, eps)), "trips": len(eps),
                                  "plus": p, "minus": q, "p": sign_test(p, q)})
@@ -97,6 +122,9 @@ def analyse(report: dict, baseline: str) -> dict:
             m["conditions"][c] = {
                 "success": k, "trips": len(all_eps), "wilson": ev.wilson(k, len(all_eps)),
                 "per_seed": per_seed, "plus": p, "minus": q, "p": sign_test(p, q),
+                "trip_level": trip_level(seed_eps, base[c]),
+                "seeds_better": sum(x["plus"] > x["minus"] for x in per_seed),
+                "seeds_worse": sum(x["plus"] < x["minus"] for x in per_seed),
                 "left_road": sum(e["status"] == "left_road" for e in all_eps),
                 "timed_out": sum(e["status"] not in ("reached_end", "left_road", "overshot") for e in all_eps),
                 "overshot": sum(e["status"] == "overshot" for e in all_eps),
@@ -121,7 +149,7 @@ def fmt_p(p: float) -> str:
 def markdown(a: dict) -> str:
     proto = a["protocol"]
     conds = proto["conditions"]
-    lines = [f"Task {proto['task']}, car {proto['car']}, {proto['target_speed']:g} m/s, {proto['trips']} trips per "
+    lines = [f"Task {proto.get('task', 'follow')}, car {proto.get('car', 'bare')}, {proto['target_speed']:g} m/s, {proto['trips']} trips per "
              f"condition per seed (seeds {proto['seed']} to {proto['seed'] + proto['trips'] - 1}). Baseline "
              f"`{a['baseline']}`.", "",
              "| method | seeds | " + " | ".join(f"{c}: pooled (95 % CI)" for c in conds) + " | "
@@ -149,6 +177,24 @@ def markdown(a: dict) -> str:
         per = ["; ".join(f"+{s['plus']}/−{s['minus']}" + (f" ({fmt_p(s['p'])})" if s["p"] < 0.1 else "")
                          for s in m["conditions"][c]["per_seed"]) for c in conds]
         lines.append(f"| {name} | " + " | ".join(pooled) + " | " + " | ".join(per) + " |")
+    lines += ["", "The same with the trip as the unit (a trip counts once, however many seeds drove it): the "
+              "difference in success rate with a bootstrap 95 % interval over trips; trips where the share of "
+              "seeds that finished beats the baseline (+) or loses to it (−), with a sign test; a paired "
+              "sign-flip permutation test of the per-trip differences; and seeds with more + than − trips, "
+              "and fewer.", "",
+              "| method | " + " | ".join(f"{c}: difference [pp] (95 % CI), permutation p" for c in conds) + " | "
+              + " | ".join(f"{c}: trips +/−" for c in conds) + " | "
+              + " | ".join(f"{c}: seeds better/worse" for c in conds) + " |",
+              "|---|" + "---|" * (3 * len(conds))]
+    for name, m in a["methods"].items():
+        if name == a["baseline"]:
+            continue
+        t = [m["conditions"][c]["trip_level"] for c in conds]
+        lines.append(f"| {name} | " + " | ".join(f"{100 * x['diff']:+.1f} ({100 * x['ci'][0]:+.1f} to "
+                                                  f"{100 * x['ci'][1]:+.1f}), {fmt_p(x['p_perm'])}" for x in t) + " | "
+                     + " | ".join(f"+{x['plus']} / −{x['minus']}, {fmt_p(x['p'])}" for x in t) + " | "
+                     + " | ".join(f"{m['conditions'][c]['seeds_better']} / {m['conditions'][c]['seeds_worse']}"
+                                  f" of {len(m['conditions'][c]['per_seed'])}" for c in conds) + " |")
     c = "held_out" if "held_out" in conds else conds[0]
     lines += ["", f"Driving quality, {c} cars, over the trips each finished (pooled over seeds); trip time is the "
               "median ratio to the baseline over trips both finished.", "",
@@ -173,7 +219,7 @@ def main(argv=None) -> int:
     report = json.loads(args.report.read_text(encoding="utf-8"))
     a = analyse(report, args.baseline)
     md = markdown(a)
-    print(md)
+    sys.stdout.buffer.write(md.encode("utf-8"))
     if args.out:
         args.out.parent.mkdir(parents=True, exist_ok=True)
         args.out.with_suffix(".md").write_text(md, encoding="utf-8")
