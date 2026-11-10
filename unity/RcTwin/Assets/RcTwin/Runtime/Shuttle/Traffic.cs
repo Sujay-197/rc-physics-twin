@@ -131,7 +131,7 @@ namespace RcTwin
         public int Overlaps { get; private set; }
         /// <summary>Times two buses' paths came to cross and one was told to give way, since the start (counted only).</summary>
         public int Crossings { get; private set; }
-        /// <summary>Cycles of buses waiting on each other that were broken, since the start (counted only).</summary>
+        /// <summary>Cycles of buses waiting on each other broken by a change of who gives way, since the start (counted only).</summary>
         public int CyclesBroken { get; private set; }
 
         private readonly Dictionary<(int, int), int> _yield = new Dictionary<(int, int), int>();   // (lo, hi) id pair -> the id that gives way
@@ -184,8 +184,9 @@ namespace RcTwin
                 int k = waits.FindIndex(w => w.who == first && w.path && cycle.Contains(w.on));
                 var lifted = waits[k];
                 waits.RemoveAt(k);
-                _yield[Key(a[first], a[lifted.on])] = a[lifted.on].Id;
-                CyclesBroken++;
+                var lk = Key(a[first], a[lifted.on]);
+                if (!_yield.TryGetValue(lk, out int was) || was != a[lifted.on].Id) CyclesBroken++;   // a new break, not the same one again
+                _yield[lk] = a[lifted.on].Id;
                 broke = true;
             }
             foreach (var w in waits)

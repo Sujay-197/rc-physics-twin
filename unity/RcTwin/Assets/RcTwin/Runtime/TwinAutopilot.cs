@@ -78,6 +78,10 @@ namespace RcTwin
         public bool showPanel = true;
         [Tooltip("Read -goto, -speed, -driver and -screenshot from the command line (off for the fleet's copies of the car).")]
         public bool readCommandLine = true;
+        /// <summary>Plan turns on the main thread rather than in the background, so a turn waits
+        /// one tick for its plan instead of however long the planning takes on the wall clock:
+        /// a run fast-forwarded (ShuttleFleet's -fast) then gives the same result at any speed.</summary>
+        public static bool PlanInline;
 
         public Status State { get; private set; } = Status.Idle;
         public string Origin { get; private set; }
@@ -431,7 +435,15 @@ namespace RcTwin
             var route = _lane;
             _planner = planner;
             _turnDriver = null;
-            _planning = System.Threading.Tasks.Task.Run(() => planner.Plan(st.x, st.y, st.yaw, route));
+            if (PlanInline)
+            {
+                // On this thread: the plan is there on the next tick, whatever the wall clock does.
+                var done = new System.Threading.Tasks.TaskCompletionSource<TurnPlan>();
+                try { done.SetResult(planner.Plan(st.x, st.y, st.yaw, route)); }
+                catch (Exception e) { done.SetException(e); }
+                _planning = done.Task;
+            }
+            else _planning = System.Threading.Tasks.Task.Run(() => planner.Plan(st.x, st.y, st.yaw, route));
             Message = _lineUp ? $"{Origin} to {Destination}: lining up with the lane; planning."
                               : $"{Origin} to {Destination}: the route leaves the other way; planning a turn.";
         }

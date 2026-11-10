@@ -138,7 +138,9 @@ namespace RcTwin
             if (double.TryParse(Arg("-fast"), NumberStyles.Float, inv, out double fk) && fk >= 1)
             {
                 // A fixed number of physics ticks per frame, as fast as the machine runs them: the
-                // ticks and the 1 ms core steps inside them are the same as at normal speed.
+                // ticks and the 1 ms core steps inside them are the same as at normal speed, and
+                // turns are planned within a tick (TwinAutopilot.PlanInline).
+                TwinAutopilot.PlanInline = true;   // a turn's plan must not take longer in game time the faster it runs
                 Application.runInBackground = true;
                 Application.targetFrameRate = -1;
                 QualitySettings.vSyncCount = 0;
