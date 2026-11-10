@@ -1,0 +1,190 @@
+{
+ "name": "sac-res-s1",
+ "algo": "sac",
+ "seed": 1,
+ "timesteps": 2000320,
+ "selected": {
+  "steps": 100016,
+  "val_success": 1.0,
+  "val_return": 295.5198546413601,
+  "val_trips": 30,
+  "val_seed": 40000
+ },
+ "train_seconds": 2368.1,
+ "device": "cuda",
+ "envs": 28,
+ "workers": 14,
+ "config": {
+  "target_speed": 4.0,
+  "history": 4,
+  "max_time": 30.0,
+  "residual": "pure_pursuit",
+  "residual_scale": 0.5
+ },
+ "hyperparameters": {
+  "net": [
+   256,
+   256
+  ],
+  "n_steps": 0,
+  "batch": 4096,
+  "lr": 0.0003,
+  "gamma": 0.995,
+  "log_std": -2.5,
+  "utd": 0.0625,
+  "buffer": 2000000,
+  "learning_starts": 20000,
+  "target_kl": 0.02,
+  "chunks": 20
+ },
+ "versions": {
+  "stable_baselines3": "2.9.0",
+  "torch": "2.14.1+cu130",
+  "gymnasium": "1.4.0",
+  "numpy": "2.5.4"
+ },
+ "curve": [
+  {
+   "steps": 100016,
+   "seconds": 91.1,
+   "mean_episode_return": 239.72067434000002,
+   "val_success": 1.0,
+   "val_return": 295.5198546413601
+  },
+  {
+   "steps": 200032,
+   "seconds": 203.0,
+   "mean_episode_return": 169.77727201999997,
+   "val_success": 1.0,
+   "val_return": 254.5515705976399
+  },
+  {
+   "steps": 300048,
+   "seconds": 315.6,
+   "mean_episode_return": 53.27396729,
+   "val_success": 0.8333333333333334,
+   "val_return": -693.8873329711587
+  },
+  {
+   "steps": 400064,
+   "seconds": 427.8,
+   "mean_episode_return": 234.02788683999998,
+   "val_success": 1.0,
+   "val_return": 249.6709384409674
+  },
+  {
+   "steps": 500080,
+   "seconds": 540.9,
+   "mean_episode_return": 250.01933577,
+   "val_success": 1.0,
+   "val_return": 270.03903499232706
+  },
+  {
+   "steps": 600096,
+   "seconds": 658.0,
+   "mean_episode_return": 221.99111768,
+   "val_success": 0.9333333333333333,
+   "val_return": -3.0766356090836458
+  },
+  {
+   "steps": 700112,
+   "seconds": 771.0,
+   "mean_episode_return": 269.23335447,
+   "val_success": 1.0,
+   "val_return": 276.80834299083836
+  },
+  {
+   "steps": 800128,
+   "seconds": 883.1,
+   "mean_episode_return": 261.83966481,
+   "val_success": 1.0,
+   "val_return": 275.2085793054706
+  },
+  {
+   "steps": 900144,
+   "seconds": 995.2,
+   "mean_episode_return": 235.64186346999998,
+   "val_success": 0.9666666666666667,
+   "val_return": 82.64499993369473
+  },
+  {
+   "steps": 1000160,
+   "seconds": 1108.0,
+   "mean_episode_return": 236.2789528,
+   "val_success": 1.0,
+   "val_return": 282.01423804150335
+  },
+  {
+   "steps": 1100176,
+   "seconds": 1220.7,
+   "mean_episode_return": 231.86759496,
+   "val_success": 1.0,
+   "val_return": 281.33366759321274
+  },
+  {
+   "steps": 1200192,
+   "seconds": 1335.8,
+   "mean_episode_return": 265.75289862,
+   "val_success": 1.0,
+   "val_return": 280.8862498148676
+  },
+  {
+   "steps": 1300208,
+   "seconds": 1448.0,
+   "mean_episode_return": 279.40655352,
+   "val_success": 1.0,
+   "val_return": 282.71509705651965
+  },
+  {
+   "steps": 1400224,
+   "seconds": 1561.2,
+   "mean_episode_return": 244.43003811999998,
+   "val_success": 1.0,
+   "val_return": 286.0409624598485
+  },
+  {
+   "steps": 1500240,
+   "seconds": 1688.4,
+   "mean_episode_return": 227.38649517000002,
+   "val_success": 1.0,
+   "val_return": 281.89173175521535
+  },
+  {
+   "steps": 1600256,
+   "seconds": 1823.4,
+   "mean_episode_return": 255.45626373,
+   "val_success": 1.0,
+   "val_return": 283.04418708973867
+  },
+  {
+   "steps": 1700272,
+   "seconds": 1959.4,
+   "mean_episode_return": 260.28940578,
+   "val_success": 1.0,
+   "val_return": 289.43881955527394
+  },
+  {
+   "steps": 1800288,
+   "seconds": 2095.3,
+   "mean_episode_return": 273.93504477,
+   "val_success": 1.0,
+   "val_return": 290.2145966474956
+  },
+  {
+   "steps": 1900304,
+   "seconds": 2231.2,
+   "mean_episode_return": 270.54442788,
+   "val_success": 1.0,
+   "val_return": 291.8963911566087
+  },
+  {
+   "steps": 2000320,
+   "seconds": 2368.1,
+   "mean_episode_return": 237.63065093,
+   "val_success": 1.0,
+   "val_return": 291.71428294628464
+  }
+ ],
+ "environment": "CampusEnv, walls on, RANGES_TRAIN, demand-weighted trips",
+ "car": "SlipX provisional defaults (not a measured car)"
+}
