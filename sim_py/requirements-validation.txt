@@ -1,0 +1,13 @@
+# Model-to-model cross-check (tools/cross_check.py, Docs/validation.md). Not
+# needed for anything else. Install into its own venv so the references stay
+# apart from the twin's standard-library tooling:
+#   python -m venv .venv-validation
+#   .venv-validation/Scripts/python -m pip install -r sim_py/requirements-validation.txt
+# Versions as installed and tested 2026-11-09 (Python 3.14.6, Windows 11).
+# commonroad-vehicle-models is BSD-3-Clause (its LICENSE.txt, TU Munich);
+# installed from PyPI, not vendored.
+commonroad-vehicle-models==3.0.2
+omegaconf==2.4.0
+numpy==2.5.4
+scipy==1.18.1
+matplotlib==3.11.2
