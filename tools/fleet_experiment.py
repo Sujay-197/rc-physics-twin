@@ -21,6 +21,7 @@ from __future__ import annotations
 import argparse
 import json
 import math
+import re
 import os
 import statistics
 import subprocess
@@ -180,8 +181,34 @@ def run_metrics(r: dict) -> dict:
     }
 
 
+# ShuttleFleet logs each new overlap with every bus's pose and state; the touching
+# pair is taken as the two closest centres (the footprint is 0.42 m by 0.275 m).
+_BUS = re.compile(r"Bus (\d+) at \((-?[\d.]+), (-?[\d.]+)\) yaw (-?[\d.]+) v (-?[\d.]+), (\w+) \((.*?)\), (\w+)( turning)?, "
+                  r"hold ([^:]+): (.*?)(?=; Bus \d+ at |$)")
+
+
+def overlap_events(log: Path, start: float, end: float) -> list[dict]:
+    out = []
+    if not log.exists():
+        return out
+    for line in log.read_text(encoding="utf-8", errors="replace").splitlines():
+        m = re.match(r"ShuttleFleet: buses overlap at ([\d.]+) s: (.*)", line.strip())
+        if not m or not (start < float(m.group(1)) <= end):
+            continue
+        bs = [g.groups() for g in _BUS.finditer(m.group(2))]
+        pairs = [(math.hypot(float(p[1]) - float(q[1]), float(p[2]) - float(q[2])), p, q)
+                 for k, p in enumerate(bs) for q in bs[k + 1:]]
+        if not pairs:
+            continue
+        d, p, q = min(pairs, key=lambda x: x[0])
+        out.append({"t": float(m.group(1)), "centres_m": d, "speed_max": max(abs(float(p[4])), abs(float(q[4]))),
+                    "turning": bool(p[8]) or bool(q[8])})
+    return out
+
+
 SUMS = ["requests", "served", "gave_up", "unresolved", "cycles_broken", "made_room", "served_from_behind",
-        "stuck_tows", "overlaps", "leg_fail_tows", "flats", "kerb_strikes"]
+        "stuck_tows", "overlaps", "leg_fail_tows", "flats", "kerb_strikes",
+        "overlaps_logged", "overlaps_at_rest", "overlaps_turning"]
 
 
 def cmd_analyse(a) -> None:
@@ -195,6 +222,10 @@ def cmd_analyse(a) -> None:
                     continue
                 r = json.loads(p.read_text())
                 m = run_metrics(r)
+                ev = overlap_events(p.with_suffix(".log"), r["window"]["start_s"], r["window"]["end_s"])
+                m["overlaps_logged"] = len(ev)
+                m["overlaps_at_rest"] = sum(e["speed_max"] < 0.1 for e in ev)
+                m["overlaps_turning"] = sum(e["turning"] for e in ev)
                 runs.append({"interval_s": i, "buses": b, "seed": s, **m})
                 ms.append(m)
             if not ms:
