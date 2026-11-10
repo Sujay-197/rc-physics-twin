@@ -293,6 +293,57 @@ Since ADR 0011 the Unity car (`TwinCar`, and `"unity"` in the environment) is a 
 
 What the twin drives is unchanged: every trip, no kerb contact, the same time. Without the corner plan the blend finishes more trips than it fails in three of the four sets, though none of the differences is significant. Learned policies trained on `"unity"` before ADR 0011 were trained without it.
 
+## An ablation of the autopilot
+
+Which of the autopilot's parts earn their place? The full autopilot is the one the twin drives: pure pursuit with the Unity-car gains and the planned stop, inside the corner speed plan (3.4, 1.2, 1.2, 0.5), inside the kerb recovery. Each variant removes one part and keeps the rest (`tools/ablation.py`):
+
+- **Corner speed plan.** Removed; or kept without its launch ramp; or kept without both ramps (exit and launch).
+- **Kerb recovery.** Removed.
+- **Planned stop.** Braking at `a_stop` to 10 cm short of the end is replaced by the simplest stop the observation allows: the speed falls in proportion to the distance left over the last 10 m (`stop_plan="linear"`, a new option of the controllers; the default, `"brake"`, is unchanged).
+- **Reactive cornering limit.** Pure pursuit's own limit, `a_lat` 12 on the observed centreline, is removed.
+- **Unity-car gains.** Replaced by the study's gains (`policies/controllers.json`).
+
+There are two baselines: pure pursuit with the Unity-car gains alone, and plain pure pursuit with the study's gains. Both keep the planned stop, because without one the stop task cannot be driven at all. The protocol is the fresh-trip table's: stop task, Unity car, the low-speed blend, 100 trips per condition from seed 50000, cruise speeds 1 to 4 m/s, the same trips and cars for every variant. The run reproduces the published rows first. The full autopilot finishes 100 / 100 / 100 at every speed with no kerb contact. Without the corner plan it finishes 100 / 90 / 92 at 4 m/s with 34 % kerb contact, as in the low-speed blend's table. Two runs gave identical trips.
+
+**At 4 m/s.** Success in % (Wilson 95 % interval). Kerb contact is the share of held-out trips that touched a wall. Mean offset and trip time (median) are over the held-out trips that finished. The time ratio is the median, over held-out trips both finished, of the variant's time to the full autopilot's. The last two columns count trips won and lost against the full autopilot, with a two-sided sign test.
+
+| Variant | Train | Held-out | Perturbed | Kerb contact | Mean offset | Trip time | Time ratio | vs full (held-out) | vs full (perturbed) |
+|---|---|---|---|---|---|---|---|---|---|
+| **full autopilot** | **100 (96-100)** | **100 (96-100)** | **100 (96-100)** | **0 %** | **2.5 cm** | 8.9 s | 1.00 | - | - |
+| − corner speed plan | 100 (96-100) | 90 (83-94) | 92 (85-96) | 34 % | 5.3 cm | 7.2 s | 0.82 | +0 / −10, p = 0.002 | +0 / −8, p = 0.008 |
+| − launch ramp | 100 (96-100) | 100 (96-100) | 100 (96-100) | 4 % | 3.4 cm | 7.9 s | 0.88 | - | - |
+| − exit and launch ramps | 100 (96-100) | 98 (93-99) | 97 (92-99) | 16 % | 5.5 cm | 7.7 s | 0.86 | +0 / −2, p = 0.50 | +0 / −3, p = 0.25 |
+| − kerb recovery | 100 (96-100) | 100 (96-100) | 100 (96-100) | 0 % | 2.5 cm | 8.9 s | 1.00 | - | - |
+| − planned stop (linear slow-down) | 100 (96-100) | 100 (96-100) | 100 (96-100) | 0 % | 3.1 cm | 13.9 s | 1.58 | - | - |
+| − reactive cornering limit | 100 (96-100) | 100 (96-100) | 100 (96-100) | 0 % | 2.5 cm | 8.9 s | 1.00 | - | - |
+| − Unity-car gains (study gains) | 100 (96-100) | 100 (96-100) | 100 (96-100) | 0 % | 2.6 cm | 8.6 s | 0.97 | - | - |
+| pure pursuit, Unity-car gains only | 99 (95-100) | 79 (70-86) | 73 (64-81) | 34 % | 2.7 cm | 7.0 s | 0.81 | +0 / −21, p < 0.001 | +0 / −27, p < 0.001 |
+| plain pure pursuit (study gains) | 92 (85-96) | 65 (55-74) | 62 (52-71) | 35 % | 2.3 cm | 5.0 s | 0.82 | +0 / −35, p < 0.001 | +0 / −38, p < 0.001 |
+
+**Every speed.** Success in % (train / held-out / perturbed). The last column pools all 1200 trips per variant, at every speed and in every condition, against the full autopilot.
+
+| Variant | 1 m/s | 2 m/s | 3 m/s | 4 m/s | vs full, pooled |
+|---|---|---|---|---|---|
+| **full autopilot** | 100 / 100 / 100 | 100 / 100 / 100 | 100 / 100 / 100 | 100 / 100 / 100 | - |
+| − corner speed plan | 100 / 100 / 100 | 100 / 99 / 100 | 100 / 97 / 100 | 100 / 90 / 92 | +0 / −22, p < 0.001 |
+| − launch ramp | 100 / 100 / 100 | 100 / 100 / 100 | 100 / 100 / 100 | 100 / 100 / 100 | - |
+| − exit and launch ramps | 100 / 100 / 100 | 100 / 100 / 100 | 100 / 100 / 96 | 100 / 98 / 97 | +0 / −9, p = 0.004 |
+| − kerb recovery | 100 / 100 / 100 | 100 / 100 / 100 | 100 / 100 / 100 | 100 / 100 / 100 | - |
+| − planned stop (linear slow-down) | 100 / 100 / 100 | 100 / 100 / 100 | 100 / 100 / 100 | 100 / 100 / 100 | - |
+| − reactive cornering limit | 100 / 100 / 100 | 100 / 100 / 100 | 100 / 100 / 100 | 100 / 100 / 100 | - |
+| − Unity-car gains (study gains) | 100 / 100 / 100 | 100 / 100 / 100 | 100 / 100 / 99 | 100 / 100 / 100 | +0 / −1, p = 1.0 |
+| pure pursuit, Unity-car gains only | 100 / 100 / 100 | 100 / 98 / 100 | 100 / 92 / 100 | 99 / 79 / 73 | +0 / −59, p < 0.001 |
+| plain pure pursuit (study gains) | 100 / 100 / 100 | 100 / 98 / 100 | 99 / 80 / 76 | 92 / 65 / 62 | +0 / −128, p < 0.001 |
+
+**What the numbers say.**
+
+1. **The corner speed plan carries the robustness.** Without it the autopilot loses 22 trips and wins none (p < 0.001), all at 2 to 4 m/s. At 4 m/s kerb contact rises from none to 34 % of held-out trips, and the mean offset doubles. Within the plan, the exit ramp matters: without both ramps the autopilot loses 9 trips (p = 0.004). The launch ramp alone loses no fresh trip, but without it kerb contact at 4 m/s rises to 4 % and the offset to 3.4 cm.
+2. **With the plan, the kerb recovery and the reactive cornering limit never act.** On all 1200 trips the recovery never backs off. Removing either part leaves every trip as the full autopilot drove it: the same outcome, the same number of ticks and the same mean offset. They are a safety net for when the plan is not there. Without the plan, the recovery backs off 135 times on held-out trips and 171 times on perturbed trips at 4 m/s. It finishes 37 trips that pure pursuit without it fails, and fails none that pure pursuit finishes (pooled, p < 0.001).
+3. **With the plan and the recovery, the gains hardly matter.** The study's gains lose 1 trip in 1200 (p = 1.0). On their own they matter: plain pure pursuit finishes 65 / 62 % with held-out and perturbed cars at 4 m/s, against 79 / 73 % with the Unity-car gains.
+4. **The planned stop is about time, not success.** The linear slow-down finishes every trip too, but takes 1.58 times as long at 4 m/s and 2.34 times as long at 1 m/s. It starts slowing 10 m out at every speed, however little braking it needs.
+
+These are fresh trips that no design step looked at. They use the provisional car parameters, so they rank the components in simulation only.
+
 ## A second round on the Unity car: a drivable line and kerb contact
 
 The first round's lessons, applied (on the Core with the ESC reverse). The bar is now the autopilot itself: the Unity-car gains with the kerb recovery, 98 / 82 / 86 %.
@@ -425,6 +476,12 @@ The corner speed plan:
 
 ```bash
 .venv/Scripts/python sim_py/evaluate_policies.py recover:controller:pure_pursuit:policies/controllers_unity_stop.json recover:corner:9,2:controller:pure_pursuit:policies/controllers_unity_stop.json recover:corner:3.4,1.2:controller:pure_pursuit:policies/controllers_unity_stop.json recover:corner:tuned:controller:pure_pursuit:policies/controllers_unity_stop.json --task stop --car unity --trips 100 --target-speed 4
+```
+
+The ablation of the autopilot (every variant, 1 to 4 m/s, seed 50000; about two minutes on 8 workers; writes `results/reference/ablation.json`):
+
+```bash
+.venv/Scripts/python tools/ablation.py
 ```
 
 `tools/record_drives.py --pairs` records every route for the Unity replay (`sim_py/README.md`). Tuning, training and evaluation are deterministic given their seeds; training on GPU is not bit-exact.

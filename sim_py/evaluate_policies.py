@@ -190,6 +190,17 @@ def wilson(k: int, n: int, z: float = 1.96):
     return (p, max(0.0, c - h), min(1.0, c + h))
 
 
+def sign_test(wins: int, losses: int) -> float:
+    """Two-sided exact sign test on paired trips: `wins` trips one policy
+    finished and the other failed, `losses` the reverse; ties (both finished
+    or both failed) drop out. p = P(a split at least this uneven | 1/2)."""
+    n = wins + losses
+    if n == 0:
+        return 1.0
+    tail = sum(math.comb(n, k) for k in range(min(wins, losses) + 1)) / 2.0 ** n
+    return min(1.0, 2.0 * tail)
+
+
 def mean_ci(xs, z: float = 1.96):
     n = len(xs)
     if n == 0:
