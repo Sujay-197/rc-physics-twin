@@ -5,7 +5,18 @@
 Only seeds are added: every run uses its method's original command, with the
 same budget, reward, car, validation selection and hyperparameters
 (tools/run_study.py for the follow task; Docs/policy-study.md, "A second
-round", for the Unity car). Two groups:
+round", for the Unity car), and the code and Core its runs trained on. The
+Core has changed since (ADR 0010's ESC reverse frees kerb-pinned cars, ADR
+0011's low-speed blend), so each group trains in a checkout of its commit:
+
+  follow  e552c96, the policy study's commit (before ADR 0010)
+  unity   47175b9, reward v3 (the second round; before ADR 0011)
+
+each with its own build/bin/rc_twin.dll (git worktree add --detach <tree>
+<commit>, then the README's cmake build). Both reproduce their recorded
+baselines episode for episode. The models are written into this checkout.
+
+Two groups:
 
   follow  bare car, follow task (the study's first table): SAC + history and
           residual SAC from 1 seed to 3, then 5; PPO + history and residual
@@ -39,6 +50,8 @@ SPEED = "4"
 OFF_POLICY = ["--batch", "4096", "--utd", "0.0625", "--learning-starts", "20000"]   # as tools/run_study.py
 UNITY = ["--task", "stop", "--car", "unity"]
 
+TREES = {"follow": "e552c96", "unity": "47175b9"}
+
 # name prefix, output folder, train_rl.py arguments
 METHODS = {
     "sac": ("policies/study", "sac-s{seed}", ["--algo", "sac", "--timesteps", "2500000", *OFF_POLICY]),
@@ -66,11 +79,27 @@ QUEUE = [
 GROUP = {"follow": ("sac", "sac-res", "ppo", "ppo-res"), "unity": ("unity-res", "unity-ppo")}
 
 
-def command(method: str, seed: int) -> tuple[list, pathlib.Path, str]:
+def group_of(method: str) -> str:
+    return next(g for g, ms in GROUP.items() if method in ms)
+
+
+def tree_for(group: str, trees: dict) -> pathlib.Path:
+    """The checkout of the group's commit, checked: that commit, with its DLL."""
+    import subprocess as sp
+    tree = pathlib.Path(trees.get(group) or ROOT.parent / f"{ROOT.name}-{TREES[group]}")
+    head = sp.run(["git", "-C", str(tree), "rev-parse", "HEAD"], capture_output=True, text=True).stdout.strip()
+    if not head.startswith(TREES[group]):
+        raise SystemExit(f"{tree} is at {head or '?'}, not {TREES[group]} ({group})")
+    if not (tree / "build" / "bin" / "rc_twin.dll").exists():
+        raise SystemExit(f"{tree} has no build/bin/rc_twin.dll: build it first")
+    return tree
+
+
+def command(method: str, seed: int, tree: pathlib.Path) -> tuple[list, pathlib.Path, str]:
     folder, pattern, args = METHODS[method]
     name = pattern.format(seed=seed)
     out = ROOT / folder / name
-    cmd = [sys.executable, "-I", "-u", str(ROOT / "sim_py" / "train_rl.py"), *args, "--seed", str(seed),
+    cmd = [sys.executable, "-I", "-u", str(tree / "sim_py" / "train_rl.py"), *args, "--seed", str(seed),
            "--target-speed", SPEED, "--out", str(out)]
     return cmd, out.with_suffix(".json"), name
 
@@ -80,12 +109,16 @@ def main(argv=None) -> int:
     ap.add_argument("--dry-run", action="store_true")
     ap.add_argument("--only", choices=list(GROUP))
     ap.add_argument("--priority", type=int, default=3, help="run jobs up to this priority")
+    ap.add_argument("--follow-tree", help=f"checkout of {TREES['follow']} (default ../<this>-{TREES['follow']})")
+    ap.add_argument("--unity-tree", help=f"checkout of {TREES['unity']} (default ../<this>-{TREES['unity']})")
     args = ap.parse_args(argv)
+    trees = {"follow": args.follow_tree, "unity": args.unity_tree}
     LOGS.mkdir(parents=True, exist_ok=True)
     for prio, method, seed in QUEUE:
         if prio > args.priority or (args.only and method not in GROUP[args.only]):
             continue
-        cmd, marker, name = command(method, seed)
+        tree = tree_for(group_of(method), trees)
+        cmd, marker, name = command(method, seed, tree)
         if marker.exists():
             print(f"skip {name}: done", flush=True)
             continue
@@ -99,7 +132,7 @@ def main(argv=None) -> int:
         marker.parent.mkdir(parents=True, exist_ok=True)
         t0 = time.perf_counter()
         with open(LOGS / f"{name}.log", "w", encoding="utf-8") as log:
-            rc = subprocess.run(cmd, cwd=ROOT, stdout=log, stderr=subprocess.STDOUT).returncode
+            rc = subprocess.run(cmd, cwd=tree, stdout=log, stderr=subprocess.STDOUT).returncode
         print(f"{time.strftime('%Y-%m-%d %H:%M:%S')} {'done' if rc == 0 else f'FAILED ({rc})'} {name} "
               f"in {time.perf_counter() - t0:.0f} s", flush=True)
     return 0
