@@ -36,7 +36,7 @@
   "ci": "mean over seeds, 95 % Student t interval of the per-seed values (half width)",
   "game_defaults": "capacity 6, cruise 2 m/s, give up after 180 s, battery 5 min of driving, chargers AB1 and AB3, lane offset 0.2 m"
  },
- "commit": "768dbf7",
+ "commit": "c893b22",
  "summary": [
   {
    "interval_s": 20.0,

@@ -310,7 +310,8 @@ def figure(summary: list[dict]) -> None:
     a2.set_ylabel("students who gave up [%]")
     a1.set_title("(a) wait of the students served", fontsize=7.5)
     a2.set_title("(b) gave up (after 180 s)", fontsize=7.5)
-    a1.legend(frameon=False, fontsize=6, handlelength=2.6, loc="upper right")
+    h, l = a1.get_legend_handles_labels()
+    a2.legend(h, l, frameon=False, fontsize=6, handlelength=2.6, loc="upper right")   # (b) is empty there
     fig.tight_layout(pad=0.3, w_pad=1.2)
     for ext in ("pdf", "png"):
         fig.savefig(OUT / f"fleet_wait.{ext}", dpi=300, metadata={"CreationDate": None} if ext == "pdf" else None)
@@ -318,6 +319,8 @@ def figure(summary: list[dict]) -> None:
 
 
 def main() -> None:
+    if hasattr(sys.stdout, "reconfigure"):
+        sys.stdout.reconfigure(encoding="utf-8")
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("command", choices=["build", "check", "run", "analyse"])
     ap.add_argument("--player", default=str(PLAYER))
