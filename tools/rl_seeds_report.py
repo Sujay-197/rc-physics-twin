@@ -217,6 +217,9 @@ def main(argv=None) -> int:
     ap.add_argument("--out", type=pathlib.Path, help="writes <out>.md, <out>.json and <out>.outcomes.json")
     args = ap.parse_args(argv)
     report = json.loads(args.report.read_text(encoding="utf-8"))
+    # model paths relative to this checkout, so the saved reports name no local folder
+    prefix = str(ROOT) + "\\" if "\\" in str(ROOT) else str(ROOT) + "/"
+    report["policies"] = {k.replace(prefix, "").replace("\\", "/"): v for k, v in report["policies"].items()}
     a = analyse(report, args.baseline)
     md = markdown(a)
     sys.stdout.buffer.write(md.encode("utf-8"))

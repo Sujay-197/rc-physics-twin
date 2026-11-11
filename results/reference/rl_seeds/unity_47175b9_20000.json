@@ -1,0 +1,1305 @@
+{
+ "protocol": {
+  "trips": 100,
+  "seed": 20000,
+  "conditions": [
+   "train",
+   "held_out",
+   "perturbed"
+  ],
+  "target_speed": 4.0,
+  "task": "stop",
+  "car": "unity",
+  "perturbation": {
+   "at_s": 4.0,
+   "friction": 0.6,
+   "payload_kg": 1.0,
+   "servo_bandwidth": 0.6
+  }
+ },
+ "baseline": "recover:controller:pure_pursuit:policies/controllers_unity_stop.json",
+ "methods": {
+  "recover:controller:pure_pursuit:policies/controllers_unity_stop.json": {
+   "seeds": [],
+   "specs": [
+    "recover:controller:pure_pursuit:policies/controllers_unity_stop.json"
+   ],
+   "conditions": {
+    "train": {
+     "success": 98,
+     "trips": 100,
+     "wilson": [
+      0.98,
+      0.9299868370580063,
+      0.9944981477650318
+     ],
+     "per_seed": [
+      {
+       "seed": null,
+       "success": 98,
+       "trips": 100,
+       "plus": 0,
+       "minus": 0,
+       "p": 1.0
+      }
+     ],
+     "plus": 0,
+     "minus": 0,
+     "p": 1.0,
+     "trip_level": {
+      "plus": 0,
+      "minus": 0,
+      "p": 1.0,
+      "diff": 0,
+      "p_perm": 1.0,
+      "ci": [
+       0,
+       0
+      ]
+     },
+     "seeds_better": 0,
+     "seeds_worse": 0,
+     "left_road": 2,
+     "timed_out": 0,
+     "overshot": 0,
+     "wall_contact": 2,
+     "offset_mean": 0.01890659627045958,
+     "offset_p95": 0.10331134640201474,
+     "steer_roughness": 0.0012976476623451465,
+     "energy_wh_per_m": 0.0006805213640114549,
+     "speed_error": 0.278748778371721,
+     "time_ratio": 1.0
+    },
+    "held_out": {
+     "success": 82,
+     "trips": 100,
+     "wilson": [
+      0.82,
+      0.7333246397578691,
+      0.8829986834574896
+     ],
+     "per_seed": [
+      {
+       "seed": null,
+       "success": 82,
+       "trips": 100,
+       "plus": 0,
+       "minus": 0,
+       "p": 1.0
+      }
+     ],
+     "plus": 0,
+     "minus": 0,
+     "p": 1.0,
+     "trip_level": {
+      "plus": 0,
+      "minus": 0,
+      "p": 1.0,
+      "diff": 0,
+      "p_perm": 1.0,
+      "ci": [
+       0,
+       0
+      ]
+     },
+     "seeds_better": 0,
+     "seeds_worse": 0,
+     "left_road": 15,
+     "timed_out": 0,
+     "overshot": 3,
+     "wall_contact": 42,
+     "offset_mean": 0.06812295529586107,
+     "offset_p95": 0.19623497290186936,
+     "steer_roughness": 0.004831108341387956,
+     "energy_wh_per_m": 0.012544301220193907,
+     "speed_error": 0.415506585428942,
+     "time_ratio": 1.0
+    },
+    "perturbed": {
+     "success": 86,
+     "trips": 100,
+     "wilson": [
+      0.86,
+      0.7786263961619276,
+      0.914737342455351
+     ],
+     "per_seed": [
+      {
+       "seed": null,
+       "success": 86,
+       "trips": 100,
+       "plus": 0,
+       "minus": 0,
+       "p": 1.0
+      }
+     ],
+     "plus": 0,
+     "minus": 0,
+     "p": 1.0,
+     "trip_level": {
+      "plus": 0,
+      "minus": 0,
+      "p": 1.0,
+      "diff": 0,
+      "p_perm": 1.0,
+      "ci": [
+       0,
+       0
+      ]
+     },
+     "seeds_better": 0,
+     "seeds_worse": 0,
+     "left_road": 11,
+     "timed_out": 0,
+     "overshot": 3,
+     "wall_contact": 36,
+     "offset_mean": 0.06878996290923836,
+     "offset_p95": 0.17492470746574829,
+     "steer_roughness": 0.0051330305384014235,
+     "energy_wh_per_m": 0.012092327993351651,
+     "speed_error": 0.4219871700091288,
+     "time_ratio": 1.0
+    }
+   }
+  },
+  "controller:pure_pursuit:policies/controllers_unity_stop.json": {
+   "seeds": [],
+   "specs": [
+    "controller:pure_pursuit:policies/controllers_unity_stop.json"
+   ],
+   "conditions": {
+    "train": {
+     "success": 98,
+     "trips": 100,
+     "wilson": [
+      0.98,
+      0.9299868370580063,
+      0.9944981477650318
+     ],
+     "per_seed": [
+      {
+       "seed": null,
+       "success": 98,
+       "trips": 100,
+       "plus": 0,
+       "minus": 0,
+       "p": 1.0
+      }
+     ],
+     "plus": 0,
+     "minus": 0,
+     "p": 1.0,
+     "trip_level": {
+      "plus": 0,
+      "minus": 0,
+      "p": 1.0,
+      "diff": 0,
+      "p_perm": 1.0,
+      "ci": [
+       0,
+       0
+      ]
+     },
+     "seeds_better": 0,
+     "seeds_worse": 0,
+     "left_road": 1,
+     "timed_out": 1,
+     "overshot": 0,
+     "wall_contact": 2,
+     "offset_mean": 0.01890659627045958,
+     "offset_p95": 0.10331134640201474,
+     "steer_roughness": 0.0012976476623451465,
+     "energy_wh_per_m": 0.0006805213640114549,
+     "speed_error": 0.278748778371721,
+     "time_ratio": 1.0
+    },
+    "held_out": {
+     "success": 66,
+     "trips": 100,
+     "wilson": [
+      0.66,
+      0.5627754565831095,
+      0.74538620502457
+     ],
+     "per_seed": [
+      {
+       "seed": null,
+       "success": 66,
+       "trips": 100,
+       "plus": 1,
+       "minus": 17,
+       "p": 0.00014495849609375
+      }
+     ],
+     "plus": 1,
+     "minus": 17,
+     "p": 0.00014495849609375,
+     "trip_level": {
+      "plus": 1,
+      "minus": 17,
+      "p": 0.00014495849609375,
+      "diff": -0.16,
+      "p_perm": 0.00014999250037498125,
+      "ci": [
+       -0.24,
+       -0.09
+      ]
+     },
+     "seeds_better": 0,
+     "seeds_worse": 1,
+     "left_road": 13,
+     "timed_out": 18,
+     "overshot": 3,
+     "wall_contact": 42,
+     "offset_mean": 0.027859849801298086,
+     "offset_p95": 0.12528301055797014,
+     "steer_roughness": 0.0014422624857458302,
+     "energy_wh_per_m": 0.0073783585781463015,
+     "speed_error": 0.3332161836243867,
+     "time_ratio": 1.0
+    },
+    "perturbed": {
+     "success": 68,
+     "trips": 100,
+     "wilson": [
+      0.68,
+      0.5833719774632081,
+      0.7633098918454312
+     ],
+     "per_seed": [
+      {
+       "seed": null,
+       "success": 68,
+       "trips": 100,
+       "plus": 0,
+       "minus": 18,
+       "p": 7.62939453125e-06
+      }
+     ],
+     "plus": 0,
+     "minus": 18,
+     "p": 7.62939453125e-06,
+     "trip_level": {
+      "plus": 0,
+      "minus": 18,
+      "p": 7.62939453125e-06,
+      "diff": -0.18,
+      "p_perm": 4.999750012499375e-05,
+      "ci": [
+       -0.26,
+       -0.11
+      ]
+     },
+     "seeds_better": 0,
+     "seeds_worse": 1,
+     "left_road": 9,
+     "timed_out": 20,
+     "overshot": 3,
+     "wall_contact": 36,
+     "offset_mean": 0.02640331757068553,
+     "offset_p95": 0.09157130241782505,
+     "steer_roughness": 0.0013040959121443192,
+     "energy_wh_per_m": 0.0028443538647576756,
+     "speed_error": 0.3415668692396986,
+     "time_ratio": 1.0
+    }
+   }
+  },
+  "recover:ppo-res-stop-unity-r3": {
+   "seeds": [
+    0,
+    1,
+    2,
+    3,
+    4
+   ],
+   "specs": [
+    "recover:sb3:policies/twin-car/seeds/ppo-res-stop-unity-r3-s0",
+    "recover:sb3:policies/twin-car/seeds/ppo-res-stop-unity-r3-s1",
+    "recover:sb3:policies/twin-car/seeds/ppo-res-stop-unity-r3-s2",
+    "recover:sb3:policies/twin-car/seeds/ppo-res-stop-unity-r3-s3",
+    "recover:sb3:policies/twin-car/seeds/ppo-res-stop-unity-r3-s4"
+   ],
+   "conditions": {
+    "train": {
+     "success": 500,
+     "trips": 500,
+     "wilson": [
+      1.0,
+      0.9923753814690964,
+      0.9999999999999999
+     ],
+     "per_seed": [
+      {
+       "seed": 0,
+       "success": 100,
+       "trips": 100,
+       "plus": 2,
+       "minus": 0,
+       "p": 0.5
+      },
+      {
+       "seed": 1,
+       "success": 100,
+       "trips": 100,
+       "plus": 2,
+       "minus": 0,
+       "p": 0.5
+      },
+      {
+       "seed": 2,
+       "success": 100,
+       "trips": 100,
+       "plus": 2,
+       "minus": 0,
+       "p": 0.5
+      },
+      {
+       "seed": 3,
+       "success": 100,
+       "trips": 100,
+       "plus": 2,
+       "minus": 0,
+       "p": 0.5
+      },
+      {
+       "seed": 4,
+       "success": 100,
+       "trips": 100,
+       "plus": 2,
+       "minus": 0,
+       "p": 0.5
+      }
+     ],
+     "plus": 10,
+     "minus": 0,
+     "p": 0.001953125,
+     "trip_level": {
+      "plus": 2,
+      "minus": 0,
+      "p": 0.5,
+      "diff": 0.02,
+      "p_perm": 0.49887505624718764,
+      "ci": [
+       0,
+       0.05
+      ]
+     },
+     "seeds_better": 5,
+     "seeds_worse": 0,
+     "left_road": 0,
+     "timed_out": 0,
+     "overshot": 0,
+     "wall_contact": 6,
+     "offset_mean": 0.029353495666555707,
+     "offset_p95": 0.11583312663992111,
+     "steer_roughness": 0.0018377476032111746,
+     "energy_wh_per_m": 0.0011608323559869343,
+     "speed_error": 0.27535969549725087,
+     "time_ratio": 0.992104121306225
+    },
+    "held_out": {
+     "success": 425,
+     "trips": 500,
+     "wilson": [
+      0.85,
+      0.8160382472597502,
+      0.8786245197686174
+     ],
+     "per_seed": [
+      {
+       "seed": 0,
+       "success": 86,
+       "trips": 100,
+       "plus": 6,
+       "minus": 2,
+       "p": 0.2890625
+      },
+      {
+       "seed": 1,
+       "success": 83,
+       "trips": 100,
+       "plus": 8,
+       "minus": 7,
+       "p": 1.0
+      },
+      {
+       "seed": 2,
+       "success": 82,
+       "trips": 100,
+       "plus": 4,
+       "minus": 4,
+       "p": 1.0
+      },
+      {
+       "seed": 3,
+       "success": 89,
+       "trips": 100,
+       "plus": 10,
+       "minus": 3,
+       "p": 0.09228515625
+      },
+      {
+       "seed": 4,
+       "success": 85,
+       "trips": 100,
+       "plus": 5,
+       "minus": 2,
+       "p": 0.453125
+      }
+     ],
+     "plus": 33,
+     "minus": 18,
+     "p": 0.04887389231827033,
+     "trip_level": {
+      "plus": 14,
+      "minus": 12,
+      "p": 0.8450189828872681,
+      "diff": 0.030000000000000002,
+      "p_perm": 0.21878906054697264,
+      "ci": [
+       -0.011999999999999997,
+       0.07400000000000001
+      ]
+     },
+     "seeds_better": 4,
+     "seeds_worse": 0,
+     "left_road": 57,
+     "timed_out": 2,
+     "overshot": 16,
+     "wall_contact": 214,
+     "offset_mean": 0.08570379233304899,
+     "offset_p95": 0.22194005827625993,
+     "steer_roughness": 0.006040438485629129,
+     "energy_wh_per_m": 0.01438658964897597,
+     "speed_error": 0.4302033712745615,
+     "time_ratio": 0.9924137098998069
+    },
+    "perturbed": {
+     "success": 431,
+     "trips": 500,
+     "wilson": [
+      0.862,
+      0.8289973296731233,
+      0.8894824465105026
+     ],
+     "per_seed": [
+      {
+       "seed": 0,
+       "success": 85,
+       "trips": 100,
+       "plus": 6,
+       "minus": 7,
+       "p": 1.0
+      },
+      {
+       "seed": 1,
+       "success": 85,
+       "trips": 100,
+       "plus": 7,
+       "minus": 8,
+       "p": 1.0
+      },
+      {
+       "seed": 2,
+       "success": 86,
+       "trips": 100,
+       "plus": 8,
+       "minus": 8,
+       "p": 1.0
+      },
+      {
+       "seed": 3,
+       "success": 88,
+       "trips": 100,
+       "plus": 9,
+       "minus": 7,
+       "p": 0.803619384765625
+      },
+      {
+       "seed": 4,
+       "success": 87,
+       "trips": 100,
+       "plus": 8,
+       "minus": 7,
+       "p": 1.0
+      }
+     ],
+     "plus": 38,
+     "minus": 37,
+     "p": 1.0,
+     "trip_level": {
+      "plus": 12,
+      "minus": 18,
+      "p": 0.361594608053565,
+      "diff": 0.0020000000000000013,
+      "p_perm": 1.0,
+      "ci": [
+       -0.056,
+       0.062
+      ]
+     },
+     "seeds_better": 2,
+     "seeds_worse": 2,
+     "left_road": 53,
+     "timed_out": 2,
+     "overshot": 14,
+     "wall_contact": 173,
+     "offset_mean": 0.07099566052848895,
+     "offset_p95": 0.18007666284929943,
+     "steer_roughness": 0.005091709884597971,
+     "energy_wh_per_m": 0.011694068460568124,
+     "speed_error": 0.4028491179537282,
+     "time_ratio": 0.9917184265010351
+    }
+   }
+  },
+  "ppo-res-stop-unity-r3": {
+   "seeds": [
+    0,
+    1,
+    2,
+    3,
+    4
+   ],
+   "specs": [
+    "sb3:policies/twin-car/seeds/ppo-res-stop-unity-r3-s0",
+    "sb3:policies/twin-car/seeds/ppo-res-stop-unity-r3-s1",
+    "sb3:policies/twin-car/seeds/ppo-res-stop-unity-r3-s2",
+    "sb3:policies/twin-car/seeds/ppo-res-stop-unity-r3-s3",
+    "sb3:policies/twin-car/seeds/ppo-res-stop-unity-r3-s4"
+   ],
+   "conditions": {
+    "train": {
+     "success": 496,
+     "trips": 500,
+     "wilson": [
+      0.992,
+      0.9796126401630988,
+      0.9968847352024922
+     ],
+     "per_seed": [
+      {
+       "seed": 0,
+       "success": 98,
+       "trips": 100,
+       "plus": 1,
+       "minus": 1,
+       "p": 1.0
+      },
+      {
+       "seed": 1,
+       "success": 100,
+       "trips": 100,
+       "plus": 2,
+       "minus": 0,
+       "p": 0.5
+      },
+      {
+       "seed": 2,
+       "success": 100,
+       "trips": 100,
+       "plus": 2,
+       "minus": 0,
+       "p": 0.5
+      },
+      {
+       "seed": 3,
+       "success": 99,
+       "trips": 100,
+       "plus": 1,
+       "minus": 0,
+       "p": 1.0
+      },
+      {
+       "seed": 4,
+       "success": 99,
+       "trips": 100,
+       "plus": 1,
+       "minus": 0,
+       "p": 1.0
+      }
+     ],
+     "plus": 7,
+     "minus": 1,
+     "p": 0.0703125,
+     "trip_level": {
+      "plus": 2,
+      "minus": 1,
+      "p": 1.0,
+      "diff": 0.012,
+      "p_perm": 0.5012249387530624,
+      "ci": [
+       -0.003999999999999999,
+       0.036000000000000004
+      ]
+     },
+     "seeds_better": 4,
+     "seeds_worse": 0,
+     "left_road": 0,
+     "timed_out": 4,
+     "overshot": 0,
+     "wall_contact": 6,
+     "offset_mean": 0.027443375890402445,
+     "offset_p95": 0.11271389314851024,
+     "steer_roughness": 0.001723499525982041,
+     "energy_wh_per_m": 0.0007445503110689139,
+     "speed_error": 0.2717296113811505,
+     "time_ratio": 0.9918200408997955
+    },
+    "held_out": {
+     "success": 346,
+     "trips": 500,
+     "wilson": [
+      0.692,
+      0.6501972113746908,
+      0.7308749351094421
+     ],
+     "per_seed": [
+      {
+       "seed": 0,
+       "success": 70,
+       "trips": 100,
+       "plus": 1,
+       "minus": 13,
+       "p": 0.0018310546875
+      },
+      {
+       "seed": 1,
+       "success": 71,
+       "trips": 100,
+       "plus": 2,
+       "minus": 13,
+       "p": 0.00738525390625
+      },
+      {
+       "seed": 2,
+       "success": 65,
+       "trips": 100,
+       "plus": 2,
+       "minus": 19,
+       "p": 0.00022125244140625
+      },
+      {
+       "seed": 3,
+       "success": 67,
+       "trips": 100,
+       "plus": 1,
+       "minus": 16,
+       "p": 0.000274658203125
+      },
+      {
+       "seed": 4,
+       "success": 73,
+       "trips": 100,
+       "plus": 2,
+       "minus": 11,
+       "p": 0.0224609375
+      }
+     ],
+     "plus": 8,
+     "minus": 72,
+     "p": 5.375095844566712e-14,
+     "trip_level": {
+      "plus": 5,
+      "minus": 24,
+      "p": 0.0005461126565933228,
+      "diff": -0.128,
+      "p_perm": 0.00014999250037498125,
+      "ci": [
+       -0.188,
+       -0.06999999999999999
+      ]
+     },
+     "seeds_better": 0,
+     "seeds_worse": 5,
+     "left_road": 51,
+     "timed_out": 89,
+     "overshot": 14,
+     "wall_contact": 214,
+     "offset_mean": 0.052241645756444105,
+     "offset_p95": 0.16066414986299293,
+     "steer_roughness": 0.0023558161970805252,
+     "energy_wh_per_m": 0.010321642576325306,
+     "speed_error": 0.35336641837415317,
+     "time_ratio": 0.9920712876888864
+    },
+    "perturbed": {
+     "success": 356,
+     "trips": 500,
+     "wilson": [
+      0.712,
+      0.6708097689717583,
+      0.7499573927711387
+     ],
+     "per_seed": [
+      {
+       "seed": 0,
+       "success": 72,
+       "trips": 100,
+       "plus": 1,
+       "minus": 15,
+       "p": 0.000518798828125
+      },
+      {
+       "seed": 1,
+       "success": 70,
+       "trips": 100,
+       "plus": 1,
+       "minus": 17,
+       "p": 0.00014495849609375
+      },
+      {
+       "seed": 2,
+       "success": 73,
+       "trips": 100,
+       "plus": 3,
+       "minus": 16,
+       "p": 0.004425048828125
+      },
+      {
+       "seed": 3,
+       "success": 69,
+       "trips": 100,
+       "plus": 3,
+       "minus": 20,
+       "p": 0.00048828125
+      },
+      {
+       "seed": 4,
+       "success": 72,
+       "trips": 100,
+       "plus": 5,
+       "minus": 19,
+       "p": 0.006610751152038574
+      }
+     ],
+     "plus": 13,
+     "minus": 87,
+     "p": 1.3129815522035853e-14,
+     "trip_level": {
+      "plus": 7,
+      "minus": 24,
+      "p": 0.003326892852783203,
+      "diff": -0.148,
+      "p_perm": 9.99950002499875e-05,
+      "ci": [
+       -0.22,
+       -0.078
+      ]
+     },
+     "seeds_better": 0,
+     "seeds_worse": 5,
+     "left_road": 34,
+     "timed_out": 96,
+     "overshot": 14,
+     "wall_contact": 173,
+     "offset_mean": 0.03778349376646703,
+     "offset_p95": 0.11512548674816313,
+     "steer_roughness": 0.002060002452121832,
+     "energy_wh_per_m": 0.00396318010296561,
+     "speed_error": 0.33482228331143443,
+     "time_ratio": 0.9917525773195877
+    }
+   }
+  },
+  "ppo-stop-unity-r3": {
+   "seeds": [
+    0,
+    1,
+    2,
+    3,
+    4
+   ],
+   "specs": [
+    "sb3:policies/twin-car/seeds/ppo-stop-unity-r3-s0",
+    "sb3:policies/twin-car/seeds/ppo-stop-unity-r3-s1",
+    "sb3:policies/twin-car/seeds/ppo-stop-unity-r3-s2",
+    "sb3:policies/twin-car/seeds/ppo-stop-unity-r3-s3",
+    "sb3:policies/twin-car/seeds/ppo-stop-unity-r3-s4"
+   ],
+   "conditions": {
+    "train": {
+     "success": 471,
+     "trips": 500,
+     "wilson": [
+      0.942,
+      0.9179433020026042,
+      0.9593165352160771
+     ],
+     "per_seed": [
+      {
+       "seed": 0,
+       "success": 91,
+       "trips": 100,
+       "plus": 2,
+       "minus": 9,
+       "p": 0.0654296875
+      },
+      {
+       "seed": 1,
+       "success": 96,
+       "trips": 100,
+       "plus": 1,
+       "minus": 3,
+       "p": 0.625
+      },
+      {
+       "seed": 2,
+       "success": 93,
+       "trips": 100,
+       "plus": 2,
+       "minus": 7,
+       "p": 0.1796875
+      },
+      {
+       "seed": 3,
+       "success": 94,
+       "trips": 100,
+       "plus": 1,
+       "minus": 5,
+       "p": 0.21875
+      },
+      {
+       "seed": 4,
+       "success": 97,
+       "trips": 100,
+       "plus": 2,
+       "minus": 3,
+       "p": 1.0
+      }
+     ],
+     "plus": 8,
+     "minus": 27,
+     "p": 0.001878225477412343,
+     "trip_level": {
+      "plus": 2,
+      "minus": 16,
+      "p": 0.001312255859375,
+      "diff": -0.038,
+      "p_perm": 0.06404679766011699,
+      "ci": [
+       -0.076,
+       3.3306690738754695e-18
+      ]
+     },
+     "seeds_better": 0,
+     "seeds_worse": 5,
+     "left_road": 5,
+     "timed_out": 15,
+     "overshot": 9,
+     "wall_contact": 35,
+     "offset_mean": 0.11563255681977308,
+     "offset_p95": 0.2709259592088547,
+     "steer_roughness": 0.008912520500285218,
+     "energy_wh_per_m": 0.0005721212401866536,
+     "speed_error": 0.4204081933539903,
+     "time_ratio": 1.141904761904762
+    },
+    "held_out": {
+     "success": 253,
+     "trips": 500,
+     "wilson": [
+      0.506,
+      0.46229784108368,
+      0.5496106634939493
+     ],
+     "per_seed": [
+      {
+       "seed": 0,
+       "success": 85,
+       "trips": 100,
+       "plus": 12,
+       "minus": 9,
+       "p": 0.6636238098144531
+      },
+      {
+       "seed": 1,
+       "success": 23,
+       "trips": 100,
+       "plus": 2,
+       "minus": 61,
+       "p": 4.373671563806525e-16
+      },
+      {
+       "seed": 2,
+       "success": 25,
+       "trips": 100,
+       "plus": 1,
+       "minus": 58,
+       "p": 2.0816681711721685e-16
+      },
+      {
+       "seed": 3,
+       "success": 67,
+       "trips": 100,
+       "plus": 6,
+       "minus": 21,
+       "p": 0.005924612283706665
+      },
+      {
+       "seed": 4,
+       "success": 53,
+       "trips": 100,
+       "plus": 7,
+       "minus": 36,
+       "p": 8.963039363152348e-06
+      }
+     ],
+     "plus": 28,
+     "minus": 185,
+     "p": 1.432938479589412e-29,
+     "trip_level": {
+      "plus": 15,
+      "minus": 72,
+      "p": 4.2605364788467554e-10,
+      "diff": -0.314,
+      "p_perm": 4.999750012499375e-05,
+      "ci": [
+       -0.388,
+       -0.236
+      ]
+     },
+     "seeds_better": 1,
+     "seeds_worse": 4,
+     "left_road": 64,
+     "timed_out": 117,
+     "overshot": 66,
+     "wall_contact": 255,
+     "offset_mean": 0.12705709402407472,
+     "offset_p95": 0.3191450127327185,
+     "steer_roughness": 0.009168561280015568,
+     "energy_wh_per_m": 0.0012353197674758488,
+     "speed_error": 0.4871227273487376,
+     "time_ratio": 1.1686046511627908
+    },
+    "perturbed": {
+     "success": 235,
+     "trips": 500,
+     "wilson": [
+      0.47,
+      0.4266472654581187,
+      0.5138102116537354
+     ],
+     "per_seed": [
+      {
+       "seed": 0,
+       "success": 80,
+       "trips": 100,
+       "plus": 9,
+       "minus": 15,
+       "p": 0.30745625495910645
+      },
+      {
+       "seed": 1,
+       "success": 21,
+       "trips": 100,
+       "plus": 4,
+       "minus": 69,
+       "p": 2.4422670374772693e-16
+      },
+      {
+       "seed": 2,
+       "success": 22,
+       "trips": 100,
+       "plus": 3,
+       "minus": 67,
+       "p": 9.694461487914918e-17
+      },
+      {
+       "seed": 3,
+       "success": 63,
+       "trips": 100,
+       "plus": 6,
+       "minus": 29,
+       "p": 0.0001168418675661087
+      },
+      {
+       "seed": 4,
+       "success": 49,
+       "trips": 100,
+       "plus": 3,
+       "minus": 40,
+       "p": 3.0213413992896676e-09
+      }
+     ],
+     "plus": 25,
+     "minus": 220,
+     "p": 3.877541941273309e-40,
+     "trip_level": {
+      "plus": 11,
+      "minus": 84,
+      "p": 4.51844580634533e-15,
+      "diff": -0.39,
+      "p_perm": 4.999750012499375e-05,
+      "ci": [
+       -0.47,
+       -0.31
+      ]
+     },
+     "seeds_better": 0,
+     "seeds_worse": 5,
+     "left_road": 59,
+     "timed_out": 87,
+     "overshot": 119,
+     "wall_contact": 234,
+     "offset_mean": 0.11905485796603878,
+     "offset_p95": 0.3213482432183492,
+     "steer_roughness": 0.007224491897673511,
+     "energy_wh_per_m": 0.0007514350294603855,
+     "speed_error": 0.4198251208524963,
+     "time_ratio": 1.0269717786522337
+    }
+   }
+  },
+  "recover:ppo-stop-unity-r3": {
+   "seeds": [
+    0,
+    1,
+    2,
+    3,
+    4
+   ],
+   "specs": [
+    "recover:sb3:policies/twin-car/seeds/ppo-stop-unity-r3-s0",
+    "recover:sb3:policies/twin-car/seeds/ppo-stop-unity-r3-s1",
+    "recover:sb3:policies/twin-car/seeds/ppo-stop-unity-r3-s2",
+    "recover:sb3:policies/twin-car/seeds/ppo-stop-unity-r3-s3",
+    "recover:sb3:policies/twin-car/seeds/ppo-stop-unity-r3-s4"
+   ],
+   "conditions": {
+    "train": {
+     "success": 471,
+     "trips": 500,
+     "wilson": [
+      0.942,
+      0.9179433020026042,
+      0.9593165352160771
+     ],
+     "per_seed": [
+      {
+       "seed": 0,
+       "success": 91,
+       "trips": 100,
+       "plus": 2,
+       "minus": 9,
+       "p": 0.0654296875
+      },
+      {
+       "seed": 1,
+       "success": 96,
+       "trips": 100,
+       "plus": 1,
+       "minus": 3,
+       "p": 0.625
+      },
+      {
+       "seed": 2,
+       "success": 93,
+       "trips": 100,
+       "plus": 2,
+       "minus": 7,
+       "p": 0.1796875
+      },
+      {
+       "seed": 3,
+       "success": 94,
+       "trips": 100,
+       "plus": 1,
+       "minus": 5,
+       "p": 0.21875
+      },
+      {
+       "seed": 4,
+       "success": 97,
+       "trips": 100,
+       "plus": 2,
+       "minus": 3,
+       "p": 1.0
+      }
+     ],
+     "plus": 8,
+     "minus": 27,
+     "p": 0.001878225477412343,
+     "trip_level": {
+      "plus": 2,
+      "minus": 16,
+      "p": 0.001312255859375,
+      "diff": -0.038,
+      "p_perm": 0.06404679766011699,
+      "ci": [
+       -0.076,
+       3.3306690738754695e-18
+      ]
+     },
+     "seeds_better": 0,
+     "seeds_worse": 5,
+     "left_road": 5,
+     "timed_out": 15,
+     "overshot": 9,
+     "wall_contact": 35,
+     "offset_mean": 0.11563255681977308,
+     "offset_p95": 0.2709259592088547,
+     "steer_roughness": 0.008912520500285218,
+     "energy_wh_per_m": 0.0005721212401866536,
+     "speed_error": 0.4204081933539903,
+     "time_ratio": 1.141904761904762
+    },
+    "held_out": {
+     "success": 253,
+     "trips": 500,
+     "wilson": [
+      0.506,
+      0.46229784108368,
+      0.5496106634939493
+     ],
+     "per_seed": [
+      {
+       "seed": 0,
+       "success": 85,
+       "trips": 100,
+       "plus": 12,
+       "minus": 9,
+       "p": 0.6636238098144531
+      },
+      {
+       "seed": 1,
+       "success": 23,
+       "trips": 100,
+       "plus": 2,
+       "minus": 61,
+       "p": 4.373671563806525e-16
+      },
+      {
+       "seed": 2,
+       "success": 25,
+       "trips": 100,
+       "plus": 1,
+       "minus": 58,
+       "p": 2.0816681711721685e-16
+      },
+      {
+       "seed": 3,
+       "success": 67,
+       "trips": 100,
+       "plus": 6,
+       "minus": 21,
+       "p": 0.005924612283706665
+      },
+      {
+       "seed": 4,
+       "success": 53,
+       "trips": 100,
+       "plus": 7,
+       "minus": 36,
+       "p": 8.963039363152348e-06
+      }
+     ],
+     "plus": 28,
+     "minus": 185,
+     "p": 1.432938479589412e-29,
+     "trip_level": {
+      "plus": 15,
+      "minus": 72,
+      "p": 4.2605364788467554e-10,
+      "diff": -0.314,
+      "p_perm": 4.999750012499375e-05,
+      "ci": [
+       -0.388,
+       -0.236
+      ]
+     },
+     "seeds_better": 1,
+     "seeds_worse": 4,
+     "left_road": 63,
+     "timed_out": 118,
+     "overshot": 66,
+     "wall_contact": 255,
+     "offset_mean": 0.12705709402407472,
+     "offset_p95": 0.3191450127327185,
+     "steer_roughness": 0.009168561280015568,
+     "energy_wh_per_m": 0.0012353197674758488,
+     "speed_error": 0.4871227273487376,
+     "time_ratio": 1.1686046511627908
+    },
+    "perturbed": {
+     "success": 235,
+     "trips": 500,
+     "wilson": [
+      0.47,
+      0.4266472654581187,
+      0.5138102116537354
+     ],
+     "per_seed": [
+      {
+       "seed": 0,
+       "success": 80,
+       "trips": 100,
+       "plus": 9,
+       "minus": 15,
+       "p": 0.30745625495910645
+      },
+      {
+       "seed": 1,
+       "success": 21,
+       "trips": 100,
+       "plus": 4,
+       "minus": 69,
+       "p": 2.4422670374772693e-16
+      },
+      {
+       "seed": 2,
+       "success": 22,
+       "trips": 100,
+       "plus": 3,
+       "minus": 67,
+       "p": 9.694461487914918e-17
+      },
+      {
+       "seed": 3,
+       "success": 63,
+       "trips": 100,
+       "plus": 6,
+       "minus": 29,
+       "p": 0.0001168418675661087
+      },
+      {
+       "seed": 4,
+       "success": 49,
+       "trips": 100,
+       "plus": 3,
+       "minus": 40,
+       "p": 3.0213413992896676e-09
+      }
+     ],
+     "plus": 25,
+     "minus": 220,
+     "p": 3.877541941273309e-40,
+     "trip_level": {
+      "plus": 11,
+      "minus": 84,
+      "p": 4.51844580634533e-15,
+      "diff": -0.39,
+      "p_perm": 4.999750012499375e-05,
+      "ci": [
+       -0.47,
+       -0.31
+      ]
+     },
+     "seeds_better": 0,
+     "seeds_worse": 5,
+     "left_road": 59,
+     "timed_out": 87,
+     "overshot": 119,
+     "wall_contact": 234,
+     "offset_mean": 0.11905485796603878,
+     "offset_p95": 0.3213482432183492,
+     "steer_roughness": 0.007224491897673511,
+     "energy_wh_per_m": 0.0007514350294603855,
+     "speed_error": 0.4198251208524963,
+     "time_ratio": 1.0269717786522337
+    }
+   }
+  }
+ }
+}
