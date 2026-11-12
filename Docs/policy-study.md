@@ -15,6 +15,8 @@ All of that was on the Core's simplest car, not the car the Unity twin drives. O
 
 All numbers are in simulation, on SlipX's provisional car parameters, not a measured car. They rank methods; they do not predict the real car.
 
+**More seeds** ([rl-seeds.md](rl-seeds.md)). With 5 seeds per method, on the Cores these runs used, SAC + history's held-out gain holds (96.6 %, +7.6 points over pure pursuit, p = 0.016 with the trip as the unit), PPO + history's is smaller (+5.6, p = 0.085), and both residual learners tie pure pursuit. On the Unity car, residual PPO still ties the autopilot, and the second round's PPO + history run turns out to be its best seed of five. On today's Core, with the ESC reverse, pure pursuit finishes 96 % of held-out follow-task trips and no learner beats it.
+
 ## Setup
 
 | | |
@@ -409,7 +411,7 @@ The second round's first candidate. Validation drove only ordinary training cars
 
 - **The car is SlipX's provisional defaults, not a measured car.** The randomisation ranges are training choices. A policy that is robust across them is robust in simulation, and no more than that.
 - **One target speed (4 m/s), one campus, one task per table.** A ranking can change with any of them.
-- **Few seeds for the slow methods.** SAC and residual SAC had one seed each. Their intervals are wide, and their seed-to-seed spread is unknown.
+- **Few seeds for the slow methods.** SAC and residual SAC had one seed each. Their intervals are wide, and their seed-to-seed spread is unknown. [rl-seeds.md](rl-seeds.md) adds seeds: 5 per method for the follow task and the second Unity-car round.
 - **No hyperparameter search for the learners.** The controllers were tuned; the learners used standard settings plus the stability changes above. A tuned learner could do better, and RecurrentPPO above all needs tuning to be judged fairly (Ni et al.).
 - **The Unity car's suspension is a DEMO target, not a measurement.** The car-gap numbers say the twin's car is harder than the bare one. How much harder the real car is depends on rates nobody has measured yet.
 - **The reward sets the trade-off.** A heavier offset or steering term would trade some of the learned policies' robustness for a tidier line. That is a design choice, not a property of the method.

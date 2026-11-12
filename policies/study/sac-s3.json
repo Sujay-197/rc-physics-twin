@@ -1,0 +1,190 @@
+{
+ "name": "sac-s3",
+ "algo": "sac",
+ "seed": 3,
+ "timesteps": 2500400,
+ "selected": {
+  "steps": 2375380,
+  "val_success": 1.0,
+  "val_return": 274.26527788120853,
+  "val_trips": 30,
+  "val_seed": 40000
+ },
+ "train_seconds": 3429.8,
+ "device": "cuda",
+ "envs": 28,
+ "workers": 14,
+ "config": {
+  "target_speed": 4.0,
+  "history": 4,
+  "max_time": 30.0,
+  "residual": null,
+  "residual_scale": 0.5
+ },
+ "hyperparameters": {
+  "net": [
+   256,
+   256
+  ],
+  "n_steps": 0,
+  "batch": 4096,
+  "lr": 0.0003,
+  "gamma": 0.995,
+  "log_std": -1.5,
+  "utd": 0.0625,
+  "buffer": 2000000,
+  "learning_starts": 20000,
+  "target_kl": 0.02,
+  "chunks": 20
+ },
+ "versions": {
+  "stable_baselines3": "2.9.0",
+  "torch": "2.14.1+cu130",
+  "gymnasium": "1.4.0",
+  "numpy": "2.5.4"
+ },
+ "curve": [
+  {
+   "steps": 125020,
+   "seconds": 123.8,
+   "mean_episode_return": -1597.0651494200001,
+   "val_success": 0.5333333333333333,
+   "val_return": -2315.39296645127
+  },
+  {
+   "steps": 250040,
+   "seconds": 294.3,
+   "mean_episode_return": -1053.71751138,
+   "val_success": 0.6,
+   "val_return": -1994.4842648631093
+  },
+  {
+   "steps": 375060,
+   "seconds": 482.9,
+   "mean_episode_return": -1316.88976822,
+   "val_success": 0.6,
+   "val_return": -1801.3853120026477
+  },
+  {
+   "steps": 500080,
+   "seconds": 669.4,
+   "mean_episode_return": -908.40517438,
+   "val_success": 0.6666666666666666,
+   "val_return": -1847.6719156593424
+  },
+  {
+   "steps": 625100,
+   "seconds": 860.5,
+   "mean_episode_return": -1133.43013992,
+   "val_success": 0.7333333333333333,
+   "val_return": -1582.1860102345574
+  },
+  {
+   "steps": 750120,
+   "seconds": 1052.5,
+   "mean_episode_return": -1161.27257358,
+   "val_success": 0.5666666666666667,
+   "val_return": -2124.0786475486175
+  },
+  {
+   "steps": 875140,
+   "seconds": 1228.3,
+   "mean_episode_return": -1033.91769391,
+   "val_success": 0.8666666666666667,
+   "val_return": -495.3841459479327
+  },
+  {
+   "steps": 1000160,
+   "seconds": 1405.2,
+   "mean_episode_return": -580.26862536,
+   "val_success": 0.8666666666666667,
+   "val_return": -424.97034023197415
+  },
+  {
+   "steps": 1125180,
+   "seconds": 1578.9,
+   "mean_episode_return": -220.39727750999998,
+   "val_success": 0.9,
+   "val_return": -199.29433037736374
+  },
+  {
+   "steps": 1250200,
+   "seconds": 1748.9,
+   "mean_episode_return": 52.08895431,
+   "val_success": 0.9666666666666667,
+   "val_return": -29.142465687864885
+  },
+  {
+   "steps": 1375220,
+   "seconds": 1918.8,
+   "mean_episode_return": 179.21682024,
+   "val_success": 0.9333333333333333,
+   "val_return": -64.7090304984204
+  },
+  {
+   "steps": 1500240,
+   "seconds": 2086.2,
+   "mean_episode_return": 174.99525481,
+   "val_success": 1.0,
+   "val_return": 256.19916608959204
+  },
+  {
+   "steps": 1625260,
+   "seconds": 2253.7,
+   "mean_episode_return": 236.45603435,
+   "val_success": 1.0,
+   "val_return": 249.29265675305518
+  },
+  {
+   "steps": 1750280,
+   "seconds": 2422.4,
+   "mean_episode_return": 232.37593787999998,
+   "val_success": 1.0,
+   "val_return": 245.87017335090664
+  },
+  {
+   "steps": 1875300,
+   "seconds": 2590.8,
+   "mean_episode_return": 188.75618507,
+   "val_success": 1.0,
+   "val_return": 258.6618593167081
+  },
+  {
+   "steps": 2000320,
+   "seconds": 2758.1,
+   "mean_episode_return": 251.88362267,
+   "val_success": 1.0,
+   "val_return": 251.24756653042402
+  },
+  {
+   "steps": 2125340,
+   "seconds": 2927.5,
+   "mean_episode_return": 224.84534144,
+   "val_success": 0.9666666666666667,
+   "val_return": 111.97619984567442
+  },
+  {
+   "steps": 2250360,
+   "seconds": 3095.2,
+   "mean_episode_return": 199.55387471999998,
+   "val_success": 1.0,
+   "val_return": 236.48313215571457
+  },
+  {
+   "steps": 2375380,
+   "seconds": 3262.3,
+   "mean_episode_return": 224.91459489000002,
+   "val_success": 1.0,
+   "val_return": 274.26527788120853
+  },
+  {
+   "steps": 2500400,
+   "seconds": 3429.8,
+   "mean_episode_return": 240.38171373,
+   "val_success": 1.0,
+   "val_return": 263.81557916075036
+  }
+ ],
+ "environment": "CampusEnv, walls on, RANGES_TRAIN, demand-weighted trips",
+ "car": "SlipX provisional defaults (not a measured car)"
+}
